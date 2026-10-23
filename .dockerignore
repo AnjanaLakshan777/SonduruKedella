@@ -1,0 +1,31 @@
+# Build context is the repository root for both images (see compose.yaml).
+# Keep it small and keep secrets out of images.
+
+# Version control and tooling
+.git
+.gitignore
+.gitattributes
+**/.vscode
+**/.idea
+.claude
+
+# Secrets and local environment files
+.env
+.env.*
+**/*.pem
+**/*.key
+
+# Dependencies and build outputs (rebuilt inside the image)
+**/node_modules
+**/target
+**/dist
+**/coverage
+**/*.tsbuildinfo
+backend/.mvn/wrapper/maven-wrapper.jar
+
+# Docker and docs (not needed inside images)
+compose.yaml
+Dockerfile.*
+docs
+CLAUDE.md
+**/*.log

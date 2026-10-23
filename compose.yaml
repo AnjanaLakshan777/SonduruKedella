@@ -1,0 +1,78 @@
+# Sonduru Kedella — local development stack.
+# All values come from the repository-root .env (copy .env.example to create it).
+# Ports are bound to 127.0.0.1 so nothing is reachable from other machines.
+#
+#   docker compose up -d --build     start everything
+#   docker compose up -d postgres    database only (run backend/frontend outside Docker)
+#   docker compose logs -f backend   follow logs
+#   docker compose stop              stop (data is kept)
+#
+# NEVER run "docker compose down -v" as routine cleanup: it deletes the database volume.
+
+name: sonduru-kedella
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - sonduru_net
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      # Inside the Compose network the database is reached by its service name.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    networks:
+      - sonduru_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    environment:
+      # Used by the browser, so it points at the host-published backend port.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080/api/v1}
+      # File-change events do not cross Windows/macOS bind mounts; poll instead.
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/app
+      # Keep the image's Linux node_modules instead of the host's.
+      - /app/node_modules
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
+    networks:
+      - sonduru_net
+
+volumes:
+  postgres_data:
+
+networks:
+  sonduru_net:
+    driver: bridge

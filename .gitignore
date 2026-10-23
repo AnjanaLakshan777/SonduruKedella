@@ -1,0 +1,40 @@
+# ---- Secrets / local environment ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Java / Maven (backend/.gitignore has the full Spring Initializr rules) ----
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+
+# ---- Node / Vite ----
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+.vite/
+
+# ---- Tests / coverage ----
+coverage/
+**/coverage/
+*.lcov
+.nyc_output/
+
+# ---- Logs / temp ----
+*.log
+npm-debug.log*
+logs/
+tmp/
+*.tmp
+
+# ---- IDE / OS ----
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db

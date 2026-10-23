@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+# Spring Boot backend image. Build context is the repository root (see compose.yaml).
+# No secrets are baked into this image: credentials arrive as environment variables at runtime.
+
+# ---- Build stage: compile with the project's Maven wrapper on JDK 25 ----
+FROM eclipse-temurin:25-jdk AS build
+WORKDIR /workspace
+
+COPY backend/mvnw backend/pom.xml ./
+COPY backend/.mvn .mvn
+# Guard against CRLF line endings when the repo is checked out on Windows.
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
+
+COPY backend/src src
+# The cache mount keeps downloaded Maven and dependencies between builds.
+# Tests are skipped here: they need a running database (see docs/DEVELOPMENT_WORKFLOW.md).
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw -B -ntp package -DskipTests \
+ && cp target/*.jar /workspace/app.jar
+
+# ---- Runtime stage: JRE only, non-root user ----
+FROM eclipse-temurin:25-jre
+WORKDIR /app
+
+RUN groupadd --system app && useradd --system --gid app --no-create-home --shell /usr/sbin/nologin app
+COPY --from=build --chown=app:app /workspace/app.jar /app/app.jar
+USER app
+
+# Size the heap from the container memory limit and fail fast on OOM.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
