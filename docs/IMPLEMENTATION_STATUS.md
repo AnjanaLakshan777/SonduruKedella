@@ -37,7 +37,7 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 - [ ] Settings: revenue categories shown read-only.
 
 ## Backend Foundation
-- [ ] Modular package structure established.
+- [x] Modular package structure established (2026-10-24): package folders only, with no classes yet.
 - [ ] Global exception handling and validation configured.
 - [ ] API response and error conventions established.
 - [ ] Spring Security configuration implemented and tested.
@@ -131,3 +131,12 @@ For each completed task, record the date, files or migrations changed, verificat
   - Seed data in place, with zero business rows.
   - The backend started, `/actuator/health` returns `UP`, and `/api/v1/*` returns 401.
 - Docs: recorded the owner's clarifications (service-layer construction-only rules, Monday-to-Sunday weeks, the correction audit requirement) and that V1 is immutable.
+
+### 2026-10-24: Backend package structure
+- Created 141 `package-info.java` files (package declaration only) under `com.sondurukedella`. There are no classes and no business logic.
+  - Business modules: settings, clients, projects, agreements, revenue, commissions, expenses, suppliers, inventory, employees, payroll. Each has `controller`, `service`, `repository`, `entity`, `dto`, `mapper` and `validation`.
+  - `reports` has `controller`, `service`, `repository` and `dto`, because reporting is read-only. `activity` has every layer except `validation`.
+  - `common` (`exception`, `web`, `audit`, `money`, `validation`), `config` (`persistence`, `web`) and `security` (`config`, `user`, `auth`).
+  - Tests: `controller`, `service` and `repository` for each module, plus `common`, `security`, `integration/database`, `integration/api` and `support`.
+- Verified: the backend built in Docker on JDK 25, and `./mvnw test` passed against a disposable database (1 test, 0 failures). The development database was not touched and is still at v1.
+- No migrations, configuration, dependencies, frontend or environment files were changed.
