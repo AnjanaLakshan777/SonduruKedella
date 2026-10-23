@@ -16,14 +16,17 @@ This document must be updated as implementation progresses. Mark work complete o
 - [x] Docker Compose configuration validated.
 - [x] PostgreSQL container starts and passes health check.
 - [x] Spring Boot connects to PostgreSQL using environment variables.
-- [ ] Flyway runs a verified initial migration.
+- [x] Flyway runs a verified initial migration: V1 was verified on disposable databases and has not yet been applied to the development database.
 - [x] Backend and frontend Docker builds succeed.
 
 ## Database Design
 - [x] Proposed schema documented in docs/DATABASE.md (v2, aligned with the existing frontend).
 - [x] Retention money and the separate machinery rental module removed from scope.
 - [x] Owner decisions recorded (2026-10-24): material returns, low-stock removal, weighted average costing, freezing paid payroll weeks, fixed revenue categories.
+- [x] Payroll freeze rule finalized (2026-10-24): it applies to each employee and week at that employee's first payment. Corrections go in `payroll_corrections`.
+- [x] Initial Flyway migration `V1__initial_schema.sql` written and verified against PostgreSQL 17.11.
 - [ ] Owner sign-off on the final schema in docs/DATABASE.md.
+- [ ] V1 applied to the development database (rebuild and restart the backend).
 
 ## Planned Frontend Changes
 Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend alignment".
@@ -32,7 +35,6 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 - [ ] Inventory: show the weighted average unit cost from the API.
 - [ ] Payroll: paid employee-weeks read-only in attendance, overtime and adjustments, plus a "Record correction" action on paid lines.
 - [ ] Settings: revenue categories shown read-only.
-- [ ] Initial Flyway migrations written and verified against PostgreSQL 17.
 
 ## Backend Foundation
 - [ ] Modular package structure established.
@@ -96,3 +98,23 @@ For each completed task, record the date, files or migrations changed, verificat
   - Revenue categories fixed, with no table.
   - Added a frontend type to database mapping.
 - Design only. Frontend, backend, migrations and environment files unchanged.
+### 2026-10-24: Initial Flyway migration (V1)
+- Files: `backend/src/main/resources/db/migration/V1__initial_schema.sql`, `docs/DATABASE.md`, `docs/IMPLEMENTATION_STATUS.md`. No backend configuration changes were needed: Flyway was already set to `classpath:db/migration`.
+- Schema review corrections in DATABASE.md:
+  - finalized payroll freeze rule (each employee and week)
+  - commission amount stored on confirmation
+  - `active` flag on expense categories
+  - financial year stored as a start month
+  - copied guard columns for composite foreign keys
+  - adjustments at zero stock use `materials.unit_cost`
+- Verified:
+  - The migration applied on disposable PostgreSQL 17.11 databases: 37 tables and 15 triggers.
+  - 92 of 92 constraint and trigger checks passed, each one confirming the expected constraint fired. They covered duplicates, payment immutability, project-type rules, system-generated expense categories, invoice and stock links, returns, payroll freeze, and corrections.
+  - Spring Boot (Flyway + Hibernate `validate`) applied V1 and started successfully.
+  - `./mvnw test` ran in Docker on JDK 25: 1 test, 0 failures, BUILD SUCCESS.
+  - The disposable databases and test images were removed afterwards.
+  - The development database was left unchanged (zero migrations applied).
+- Limitations:
+  - No JPA entities, services or endpoints exist yet.
+  - The service-level rules (balance caps, weighted-average posting, schedule totals) are not implemented yet.
+  - The constraint checks were run ad hoc and are not yet part of the automated test suite.

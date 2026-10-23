@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: design only. No migrations or entities exist yet.
+Status: implemented by `V1__initial_schema.sql`. No JPA entities exist yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -62,7 +62,11 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - Hours: `NUMERIC(4,2)`.
   - Dates: `DATE`.
   - Instants: `TIMESTAMPTZ`.
-- Every business table has `created_at`, `created_by` and `updated_at`. Tables whose rows can change also have `version BIGINT` for optimistic locking.
+- Every table has `created_at`, `created_by` and `updated_at`. Tables whose rows can change also have `version BIGINT` for optimistic locking.
+  - `created_by` references `app_users` and stays nullable until authentication exists.
+  - Append-only and frozen tables (`stock_movements`, `payroll_lines`, `payroll_line_costs`, `advance_recoveries`, `activity_log`) have no `updated_at` or `version`.
+- Single-row settings tables use `id SMALLINT = 1`.
+- Some child tables carry a copy of a parent value, such as `project_type`, `allocation` or `expense_group`. That copy lets a composite foreign key enforce a cross-table rule in the database. The service sets the copy, and the foreign key guarantees it matches the parent.
 - **Payments** (client, other income, expense, supplier, commission, payroll) and **salary advances** follow the same rules:
   - Columns: `payment_date`, `amount > 0`, `payment_method_id`, `reference`, `notes`, `request_id UUID UNIQUE`.
   - Each one settles exactly one obligation.
@@ -77,16 +81,18 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
 
 ## Settings and shared tables
 
-- **company_profile**: a single row with `name`, `tagline`, `address`, `phone`, `email`, `registration_no`, `owner_name`, `financial_year_start`, `supplier_credit_days` (default 14).
+- **company_profile**: a single row with `name`, `tagline`, `address`, `phone`, `email`, `registration_no`, `owner_name`, `financial_year_start_month` (default 4, for 1 April) and `supplier_credit_days` (default 14).
 - **commission_policy**: a single row.
   - `design_commission_pool_pct` (default 20). The company share is shown as 100 minus the pool.
   - `construction_warning_pct` (nullable).
   - Both values only trigger warnings.
 - **wage_settings**: a single row with `default_daily_wage`, `hours_per_day` (default 8), `overtime_multiplier` (default 1.5), `payday` (`FRIDAY` | `SATURDAY`). The payroll week starts on Monday.
 - **expense_categories**:
-  - Columns: `expense_group` (`DESIGN` | `CONSTRUCTION` | `CONSULTATION` | `COMPANY`), `name`, `locked`, `system_generated`, `sort_order`.
+  - Columns: `expense_group` (`DESIGN` | `CONSTRUCTION` | `CONSULTATION` | `COMPANY`), `name`, `locked`, `system_generated`, `active`, `sort_order`.
   - Unique (`expense_group`, `name`).
   - `Materials`, `Labour` and `Commission` are `locked`. `Labour` and `Commission` are also `system_generated`, so a manual expense cannot use them.
+  - A category removed in Settings is set `active = false`, so expenses that already use it keep their history.
+  - The seed data is the frontend's default category list.
 - **Revenue categories** are fixed and have no table: Design, Construction, Consultation and Other Income. The category comes from `projects.project_type`, and `other_income` is always Other Income. Settings shows the list read-only.
 - **units** and **payment_methods**: editable lists (`name` unique, `active`). Seed payment methods: Cash, Bank Transfer, Cheque, Online Payment.
 - **app_users**: `username` (unique), `display_name`, `password_hash`, `enabled`. This is the minimum Spring Security needs. The UI has no user management yet.
@@ -152,9 +158,10 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
     - `project_id`, `project_type` (check `IN ('DESIGN','CONSTRUCTION')`, composite FK, so consultation projects cannot have commission)
     - `recipient_name`, `role`
     - `rate_pct` (`> 0 AND < 100`)
-    - `status` (`PENDING` | `CONFIRMED`), `confirmed_on`, `policy_exception`
+    - `status` (`PENDING` | `CONFIRMED`), `confirmed_on`, `commission_amount`, `policy_exception`
     - `version`
-  - Amount = `round(contract_value × rate_pct / 100)`. Because the contract value cannot change, the amount stays fixed once the arrangement is confirmed.
+  - Amount = `round(contract_value × rate_pct / 100)`.
+  - On confirmation, the amount is stored in `commission_amount`, which is required for `CONFIRMED` rows. This preserves confirmed commission history.
   - If the total of a project's rates goes above the design pool or the construction warning level, the service returns a warning and changes nothing. The owner may still confirm, and `policy_exception = true` records that.
 - **commission_payments**: `arrangement_id` plus the common payment columns.
 
@@ -172,7 +179,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
     - `project_id` is set exactly when `scope = 'PROJECT'`.
     - `usage_to ≥ usage_from`.
     - For materials, `amount = round(quantity × unit_price, 2)`.
-  - Rules (enforced by the service):
+  - Rules, enforced in the database through the copied columns `expense_group`, `project_type` and `category_system_generated`:
     - The category's group must match the expense: the project's type for project expenses, `COMPANY` for company expenses.
     - `system_generated` categories are rejected.
 - **expense_payments**: `expense_id` plus the common payment columns. The expense form's "paid in full / part / unpaid" choice creates zero or one payment in the same transaction.
@@ -202,7 +209,8 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
   - `due_date` defaults to `invoice_date + supplier.credit_days`.
   - `total_amount` equals the sum of the lines. The service checks this.
 - **supplier_invoice_lines**:
-  - Columns: `invoice_id`, `line_no`, `material_id`, `description`, `quantity > 0`, `unit_id`, `unit_price > 0`, `line_amount`.
+  - Columns: `invoice_id`, `allocation` (copied from the invoice), `line_no`, `material_id`, `description`, `quantity > 0`, `unit_id`, `unit_price > 0`, `line_amount = round(quantity × unit_price, 2)`.
+  - Unique (`invoice_id`, `line_no`).
   - On a `STOCK` invoice, every line must have a `material_id`.
 - **supplier_payments**: `invoice_id` plus the common payment columns. A full payment is one row and partial payments are several rows. A payment entered on the invoice form is created in the same transaction.
 - **stock_movements**: an append-only ledger.
@@ -211,8 +219,11 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
     - `movement_type` (`RECEIVED` | `ISSUED` | `RETURNED` | `ADJUSTMENT`)
     - `quantity_change` (signed), `unit_cost`, `total_cost` (signed, set by the service)
     - `quantity_after`, `value_after` (the material's running balance after this movement)
-    - `project_id`, `supplier_invoice_line_id`, `returned_from_movement_id`
+    - `project_id`, `supplier_invoice_line_id`, `invoice_allocation`, `returned_from_movement_id`
     - `reason`, `reference`
+  - Receipts from invoices:
+    - Each invoice line has at most one receipt (unique `supplier_invoice_line_id`).
+    - A composite foreign key on (`supplier_invoice_line_id`, `material_id`, `invoice_allocation = 'STOCK'`) ensures that only lines of `STOCK` invoices create receipts, and only for the line's own material.
   - Checks:
     - `RECEIVED` and `RETURNED` are positive. `ISSUED` is negative. `ADJUSTMENT` is non-zero and needs a `reason`.
     - `project_id` is set exactly when the type is `ISSUED` or `RETURNED`.
@@ -220,7 +231,7 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
     - `quantity_after ≥ 0` and `value_after ≥ 0`.
   - Returns:
     - A unique key on (`id`, `material_id`, `project_id`) lets a composite foreign key (`returned_from_movement_id`, `material_id`, `project_id`) force every return to point at an issue of the same material to the same project.
-    - The service also checks that the referenced row is an `ISSUED` movement.
+    - An insert trigger checks that the referenced row is an `ISSUED` movement and that the returned quantity does not exceed what remains un-returned. The trigger locks the issue row while it checks.
     - Materials that reached a project through a `PROJECT` supplier invoice or a manual `Materials` expense were never issued from stock, so they cannot be returned.
   - Ledger order:
     - Each material's ledger is ordered by `id`, which is the posting order. `movement_date` is the business date.
@@ -235,7 +246,7 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
 
 - **employees**: `name`, `role`, `phone`, `address`, `daily_wage > 0`, `overtime_rate > 0`, `status` (`ACTIVE` | `INACTIVE`), `joined_on`.
 - **attendance**:
-  - Columns: `employee_id`, `work_date`, `status` (`PRESENT` | `HALF_DAY` | `ABSENT`), `project_id` (construction project), `notes`.
+  - Columns: `employee_id`, `work_date`, `status` (`PRESENT` | `HALF_DAY` | `ABSENT`), `project_id`, `project_type` (must be `CONSTRUCTION`, composite FK), `notes`.
   - Unique (`employee_id`, `work_date`).
 - **overtime_entries**:
   - Columns: `employee_id`, `work_date`, `project_id`, `hours` (`> 0 AND ≤ 8`), `hourly_rate > 0`, `approved`, `recorded_by`, `notes`.
@@ -254,7 +265,10 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
   - Unique (`employee_id`, `week_start`).
   - Checks: `gross_pay = base_pay + overtime_pay`, `net_pay = gross_pay − advance_deduction − other_deduction`, and `net_pay ≥ 0`.
 - **payroll_line_costs**: `payroll_line_id`, `project_id` (nullable), `amount`. This splits `gross_pay` across projects for profitability.
-- **advance_recoveries**: `advance_id`, `payroll_line_id`, `amount > 0`. It records which advances a week's deduction recovered, oldest first.
+- **advance_recoveries**: `advance_id`, `payroll_line_id`, `employee_id`, `amount > 0`.
+  - It records which advances a week's deduction recovered, oldest first.
+  - Composite foreign keys ensure the advance and the payroll line belong to the same employee.
+  - Unique (`advance_id`, `payroll_line_id`).
 - **payroll_corrections**: an explicit change to a frozen week.
   - Columns: `payroll_line_id`, `correction_date`, `wage_delta` (≠ 0), `project_id` (nullable), `reason` (not null).
   - It changes only the wages owed. It never changes `advance_deduction` or `advance_recoveries`, so advances cannot be counted twice.
@@ -262,14 +276,36 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
   - Payment is allowed once the week has ended. The UI offers per-worker payments and "Pay remaining".
   - The total paid can never exceed `net_pay + Σ wage_delta`.
 
-**Freezing a paid week**
-- Once a `payroll_lines` row exists for an employee and week, the following can no longer be changed:
-  - that employee's `attendance` and `overtime_entries` for the week
-  - the week's `payroll_adjustments`
+**Freezing a paid week** (confirmed by the owner)
+- The freeze applies to one employee for one week. It happens when the first payment for that employee and week is recorded, which is when the `payroll_lines` row is written.
+- Other employees in the same week, and the same employee in other weeks, can still be edited.
+- After the freeze, the following can no longer be inserted, changed or deleted:
+  - that employee's `attendance` and `overtime_entries` for the week (Monday to Sunday)
+  - that employee's `payroll_adjustments` for the week
   - the line and its cost and recovery rows
-- The service rejects such edits.
-- Any later correction is entered as a `payroll_corrections` row, with a reason.
+- Database triggers enforce the freeze, and the service reports the error to the user.
+- Any later correction is entered as a `payroll_corrections` row, with a positive or negative amount, a reason and an optional project.
 - If a negative correction leaves the worker overpaid, the overpayment is recovered as an `other_deduction` in a later week that has not been frozen. That week's `other_note` refers to the correction.
+
+## Database enforcement and service rules
+
+**Enforced by the database** (constraints and triggers in `V1`)
+- Payment and advance rows cannot be deleted. After insert, only the void columns can change, and a void is final.
+- `stock_movements`, `payroll_lines`, `payroll_line_costs` and `advance_recoveries` cannot be updated or deleted.
+- Returns must reference an `ISSUED` movement of the same material and project, and cannot exceed the quantity still un-returned on it.
+- A paid employee-week is frozen.
+- Composite foreign keys restrict features to project types (commission, delay terms, attendance, project invoices), exclude system-generated categories from expenses, and keep related rows on the same project or employee.
+- The `request_id` and duplicate-record unique constraints listed above.
+- Every CHECK that combines several conditions treats NULL as a failure.
+
+**Enforced by the service**, inside a transaction that locks the parent row
+- Payment totals cannot exceed the remaining balance.
+- Weighted-average costing and running balances are calculated by the service.
+- Schedule totals must match the contract value plus variations.
+- Payments and write-offs are accepted only on billed installments.
+- Invoice totals must equal the sum of their lines.
+- Commission policy warnings are reported, and the owner can override them.
+- Payroll calculations follow the formulas below.
 
 ## Calculations
 
@@ -310,7 +346,7 @@ Each movement is posted with the `materials` row locked. Let `Q` and `V` be the 
 | `RECEIVED` | the purchase price | `round(q × price, 2)` | `(V + total_cost) / (Q + q)` |
 | `RETURNED` | the referenced issue's `unit_cost` | `round(q × issue unit_cost, 2)` | `(V + total_cost) / (Q + q)` |
 | `ISSUED` | the current average (`V / Q`) | `−round(q × average, 2)` | unchanged |
-| `ADJUSTMENT` | the current average (`V / Q`) | `±round(q × average, 2)` | unchanged |
+| `ADJUSTMENT` | the current average (`V / Q`, or `materials.unit_cost` when `Q = 0`) | `±round(q × average, 2)` | unchanged |
 
 - After every movement:
   - `quantity_after = Q + quantity_change`
@@ -458,6 +494,7 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
 5. **Settings.** Show revenue categories as a read-only list.
 
 ## Current Schema Status
-- Migrations in `backend/src/main/resources/db/migration`: none (`.gitkeep` only).
-- Active development database (checked 2026-10-23): contains only `flyway_schema_history`, with zero migrations applied.
-- Planned migration order after review: settings and shared → clients and projects → revenue → commission → expenses → suppliers and inventory → payroll.
+- `V1__initial_schema.sql` creates 37 tables, 15 triggers and the seed reference data: company profile, commission policy, wage settings, payment methods, units and expense categories, all taken from the frontend defaults. It contains no business data and no user accounts.
+- Verified on 2026-10-24 against disposable PostgreSQL 17.11 databases. The persistent development database was not touched.
+- Active development database (checked 2026-10-24): contains only `flyway_schema_history`, with zero migrations applied. V1 is applied the next time the backend image is rebuilt and started.
+- Later schema changes go in new versioned migrations (`V2__…`). Never edit V1 once it has been applied to a database that must be kept.
