@@ -169,5 +169,10 @@ For each completed task, record the date, files or migrations changed, verificat
   - The disposable database still held its seed values after the run, which confirms the rollback. It was then dropped. The development database was not touched.
 - Limitations:
   - `created_by` stays null until application users and login exist.
-  - The JSON enum values (`FRIDAY`, `DESIGN`, `COMPANY`) are the API constants, so the frontend maps them to its labels when it is integrated.
+  - The API differs from the frontend `Settings` type in these ways, which the frontend must map when it is integrated:
+    - Enum values are API constants (`FRIDAY`, `DESIGN`, `COMPANY`).
+    - `supplierCreditDays` and the financial-year start (`financialYearStartMonth`, a number) are inside `company`.
+    - Revenue categories are `{code, name}` objects.
+    - Expense categories are a flat list with `group`, `id` and flags, not a map of name lists.
+    - Units and payment methods are `{id, name, active, sortOrder}` objects, so entries can be removed by id.
   - The running backend container has not been rebuilt, so these endpoints are not yet live in the local stack.

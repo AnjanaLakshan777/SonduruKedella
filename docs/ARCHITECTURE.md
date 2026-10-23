@@ -17,7 +17,7 @@ Use the /api/v1 prefix. Keep HTTP controllers thin and place business rules in s
 ## Package Structure
 Base package: `com.sondurukedella`.
 
-Current state: every package below contains only a `package-info.java` placeholder. A package's existence does not mean its module is implemented. See `docs/IMPLEMENTATION_STATUS.md` for actual progress.
+Packages that have no classes yet contain only a `package-info.java` placeholder, which is removed when real classes are added. A package's existence does not mean its module is implemented. See `docs/IMPLEMENTATION_STATUS.md` for actual progress.
 
 ```text
 com.sondurukedella
@@ -39,7 +39,7 @@ com.sondurukedella
 └── security      config user auth
 ```
 
-Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each module, plus `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
+Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
 
 ## Module Responsibilities
 Tables are listed in `docs/DATABASE.md`.
@@ -75,7 +75,7 @@ Tables are listed in `docs/DATABASE.md`.
 Shared packages:
 - `common.exception`: The application's exception types and the global error handler.
 - `common.web`: Shared API response, error and paging contracts.
-- `common.audit`: Audit fields (`created_at`, `created_by`, `updated_at`, `version`) and how the current user is resolved.
+- `common.audit`: Audit fields (`created_at`, `created_by`, `updated_at`) and how the current user is resolved. Each entity whose table has a `version` column declares it for optimistic locking.
 - `common.money`: `BigDecimal` scale and rounding helpers (`HALF_UP`, 2 decimal places for amounts).
 - `common.validation`: Generic validators shared by several modules.
 - `config.persistence`: JPA and auditing configuration.
