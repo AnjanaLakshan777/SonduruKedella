@@ -272,6 +272,8 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
 - **payroll_corrections**: an explicit change to a frozen week.
   - Columns: `payroll_line_id`, `correction_date`, `wage_delta` (≠ 0), `project_id` (nullable), `reason` (not null).
   - It changes only the wages owed. It never changes `advance_deduction` or `advance_recoveries`, so advances cannot be counted twice.
+  - Corrections stay separate records. Frozen payroll lines and their payment history are never rewritten.
+  - Editing a correction is not supported yet. Before it is built, a migration must add an audit trail that records the previous value, the new value, the reason, who made the change and when.
 - **payroll_payments**: `payroll_line_id` plus the common payment columns.
   - Payment is allowed once the week has ended. The UI offers per-worker payments and "Pay remaining".
   - The total paid can never exceed `net_pay + Σ wage_delta`.
@@ -299,6 +301,7 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
 - Every CHECK that combines several conditions treats NULL as a failure.
 
 **Enforced by the service**, inside a transaction that locks the parent row
+- Overtime entries and stock issues are accepted only for construction projects. The owner decided this is a service rule, matching the project lists the UI already offers.
 - Payment totals cannot exceed the remaining balance.
 - Weighted-average costing and running balances are calculated by the service.
 - Schedule totals must match the contract value plus variations.
@@ -496,5 +499,6 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
 ## Current Schema Status
 - `V1__initial_schema.sql` creates 37 tables, 15 triggers and the seed reference data: company profile, commission policy, wage settings, payment methods, units and expense categories, all taken from the frontend defaults. It contains no business data and no user accounts.
 - Verified on 2026-10-24 against disposable PostgreSQL 17.11 databases. The persistent development database was not touched.
-- Active development database (checked 2026-10-24): contains only `flyway_schema_history`, with zero migrations applied. V1 is applied the next time the backend image is rebuilt and started.
-- Later schema changes go in new versioned migrations (`V2__…`). Never edit V1 once it has been applied to a database that must be kept.
+- The owner approved the schema on 2026-10-24.
+- V1 was applied to the development database (`sonduru_kedella`) on 2026-10-24. Flyway reports v1 "initial schema" with `success = true`. Before it was applied, the database was checked and held no application data.
+- **V1 is now immutable.** Every later schema change goes in a new versioned migration (`V2__…`).

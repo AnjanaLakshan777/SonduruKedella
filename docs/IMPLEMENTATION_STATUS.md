@@ -25,8 +25,8 @@ This document must be updated as implementation progresses. Mark work complete o
 - [x] Owner decisions recorded (2026-10-24): material returns, low-stock removal, weighted average costing, freezing paid payroll weeks, fixed revenue categories.
 - [x] Payroll freeze rule finalized (2026-10-24): it applies to each employee and week at that employee's first payment. Corrections go in `payroll_corrections`.
 - [x] Initial Flyway migration `V1__initial_schema.sql` written and verified against PostgreSQL 17.11.
-- [ ] Owner sign-off on the final schema in docs/DATABASE.md.
-- [ ] V1 applied to the development database (rebuild and restart the backend).
+- [x] Owner sign-off on the schema (2026-10-24), with these clarifications: construction-only overtime and stock issues are enforced in the service; payroll weeks run Monday to Sunday; corrections need an audit trail before they can be edited.
+- [x] V1 applied to the development database (2026-10-24). V1 is now immutable.
 
 ## Planned Frontend Changes
 Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend alignment".
@@ -118,3 +118,16 @@ For each completed task, record the date, files or migrations changed, verificat
   - No JPA entities, services or endpoints exist yet.
   - The service-level rules (balance caps, weighted-average posting, schedule totals) are not implemented yet.
   - The constraint checks were run ad hoc and are not yet part of the automated test suite.
+
+### 2026-10-24: V1 applied to the development database
+- Target verified before applying:
+  - Compose service `postgres` (postgres:17-alpine, volume `sonduru-kedella_postgres_data`), database `sonduru_kedella`, profile `dev`. The running container matched the Compose configuration.
+  - The database held only an empty `flyway_schema_history`: no other tables, views, sequences, functions, types or extensions.
+  - `.env` is ignored and untracked, and nothing was staged.
+- Applied with `docker compose up -d --build --no-deps backend`. Only the backend was rebuilt and restarted. The database and its volume were not touched.
+- Verified:
+  - Flyway: "Successfully applied 1 migration … now at version v1". The history row shows v1 with `success = true`.
+  - 38 tables (including the Flyway history table) and 15 triggers.
+  - Seed data in place, with zero business rows.
+  - The backend started, `/actuator/health` returns `UP`, and `/api/v1/*` returns 401.
+- Docs: recorded the owner's clarifications (service-layer construction-only rules, Monday-to-Sunday weeks, the correction audit requirement) and that V1 is immutable.
