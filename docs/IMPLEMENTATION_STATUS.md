@@ -37,13 +37,14 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 - [ ] Settings: revenue categories shown read-only.
 
 ## Backend Foundation
-- [x] Modular package structure established (2026-10-24): package folders only, with no classes yet.
-- [ ] Global exception handling and validation configured.
+- [x] Modular package structure established (2026-10-24).
+- [x] Global exception handling and validation configured (2026-10-24): `common.exception.GlobalExceptionHandler` returns RFC 9457 problem details. Status codes: 400 for validation errors (field list included), 404 not found, 409 conflict or stale version, 422 business rule.
 - [ ] API response and error conventions established.
 - [ ] Spring Security configuration implemented and tested.
 - [ ] Automated test strategy established.
 
 ## Business Modules
+- [x] Settings (2026-10-24): company profile, commission policy, wage settings, expense categories, units, payment methods, and read-only revenue categories.
 - [ ] Clients.
 - [ ] Projects and agreement metadata.
 - [ ] Contract payment schedules and receipts.
@@ -140,3 +141,33 @@ For each completed task, record the date, files or migrations changed, verificat
   - Tests: `controller`, `service` and `repository` for each module, plus `common`, `security`, `integration/database`, `integration/api` and `support`.
 - Verified: the backend built in Docker on JDK 25, and `./mvnw test` passed against a disposable database (1 test, 0 failures). The development database was not touched and is still at v1.
 - No migrations, configuration, dependencies, frontend or environment files were changed.
+
+### 2026-10-24: Settings module
+- Endpoints (all under `/api/v1/settings`):
+  - `GET` overview
+  - `GET/PUT /company`, `/commission-policy`, `/wages`
+  - `GET /revenue-categories` (read-only)
+  - `GET/POST /expense-categories` (filter with `?group=`) and `DELETE /expense-categories/{id}`
+  - `GET/POST /units` and `DELETE /units/{id}`
+  - `GET/POST /payment-methods` and `DELETE /payment-methods/{id}`
+- Rules:
+  - Updates require the current `version`; a stale version returns 409.
+  - Validation follows the V1 constraints and the Settings form: pool between 0 and 100 exclusive; daily wage greater than 0; hours greater than 0 and at most 12; multiplier greater than 0; payday Friday or Saturday; credit days at least 0; company name required.
+  - List names are unique ignoring case. Removing an entry deactivates it, and re-adding the name reactivates it.
+  - Locked expense categories cannot be removed.
+  - At least one unit and one payment method must stay active.
+  - Revenue categories have no write endpoints.
+- Shared code added:
+  - `common.audit.AuditableEntity`
+  - `common.exception` (`GlobalExceptionHandler`, `NotFoundException`, `ConflictException`, `BusinessRuleException`, `InvalidRequestException`)
+- Authorization: Spring Boot's default security is unchanged. Every endpoint requires an authenticated user, and writes require a CSRF token. No roles are defined in the docs, and no security configuration was added.
+- Tests: 37 passed on JDK 25 in Docker against a disposable PostgreSQL 17 database.
+  - Unit tests: 18
+  - Web-layer tests: 10, covering authorization, CSRF, validation and read-only revenue categories
+  - API integration tests: 8, running against the real schema, each in a transaction that is rolled back
+  - The existing `contextLoads` test
+  - The disposable database still held its seed values after the run, which confirms the rollback. It was then dropped. The development database was not touched.
+- Limitations:
+  - `created_by` stays null until application users and login exist.
+  - The JSON enum values (`FRIDAY`, `DESIGN`, `COMPANY`) are the API constants, so the frontend maps them to its labels when it is integrated.
+  - The running backend container has not been rebuilt, so these endpoints are not yet live in the local stack.
