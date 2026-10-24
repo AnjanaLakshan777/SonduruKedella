@@ -52,7 +52,7 @@ Required by the owner's decisions. Unticked items are not yet made. See docs/DAT
 - [ ] Commission management.
 - [ ] Suppliers and payables. Partial (2026-10-24): the supplier directory (create, list or search, get, edit, activate or deactivate) and the optional supplier link on expenses. Supplier invoices, supplier payments and payables are not implemented.
 - [x] Inventory and stock movements (2026-10-24): the materials catalogue; receipts, issues to construction projects, returns against the original issue and adjustments, costed FIFO from persistent cost layers with issue allocations (changed from the weighted average the same day, migration V4); balances, valuation, movement history and project material usage. Receipts from supplier invoices are not built yet.
-- [ ] Employee attendance, overtime, advances, and payroll.
+- [x] Employee attendance, overtime, advances, and payroll (2026-10-24, backend): employees, the attendance register, overtime and approval, advances, weekly payroll worked out live, payments that freeze the week, closing a zero week, corrections, history, period summaries and project labour cost. The frontend still runs on its local store.
 - [ ] Financial reports.
 - [x] Private agreement document storage (2026-10-24): upload or replace, metadata and download of one current PDF per project. Removing an agreement is not implemented.
 
@@ -786,3 +786,82 @@ For each completed task, record the date, files or migrations changed, verificat
   - The seed data, including the `unitCost` values on seed issues; those are now ignored, because issues are costed FIFO.
   - Low stock and the reorder level, which remain a separate planned change.
   - The backend.
+
+### 2026-10-24: Employees and weekly payroll
+- Model: weekly wages, exactly as V1 and DATABASE.md "Payroll" define them. The pay comes from daily attendance (present, half day) and approved overtime, for Monday-to-Sunday weeks paid on the payday from Settings. A week freezes at its first payment, and later changes are corrections. There are no monthly salaries, approval workflow, EPF/ETF, PAYE or statutory rates, because nothing in the requirements defines them.
+- **No migration.** V1 already has all ten tables with their constraints, the freeze triggers and the immutability triggers. Entities map them with `ddl-auto=validate`, and the test context started cleanly on V1 to V4.
+- Endpoints. All require sign-in, and every `POST`/`PUT` needs a CSRF token.
+
+  | Method | Path | Purpose |
+  | --- | --- | --- |
+  | GET/POST | `/api/v1/employees` | list (`q`, `role`, `status`, paging, sort) / create |
+  | GET/PUT | `/api/v1/employees/{id}` | get / update (with `version`) |
+  | PUT | `/api/v1/employees/{id}/status` | `ACTIVE` / `INACTIVE` |
+  | GET | `/api/v1/attendance?from&to&employeeId&projectId` | attendance, at most 93 days |
+  | PUT | `/api/v1/attendance/{date}` | save the day's register |
+  | GET/POST | `/api/v1/overtime` | list (`from`, `to`, `employeeId`, `approved`) / record |
+  | PUT | `/api/v1/overtime/{id}/approval` | approve or un-approve (with `version`) |
+  | GET | `/api/v1/payroll/weeks?from&to` | period summary, one row per week (Mondays, at most 53 weeks) |
+  | GET | `/api/v1/payroll/weeks/{weekStart}` | the week, with every worker's line |
+  | GET | `/api/v1/payroll/weeks/{weekStart}/employees/{employeeId}` | one line, with payments, corrections and recoveries |
+  | PUT | `…/adjustment` | the owner's advance and other deduction overrides |
+  | POST | `…/payments` | pay (the first payment freezes the week); 201 new, 200 resend |
+  | POST | `…/payments/{paymentId}/void` | void a payment |
+  | POST | `…/close` | freeze a week whose advance deduction takes all of its pay |
+  | POST | `…/corrections` | correct a paid week |
+  | GET | `/api/v1/payroll/employees/{employeeId}/history?from&to` | a worker's weeks (default: the last 12) and outstanding advances |
+  | GET | `/api/v1/payroll/projects/{projectId}/labour` | a project's labour cost |
+  | GET/POST | `/api/v1/payroll/advances` | list / record an advance (201 new, 200 resend) |
+  | POST | `/api/v1/payroll/advances/{id}/void` | void an advance that nothing has recovered yet |
+
+  There is no DELETE anywhere: employees are deactivated, and payments and advances are voided.
+- Rules: see DATABASE.md "Payroll", "Implemented".
+- No double counting:
+  - Labour cost = gross wages split by project (`payroll_line_costs` once frozen), plus corrections.
+  - Advances and payments are never a cost.
+  - The Labour expense category is system-generated, so it can't be entered by hand.
+  - Project labour counts each worker-week once, frozen or live.
+- Concurrency:
+  - Every payroll write, and every attendance or overtime write, takes the worker's `employees` row lock.
+  - Payments can't overpay, and a week freezes once (`uq_payroll_lines_employee_week` is the backstop).
+  - Attendance saved while the week is being paid either lands before the freeze or is refused by the trigger.
+- Tests: **505 passed, 0 failures** (`./mvnw -B -o test`, JDK 25, throwaway PostgreSQL 17 container). 43 are new.
+  - `PayrollCalculatorTest` (8): half days and rounding, approved overtime only, the project split adding up to gross, the rounding residue, absent days, default and capped advance deductions, the override, and a negative net.
+  - `EmployeeControllerWebTest` (5) and `PayrollControllerWebTest` (6): 401 for anonymous users, 403 without CSRF on every write, field validation, 201 then 200 on a resend, 400/404/409 mapping, and no delete.
+  - `EmployeeApiIntegrationTest` (7):
+    - create, update and a stale version;
+    - required fields;
+    - search, filters, sort and deactivation;
+    - the day register (save and replace);
+    - the register rules (future, Sunday, joining date, duplicates, project type and status, inactive);
+    - overtime (rate default, hours limits, approval, range cap);
+    - 401 for anonymous users.
+  - `PayrollApiIntegrationTest` (13):
+    - a live week;
+    - the freeze on first payment, then refused attendance, overtime and adjustment changes, the cap, a resend, and a conflict;
+    - payment only from payday;
+    - advances recovered oldest first, and only when paid;
+    - advance idempotency;
+    - adjustments, including a negative net that blocks payment;
+    - closing a zero week, so the advance isn't deducted twice;
+    - a voided payment;
+    - corrections and their limits, and overpaid;
+    - project labour (paid + corrections + open, with advances not counted);
+    - the period summary;
+    - the database guards;
+    - 401 for anonymous users.
+  - `PayrollConcurrencyIntegrationTest` (4, real commits):
+    - six payments of 2,000 against 9,000: exactly four succeed, and the week freezes once;
+    - six copies of one payment: one payment;
+    - attendance racing the first payment: the frozen days equal the recorded days;
+    - a refused payment leaves the week unfrozen.
+  - All existing module tests still pass. Afterwards every table was back to 0 rows and all 17 triggers were enabled.
+- Limitations and decisions for the owner:
+  - **No role model.** The backend still has only Spring's default security: any signed-in user can see and pay payroll. Roles need an owner decision and a real user setup.
+  - Payment is allowed from payday. The original DATABASE.md wording said "once the week has ended" (after Sunday); the UI pays on payday.
+  - The default advance deduction counts only recoveries already frozen, so two unpaid weeks can both show the same advance until one is paid. The UI instead schedules deductions week by week.
+  - `payroll_corrections` has no `request_id`, so a resent correction is recorded twice. It can't be edited or deleted either: the audit trail it needs before that is not built.
+  - No activity-log entries for payroll (the activity log is per project). The rows themselves, with their timestamps and void reasons, are the audit.
+  - No staff number, email or NIC: none are in the schema or the UI.
+  - An overpayment from a negative correction is recovered by hand, as an other deduction in a later week.
+  - The frontend still runs on its local store; it isn't connected to these endpoints.

@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses`, `expense_payments`, `suppliers`, `materials`, `stock_movements`, `stock_cost_layers` and `stock_cost_allocations` (the last two added by V4). The other tables have no entities yet.
+Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses`, `expense_payments`, `suppliers`, `materials`, `stock_movements`, `stock_cost_layers` and `stock_cost_allocations` (the last two added by V4), and the payroll tables (`employees`, `attendance`, `overtime_entries`, `salary_advances`, `payroll_adjustments`, `payroll_lines`, `payroll_line_costs`, `advance_recoveries`, `payroll_corrections`, `payroll_payments`). The other tables have no entities yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -366,7 +366,7 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
   - Corrections stay separate records. Frozen payroll lines and their payment history are never rewritten.
   - Editing a correction is not supported yet. Before it is built, a migration must add an audit trail that records the previous value, the new value, the reason, who made the change and when.
 - **payroll_payments**: `payroll_line_id` plus the common payment columns.
-  - Payment is allowed once the week has ended. The UI offers per-worker payments and "Pay remaining".
+  - Payment is allowed from the week's payday (Settings > Wages: Saturday by default), when the UI pays wages; the original wording said "once the week has ended", which would forbid paying on payday itself. The UI offers per-worker payments and "Pay remaining".
   - The total paid can never exceed `net_pay + Σ wage_delta`.
 
 **Freezing a paid week** (confirmed by the owner)
@@ -379,6 +379,36 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
 - Database triggers enforce the freeze, and the service reports the error to the user.
 - Any later correction is entered as a `payroll_corrections` row, with a positive or negative amount, a reason and an optional project.
 - If a negative correction leaves the worker overpaid, the overpayment is recovered as an `other_deduction` in a later week that has not been frozen. That week's `other_note` refers to the correction.
+
+**Implemented (2026-10-24, `employees` and `payroll`; no migration was needed: V1 already has every table, constraint and trigger)**
+- Employees:
+  - Name, role, daily wage (> 0), overtime rate (> 0) and joining date are required, as in the dialog; phone and address are optional and trimmed.
+  - There is no staff number and no duplicate check, because two workers may share a name.
+  - Workers are never deleted; they are set `INACTIVE`. Inactive workers take no new attendance, overtime or advances, but their unpaid weeks can still be paid.
+- Attendance (`PUT /api/v1/attendance/{date}`): the whole register for a day.
+  - No Sundays, no future dates, only active workers who had joined by that date.
+  - A project must be construction and In Progress or On Hold (the page's list).
+  - Only rows that change are written, so a paid week can be re-saved unchanged. A worker left off the register loses that day's mark.
+- Overtime: 0 < hours ≤ 8. The rate defaults to the worker's overtime rate. A project must be construction and not completed or cancelled. Entries start unapproved, and only approved hours are paid.
+- The week: Monday to Sunday. Its `week_end` (stored on the line) is the payday from `wage_settings` (Saturday by default, Friday if set). It can be paid from payday onwards.
+- Calculation (`payroll.service.PayrollCalculator`, the formulas under "Weekly payroll"):
+  - `base_pay = round(payable_days × daily_wage, 2)`, and each approved overtime entry is `round(hours × rate, 2)`.
+  - The project split prices each project's half-days on their own, and the rounding residue goes to the largest share, so `payroll_line_costs` always add up to gross. Overtime goes to its own project. Days without a project are the company share (`project_id` NULL).
+  - The default advance deduction is everything outstanding on advances given up to payday, capped at gross. The owner's override is capped at outstanding and at gross.
+  - "Outstanding" counts only recoveries already recorded by frozen weeks. Two unpaid weeks may both show the same deduction until one is paid; the freeze then records the real recovery.
+  - A negative net (other deduction too large) is shown and blocks payment. It is never silently capped.
+- Freeze and payment (`POST …/weeks/{weekStart}/employees/{employeeId}/payments`):
+  - The worker's `employees` row is locked first. The first payment writes `payroll_lines`, `payroll_line_costs` and `advance_recoveries` (oldest advance first) in the same transaction.
+  - Every payment is capped at `net_pay + Σ wage_delta − paid`. A refused payment rolls the freeze back too.
+  - `request_id` makes resends safe: the same id returns the first payment (200), and the same id with different details is a 409.
+  - Voiding a payment keeps the week frozen.
+- A week whose advance deduction takes all its pay (net 0, gross > 0) can't be paid, so it is closed (`…/close`) to freeze it and keep the recovery. Without that, the advance would be deducted again.
+- Corrections: only on frozen weeks.
+  - The amount is ≠ 0. A project, if given, must be construction.
+  - A week can't end up owing less than zero, and a negative correction can't take a project's (or the company's) labour for that week below zero.
+  - Overpayment shows as `overpaid`. It is recovered manually as an other deduction in a later open week, as above.
+- Advances: idempotent on `request_id`, active workers only. An advance can be voided only while nothing has recovered it.
+- Project labour (`GET /api/v1/payroll/projects/{id}/labour`): paid weeks' `payroll_line_costs` for the project, plus corrections booked to it, plus open weeks priced live from attendance and approved overtime. Each worker-week is counted once, frozen or live.
 
 ## Database enforcement and service rules
 
