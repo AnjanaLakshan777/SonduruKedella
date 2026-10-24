@@ -53,6 +53,19 @@ public class Installment extends AuditableEntity {
     @Version
     private Long version;
 
+    public boolean isBilled() {
+        return billedOn != null;
+    }
+
+    // Billing is the only way an installment becomes revenue. It never changes the amount, and
+    // there is no "unbill" - once it's on the books, corrections go through deductions or write-offs.
+    public void bill(LocalDate on) {
+        if (billedOn != null) {
+            throw new IllegalStateException("Installment " + id + " is already billed");
+        }
+        this.billedOn = on;
+    }
+
     public static Installment scheduled(long projectId, String description, LocalDate dueDate, BigDecimal amount) {
         Installment installment = new Installment();
         installment.projectId = projectId;

@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log` and `project_agreements`. The other tables have no entities yet.
+Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments` and `receivable_write_offs`. The other tables have no entities yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -137,7 +137,12 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
     - "Additional work billed" adds a `VARIATION` installment that is billed immediately.
     - The contract value does not change.
 - **client_payments**: `installment_id` plus the common payment columns. A payment is allowed only when `billed_on` is set and a balance remains.
+  - Implemented (2026-10-24). The installment row is locked (`SELECT … FOR UPDATE`) before the balance is read, so concurrent receipts cannot overpay.
+  - `request_id` is the client-sent idempotency key. Resending the same request returns the original receipt; reusing the id for a different payment is a 409.
+  - Corrections only void (`voided_at`, `void_reason`), which is all the V1 trigger allows. Voided receipts are kept and listed, but never counted.
 - **receivable_write_offs**: `installment_id`, `write_off_date`, `amount > 0`, `reason` (not null). Allowed only on billed installments that still have a balance. A write-off is never a payment.
+  - Implemented (2026-10-24): create only, under the same installment lock as receipts. The reason must be at least 10 characters after trimming (the UI rule).
+  - **Limitation:** V1 gives this table no void or reversal columns, no `version` and no guard trigger, so a write-off cannot be reversed without hard-deleting it. The code never updates or deletes write-offs. Reversal needs a new migration (for example `voided_at`, `void_reason`, `version` and a guard trigger like `sk_guard_payment_change`) once the owner wants it.
 - **delay_deduction_terms**: one row per construction project. It holds both the agreed terms and the deduction that was applied.
   - Columns for the terms:
     - `project_id` (unique), `project_type` (check `CONSTRUCTION`, composite FK)
@@ -151,6 +156,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - Rules:
     - The applied amount cannot exceed the target installment's amount.
     - Clearing the applied columns reverses the deduction, as the UI's reverse action does. The activity log records both events.
+    - Implemented (2026-10-24): applying and reversing lock the terms row; applying locks the target installment first, in the same order receipts use. The calculation and limits are under [Calculations](#calculations).
 - **other_income**: `income_date`, `description`, `payer`, `amount > 0`, `due_date`, `reference`, `notes`. It is not linked to a project.
 - **other_income_receipts**: `other_income_id` plus the common payment columns.
 
@@ -317,31 +323,55 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
 
 These follow `lib/finance.ts` unless noted.
 
-**Installments and receivables**
-- Net amount = `amount − applied deduction` (only for the installment the deduction is applied to).
-- Remaining = `net − Σ payments − Σ write-offs`.
-- Status:
-  - `UPCOMING`: not billed.
-  - `PAID`: remaining is 0 and nothing was written off.
-  - `WRITTEN_OFF`: remaining is 0 after a write-off.
-  - `OVERDUE`: billed, remaining > 0 and `due_date < today`.
-  - `PARTIALLY_PAID`: billed, remaining > 0, not yet due, with some payment.
-  - `DUE`: billed, remaining > 0, not yet due, with no payment.
-- Receivables count billed installments only. Outstanding, the overdue part of it, and amounts written off are reported as three separate figures.
+**Installments and receivables** (implemented in `revenue.service.ReceivableCalculator`, 2026-10-24)
+- Deduction = the applied delay deduction, if `delay_deduction_terms.applied_installment_id` is this installment; otherwise 0.
+- Net amount = `amount − deduction`.
+- Received = `Σ client_payments.amount` where `voided_at IS NULL`. Written off = `Σ receivable_write_offs.amount`.
+- **Outstanding = `max(0, net − received − written off)`** for billed installments, and 0 for unbilled ones. Only billed installments are receivables.
+- Money is `NUMERIC(15,2)` and `BigDecimal` rounded `HALF_UP` to 2 decimals. Request amounts with more than 2 decimals are rejected, not rounded.
+- Status, worked out on every read and never stored. "Today" is the Asia/Colombo date from the injected `Clock`.
+  - `UNBILLED`: `billed_on` is null.
+  - `PAID`: billed and outstanding is 0, whether settled by receipts, write-offs or both.
+  - `OVERDUE`: billed, outstanding > 0 and `due_date < today`. This takes precedence over partly paid, as in the UI.
+  - `PARTIALLY_PAID`: billed, outstanding > 0, not overdue, and something is settled (received + written off > 0).
+  - `BILLED`: billed, outstanding > 0, not overdue, nothing settled.
+  - `daysOverdue` = `today − due_date` for `OVERDUE`, otherwise 0.
+- Mapping to the frontend's `ReceivableStatus` labels:
+
+  | API | Frontend |
+  | --- | --- |
+  | `UNBILLED` | Upcoming |
+  | `BILLED` | Due |
+  | `PARTIALLY_PAID` | Partially Paid |
+  | `OVERDUE` | Overdue |
+  | `PAID` | Paid, or Written Off when `writtenOff > 0` |
+
+  The UI counts only payments toward "Partially Paid"; the API also counts write-offs.
 
 **Revenue and received are separate figures**
-- Revenue = `Σ net of billed installments` (dated `billed_on`) + other income (dated `income_date`).
-- Received = `Σ client payments + Σ other income receipts`.
-- "Scheduled, not billed" = the net of unbilled installments. It is shown as expected revenue and is not counted as revenue.
+- Revenue recognised = `Σ net of billed installments` (dated `billed_on`). Billing is an explicit action and the only thing that recognises revenue. Other income will be added when it is implemented.
+- Received = `Σ` non-voided client payments. A payment never creates revenue, and a write-off is never money received.
+- "Scheduled, not billed" (`unbilled`) = the amount of unbilled installments. It is expected revenue, not revenue.
+- Company-wide summary (`/api/v1/receivables/summary`): outstanding and overdue over billed installments. "Partially paid" is the outstanding on billed installments with some settlement, overdue ones included, as the Receivables KPI counts it.
 
-**Delay deduction**
+**Delay deduction** (implemented in `revenue.service.DelayDeductionCalculator`, matching `calcDelay()` in `lib/finance.ts`)
 - `days_late = max(0, completion − contract_deadline)`
 - `chargeable = max(0, days_late − grace_days)`
 - The amount by rule:
   - `PER_DAY`: `chargeable × rate_per_day`
-  - `PERCENT_PER_WEEK`: `floor(chargeable / 7) × percent_per_week% × contract_value`
-  - `FIXED_AMOUNT`: `fixed_amount` if `chargeable > 0`
-- The result is capped at `max_deduction`. The owner may apply a different final amount.
+  - `PERCENT_PER_WEEK`: `floor(chargeable / 7) × percent_per_week ÷ 100 × contract_value`, rounded `HALF_UP` to 2 decimals
+  - `FIXED_AMOUNT`: `fixed_amount` if `chargeable > 0`, else 0
+- The result is capped at `max_deduction` when one is set. That gives the final amount.
+- Completion date: the one given with the request, or else `projects.actual_completion`. It is never guessed: with neither, the request is rejected. It is stored in `delay_deduction_terms.actual_completion`, and the project's own dates are never changed.
+- Applying requires:
+  - enabled terms;
+  - no deduction already applied (one per project, since there is one terms row per project);
+  - the current `version`;
+  - a billed target installment of the same project;
+  - `chargeable > 0`.
+- Amount: the final amount by default. The owner may agree a **smaller** figure, but never a larger one: the stored rule and cap are the ceiling. It also cannot exceed what is still payable on the installment before deduction (`amount − received − written off`).
+- Reversing clears all four applied columns, including `actual_completion`, as `ck_delay_deduction_terms_applied` requires. The terms stay.
+- Open question: the design said the owner "may apply a different final amount" without saying whether a higher one is allowed. The implementation allows only lower; revisit if the owner wants otherwise.
 
 **Stock costing (weighted average)**
 

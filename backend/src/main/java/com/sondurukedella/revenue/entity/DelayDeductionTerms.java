@@ -90,6 +90,28 @@ public class DelayDeductionTerms extends AuditableEntity {
     @Setter(AccessLevel.NONE)
     private Long version;
 
+    public boolean isApplied() {
+        return appliedAmount != null;
+    }
+
+    // ck_delay_deduction_terms_applied wants these four set together or cleared together, so they
+    // only change through these two methods.
+    public void applyDeduction(LocalDate completion, BigDecimal amount, LocalDate on, long installmentId) {
+        this.actualCompletion = completion;
+        this.appliedAmount = amount;
+        this.appliedOn = on;
+        this.appliedInstallmentId = installmentId;
+    }
+
+    // Clears the completion date too: it is the date the deduction was worked out from, not the
+    // project's completion date (that lives on projects and is never touched here).
+    public void reverseDeduction() {
+        this.actualCompletion = null;
+        this.appliedAmount = null;
+        this.appliedOn = null;
+        this.appliedInstallmentId = null;
+    }
+
     public DelayDeductionTerms(long projectId, String projectType) {
         this.projectId = projectId;
         this.projectType = projectType;

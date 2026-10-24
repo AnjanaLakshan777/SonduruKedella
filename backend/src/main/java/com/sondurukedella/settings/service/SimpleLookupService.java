@@ -8,9 +8,12 @@ import com.sondurukedella.settings.entity.SimpleLookup;
 import com.sondurukedella.settings.mapper.SettingsMapper;
 import com.sondurukedella.settings.repository.SimpleLookupRepository;
 import com.sondurukedella.settings.validation.SettingsText;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -33,6 +36,22 @@ public abstract class SimpleLookupService<E extends SimpleLookup> {
         this.factory = factory;
         this.nameMaxLength = nameMaxLength;
         this.label = label;
+    }
+
+    // Contract for other modules (Revenue). Includes removed entries: an old receipt still shows
+    // the method it was paid by, even after that method is taken off the list.
+    @Transactional(readOnly = true)
+    public Map<Long, String> findNames(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return repository.findAllById(ids).stream().collect(Collectors.toMap(SimpleLookup::getId, SimpleLookup::getName));
+    }
+
+    // New records may only use an entry that is still on the list.
+    @Transactional(readOnly = true)
+    public boolean isActive(long id) {
+        return repository.findById(id).map(SimpleLookup::isActive).orElse(false);
     }
 
     @Transactional(readOnly = true)

@@ -47,8 +47,8 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 - [x] Settings (2026-10-24): company profile, commission policy, wage settings, expense categories, units, payment methods, and read-only revenue categories.
 - [x] Clients (2026-10-24): create, list (search, type filter, paging), get and update. Financial summaries per client are not included yet; they depend on projects and revenue.
 - [x] Projects (2026-10-24): create (with an inline client, the payment schedule and delay terms, all in one transaction), list, get, status changes, and reading the saved schedule and delay terms. The agreement PDF is handled by the Agreements module.
-- [ ] Contract payment schedules and receipts. Partial (2026-10-24): the initial schedule and delay terms are created with the project and can be read back. Editing and billing the schedule, variations, receipts, write-offs and applying deductions are not implemented.
-- [ ] Revenue and expenses.
+- [x] Contract payment schedules and receipts (2026-10-24): schedule created with the project and readable; billing; client receipts (idempotent, voidable); write-offs (create only); delay deductions (apply and reverse); receivables per project and a company-wide summary. Not yet: editing a schedule, variations, write-off reversal (needs a migration).
+- [ ] Revenue and expenses. Partial (2026-10-24): project revenue is recognised at billing and reported per project. Other income and expenses are not implemented.
 - [ ] Commission management.
 - [ ] Suppliers and payables.
 - [ ] Inventory and stock movements.
@@ -371,3 +371,62 @@ For each completed task, record the date, files or migrations changed, verificat
   - A crash between storing the file and committing can leave an orphaned file; it is logged, and there is no cleanup job.
   - The frontend dropzone accepts a file that ends in `.pdf` even when the browser reports another content type; the API rejects that.
   - `id` is a number, and `uploadedAt` is a timestamp rather than a date.
+
+### 2026-10-24: Revenue: billing, client receipts, write-offs and delay deductions
+- No migration: V1 already had every column needed (`billed_on`, `client_payments` with `request_id` and the void columns, `receivable_write_offs`, and the applied columns of `delay_deduction_terms`).
+- Endpoints. All need a signed-in user, and every `POST` needs a CSRF token. Paths are under `/api/v1/projects/{projectId}` unless shown in full.
+
+  | Method | Path | Request | Response |
+  | --- | --- | --- | --- |
+  | GET | `/receivables` | — | `{projectId, installments[], totals{billed, deductions, revenueRecognised, received, writtenOff, outstanding, overdue, unbilled}}` |
+  | GET | `/installments/{installmentId}` | — | `{installment, receipts[], writeOffs[]}` |
+  | POST | `/installments/{installmentId}/bill` | `{billedOn?, version}` | installment receivable |
+  | POST | `/installments/{installmentId}/receipts` | `{requestId, paymentDate, amount, paymentMethodId, reference?, notes?}` | 201 receipt, or 200 for a resent `requestId` |
+  | GET | `/receipts` | — | all of the project's receipts, voided ones flagged |
+  | GET | `/receipts/{receiptId}` | — | receipt |
+  | POST | `/receipts/{receiptId}/void` | `{reason, version}` | receipt |
+  | POST | `/installments/{installmentId}/write-offs` | `{date, amount, reason}` | 201 write-off |
+  | GET | `/delay-terms/calculation?completionDate=` | — | `{completionDate, contractDeadline, daysLate, graceDays, chargeableDays, calculatedAmount, maxDeduction, capped, finalAmount}` |
+  | POST | `/delay-terms/deduction` | `{installmentId, completionDate?, amount?, notes?, version}` | delay terms |
+  | POST | `/delay-terms/deduction/reverse` | `{reason?, version}` | delay terms |
+  | GET | `/api/v1/receivables/summary` | — | `{outstanding, overdue, partiallyPaid, writtenOff, openInstallments, overdueInstallments, partiallyPaidInstallments}` |
+
+  - An installment receivable is `{id, projectId, description, dueDate, amount, kind, billed, billedOn, deduction, net, received, writtenOff, outstanding, status, daysOverdue, version}`.
+  - A receipt is `{id, installmentId, projectId, paymentDate, amount, paymentMethodId, method, reference, notes, requestId, voided, voidedAt, voidReason, createdAt, version}`.
+  - Errors:
+    - 404: unknown project, installment, receipt or delay terms, and an installment or receipt of another project.
+    - 400: invalid input or a business rule. That covers a receipt or write-off on an unbilled installment, more than the outstanding, an inactive payment method, a reason that is too short, a deduction that isn't late after grace, an amount above the agreed terms or the payable, a deduction on an unbilled installment, and no completion date.
+    - 409: a stale version, billing twice, applying a deduction twice, reversing when none is applied, voiding twice, or a `requestId` reused for a different payment.
+  - No PUT or DELETE on financial records.
+- Calculations: as documented in DATABASE.md, "Calculations". Outstanding = `max(0, amount − deduction − received − written off)` for billed installments. Statuses are `UNBILLED`, `BILLED`, `PARTIALLY_PAID`, `OVERDUE` and `PAID`, using the Colombo date.
+- Integrity:
+  - Every money change locks the installment row before reading its balance, then writes the record and its activity entry in one transaction.
+  - Billing logs `NOTE`, receipts and voids log `PAYMENT`, write-offs `WRITEOFF`, and deductions `DEDUCTION`.
+  - Billing never changes the contract value. Deductions never change the contract value or the project's dates.
+- Tests: 350 passed on JDK 25 against a throwaway PostgreSQL 17 container, 43 of them new.
+  - Calculator unit tests: 14. Every deduction rule, grace days, full weeks only, `HALF_UP` rounding, the cap, the docs' worked example, all five statuses, write-offs as settlement, and the zero floor.
+  - Web-layer tests: 8. 401 for anonymous users, 403 without CSRF on every write, field validation, 201 then 200 on a resent receipt, 404/400/409 mapping, and no PUT or DELETE.
+  - API integration tests: 16, each rolled back, with a fixed clock at 19:00 UTC, which is already the next day in Colombo.
+    - billing once, a stale version, and the Colombo billing date and overdue status;
+    - partial and full receipts, overpayment, a resent receipt and a reused `requestId`, an inactive payment method;
+    - voiding a receipt;
+    - write-offs and their rules;
+    - the deduction calculation for every rule, the project's completion date as the default, applying within the terms and the payable, reversing;
+    - design projects with no terms;
+    - totals and the summary;
+    - reads that change nothing;
+    - 404 cases, including cross-project ids.
+  - Concurrency tests that commit for real: 5. Six simultaneous billings succeed once. Eight receipts of 20,000 against 100,000 give exactly five accepted. Six copies of one submission record one receipt. A receipt and a write-off racing for the last 40,000 cannot both succeed. A failed activity entry rolls the receipt or write-off back.
+  - Afterwards all affected tables were back to 0 rows and the guard trigger was re-enabled. The container was removed, and the development database was not touched.
+- Limitations and frontend differences:
+  - Write-offs cannot be reversed; V1 has no columns for it (see DATABASE.md).
+  - Variations and editing a schedule are not implemented.
+  - The cross-project Receivables list (one row per installment with client and project names) is not an endpoint yet; only the summary KPIs and per-project receivables are.
+  - Status names differ from the UI labels (mapping in DATABASE.md).
+  - The UI must send a `requestId` (UUID) per receipt submission and the `version` it last read.
+  - `rule` values are `PER_DAY` and so on, not `per_day`.
+  - The UI lets the owner raise the deduction above the calculated amount; the API does not.
+  - The UI's default target installment may be unbilled; the API requires a billed one.
+  - The UI keeps `actualCompletion` on the terms after a reversal; the API clears it, as the V1 check requires.
+  - No date rules are enforced on payment, write-off or billing dates; none are documented.
+  - `created_by` stays null until application users exist.
