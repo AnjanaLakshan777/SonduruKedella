@@ -19,6 +19,8 @@ public record ExpenseResponse(
         String category,
         String description,
         String payee,
+        Long supplierId,
+        String supplier,
         BigDecimal amount,
         LocalDate dueDate,
         String invoiceNo,

@@ -116,7 +116,7 @@ class ExpenseConcurrencyIntegrationTest {
 
     private ExpenseCreateRequest expense(String amount, ExpensePaymentRequest initial) {
         return new ExpenseCreateRequest(LocalDate.of(2026, 10, 20), ExpenseScope.COMPANY, null, marketing, "ExpTest banner",
-                PAYEE, new BigDecimal(amount), null, null, null, null, null, null, null, null, null, null, initial);
+                PAYEE, null, new BigDecimal(amount), null, null, null, null, null, null, null, null, null, null, initial);
     }
 
     private ExpensePaymentRequest payment(UUID requestId, String amount) {

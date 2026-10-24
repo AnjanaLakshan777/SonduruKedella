@@ -1,4 +1,4 @@
-package com.sondurukedella.clients.validation;
+package com.sondurukedella.common.validation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

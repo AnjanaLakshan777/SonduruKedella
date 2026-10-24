@@ -1,4 +1,4 @@
-package com.sondurukedella.clients.validation;
+package com.sondurukedella.common.validation;
 
 import jakarta.validation.Constraint;
 import jakarta.validation.Payload;

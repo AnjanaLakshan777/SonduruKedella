@@ -21,6 +21,7 @@ import lombok.Setter;
 // A manual expense: something bought or paid for that no other module records. Labour, commission,
 // supplier invoices and stock issues reach project costs through their own modules, never as rows here.
 // projectId, categoryId, unitId and supplierId are plain ids - those tables belong to other modules.
+// supplierId is optional: plenty of expenses (a banner, a site electricity bill) have no supplier record.
 // projectType, expenseGroup and categorySystemGenerated are copies the service sets so V1's composite
 // keys and checks can refuse a category from the wrong group or a system-generated one.
 @Getter
@@ -68,8 +69,7 @@ public class Expense extends AuditableEntity {
     @Column(nullable = false, length = PAYEE_MAX_LENGTH)
     private String payee;
 
-    // not set yet: there is no suppliers module to check the id against
-    @Setter(AccessLevel.NONE)
+    // optional; checked through SupplierService (it must exist, and be active when newly linked)
     @Column(name = "supplier_id")
     private Long supplierId;
 

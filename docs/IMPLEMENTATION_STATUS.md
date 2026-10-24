@@ -50,7 +50,7 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 - [x] Contract payment schedules and receipts (2026-10-24): schedule created with the project and readable; billing; client receipts (idempotent, voidable); write-offs (create only); delay deductions (apply and reverse); receivables per project and a company-wide summary. Not yet: editing a schedule, variations, write-off reversal (needs a migration).
 - [ ] Revenue and expenses. Partial (2026-10-24): project revenue is recognised at billing, and manual project and company expenses with their payments are implemented. Other income is not implemented.
 - [ ] Commission management.
-- [ ] Suppliers and payables.
+- [ ] Suppliers and payables. Partial (2026-10-24): the supplier directory (create, list or search, get, edit, activate or deactivate) and the optional supplier link on expenses. Supplier invoices, supplier payments and payables are not implemented.
 - [ ] Inventory and stock movements.
 - [ ] Employee attendance, overtime, advances, and payroll.
 - [ ] Financial reports.
@@ -501,3 +501,60 @@ For each completed task, record the date, files or migrations changed, verificat
   - No rules are enforced on expense, due or payment dates; none are documented.
   - Payments are recorded through `/expenses` only; there are no supplier payables yet.
   - `created_by` stays null until application users exist.
+
+### 2026-10-24: Suppliers (directory and the expense link)
+- Migration `V2__suppliers_active.sql` adds `suppliers.active BOOLEAN NOT NULL DEFAULT TRUE`.
+  - Why: V1 had no way to retire a supplier without deleting it, and expenses reference suppliers.
+  - It is additive only.
+  - Verified on a fresh PostgreSQL 17 database, and on a V1 database already holding a supplier with a linked expense: both rows were unchanged, and the supplier was active.
+  - Not applied to the development database yet; Flyway runs it on the next backend start.
+  - The expense link needed no migration: `expenses.supplier_id` and `ix_expenses_supplier` were already in V1.
+- Endpoints (all under `/api/v1/suppliers`; signed-in users only, and every `POST`/`PUT` needs a CSRF token):
+
+  | Method | Path | Request | Response |
+  | --- | --- | --- | --- |
+  | GET | `/` | `q` (name, contact person, phone, supplies), `active`, `page`, `size` (default 20, max 100), `sort` (name, creditDays, createdAt, id; default name) | `PageResponse` of suppliers |
+  | GET | `/{id}` | — | supplier |
+  | POST | `/` | `{name, phone, contactPerson?, email?, address?, supplies?, creditDays?}` | 201 supplier, with a `Location` header |
+  | PUT | `/{id}` | the same fields, with `creditDays` required, plus `version` | supplier |
+  | PUT | `/{id}/status` | `{active, version}` | supplier |
+
+  - A supplier is `{id, name, contactPerson, phone, email, address, supplies, creditDays, active, createdAt, updatedAt, version}`.
+  - Errors: 400 for validation or a bad sort or page size, 404 for an unknown supplier, 409 for a stale version.
+  - No DELETE (405).
+  - A supplier's expenses come from `GET /api/v1/expenses?supplierId={id}`, and `/api/v1/expenses/summary` takes the same filter.
+- Rules:
+  - Name (at most 200) and phone (at most 30) are required, as in the supplier dialog.
+  - Optional: contact person (150), email (150, format checked only when given), address (300), supplies (300), and `creditDays` from 0 to 3650.
+  - `creditDays` defaults to Settings > Company `supplierCreditDays`.
+  - Text is trimmed, and blanks are stored as null.
+  - No uniqueness on name or phone.
+- Expense integration:
+  - `supplierId` is optional on expense create and edit. Responses include `supplierId` and `supplier` (the name).
+  - A newly linked supplier must exist (otherwise 400) and be active (otherwise 400). An expense that already names a supplier stays readable and editable after the supplier is deactivated.
+  - `supplierId: null` clears the link.
+  - `payee` is still required; the expense dialog sends the supplier's name as the payee.
+  - Payments, idempotency, locking and the overpayment check are unchanged.
+- Shared code: `OptionalEmail` moved from `clients.validation` to `common.validation`, now that Clients and Suppliers both use it. Its behaviour is unchanged, and the Clients tests still pass.
+- Tests: 414 passed on JDK 25 against a throwaway PostgreSQL 17 container, 22 of them new.
+  - Web-layer tests: 9. 401 for anonymous users, 403 without CSRF, required fields, lengths, email and credit days, 201 with a `Location` header, the version needed on update and status, 404/409, filter binding, no DELETE.
+  - API integration tests: 13, each rolled back.
+    - creating with trimming and the company credit default;
+    - invalid input saving nothing;
+    - 404 cases;
+    - optimistic-lock updates;
+    - search by name, contact and phone, the active filter, paging and sorting;
+    - deactivating and reactivating;
+    - expenses linked to a supplier and filtered by it;
+    - unknown and inactive suppliers refused for new links;
+    - an existing linked expense kept, readable and editable, with its payments intact after deactivation;
+    - edits that can't link an unknown or newly inactive supplier;
+    - the V1 foreign key refusing a missing supplier;
+    - the V2 default.
+  - All existing Expense tests (including concurrency) and Client tests still pass.
+  - Afterwards all tables were back to 0 rows and both payment guard triggers were enabled. The container was removed, and the development database was not touched.
+- Limitations:
+  - Supplier invoices, supplier payments, payables and credit-term due dates are not implemented. Those are the supplier invoices part of the Suppliers module.
+  - The frontend has no active/inactive UI yet; it would call `PUT /{id}/status` and pass `active=true` for pick lists.
+  - Ids are numbers, and `contactPerson`, `address` and `supplies` can be null.
+  - Supplier changes write no activity entry, matching Clients; there is no project to attach one to.

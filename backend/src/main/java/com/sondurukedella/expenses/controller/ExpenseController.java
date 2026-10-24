@@ -46,19 +46,20 @@ public class ExpenseController {
     private final ExpenseService service;
     private final ExpensePaymentService paymentService;
 
-    // e.g. ?scope=PROJECT&projectId=4&status=OVERDUE&from=2026-10-01&to=2026-10-31
+    // e.g. ?scope=PROJECT&projectId=4&status=OVERDUE&from=2026-10-01&to=2026-10-31, or ?supplierId=7 for one supplier
     @GetMapping
     public PageResponse<ExpenseResponse> list(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) ExpenseScope scope,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long supplierId,
             @RequestParam(required = false) ExpenseGroup group,
             @RequestParam(required = false) ExpensePaymentStatus status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @PageableDefault(size = 20) Pageable pageable) {
-        return service.search(new ExpenseFilter(q, scope, projectId, categoryId, group, status, from, to), pageable);
+        return service.search(new ExpenseFilter(q, scope, projectId, categoryId, supplierId, group, status, from, to), pageable);
     }
 
     // the KPI strip, for the same filters as the list
@@ -68,11 +69,12 @@ public class ExpenseController {
             @RequestParam(required = false) ExpenseScope scope,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long supplierId,
             @RequestParam(required = false) ExpenseGroup group,
             @RequestParam(required = false) ExpensePaymentStatus status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return service.summary(new ExpenseFilter(q, scope, projectId, categoryId, group, status, from, to));
+        return service.summary(new ExpenseFilter(q, scope, projectId, categoryId, supplierId, group, status, from, to));
     }
 
     @GetMapping("/{id}")

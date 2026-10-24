@@ -1,7 +1,7 @@
 package com.sondurukedella.clients.dto;
 
 import com.sondurukedella.clients.entity.ClientKind;
-import com.sondurukedella.clients.validation.OptionalEmail;
+import com.sondurukedella.common.validation.OptionalEmail;
 import com.sondurukedella.clients.validation.PhoneNumber;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

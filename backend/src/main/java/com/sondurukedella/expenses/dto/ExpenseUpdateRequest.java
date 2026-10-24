@@ -18,6 +18,7 @@ public record ExpenseUpdateRequest(
         @NotNull(message = "Choose a category.") Long categoryId,
         @NotBlank(message = "Describe what was bought or paid for.") @Size(max = 300) String description,
         @NotBlank(message = "Who was paid (or is owed)?") @Size(max = 200) String payee,
+        Long supplierId,
         @DecimalMin(value = "0", inclusive = false) @Digits(integer = 13, fraction = 2) BigDecimal amount,
         LocalDate dueDate,
         @Size(max = 100) String invoiceNo,

@@ -10,7 +10,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class ExpenseMapper {
 
-    public ExpenseResponse toResponse(Expense expense, String categoryName, String unitName, Balance balance) {
+    public ExpenseResponse toResponse(Expense expense, String categoryName, String supplierName, String unitName,
+            Balance balance) {
         return new ExpenseResponse(
                 expense.getId(),
                 expense.getExpenseDate(),
@@ -21,6 +22,8 @@ public class ExpenseMapper {
                 categoryName,
                 expense.getDescription(),
                 expense.getPayee(),
+                expense.getSupplierId(),
+                supplierName,
                 expense.getAmount(),
                 expense.getDueDate(),
                 expense.getInvoiceNo(),

@@ -11,6 +11,7 @@ public record ExpenseFilter(
         ExpenseScope scope,
         Long projectId,
         Long categoryId,
+        Long supplierId,
         ExpenseGroup group,
         ExpensePaymentStatus status,
         LocalDate from,

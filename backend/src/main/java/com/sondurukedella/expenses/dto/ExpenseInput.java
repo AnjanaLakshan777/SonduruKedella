@@ -19,6 +19,8 @@ public interface ExpenseInput {
 
     String payee();
 
+    Long supplierId();
+
     BigDecimal amount();
 
     LocalDate dueDate();

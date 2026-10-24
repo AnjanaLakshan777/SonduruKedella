@@ -60,5 +60,7 @@ Do not commit .env or print its values. Do not run destructive database operatio
 
 ## API and Database Changes
 Keep API contracts compatible with the existing frontend or explicitly document required frontend changes. Add new Flyway migrations for schema changes. Never claim a migration or endpoint works unless it has been tested.
+
+Pending migrations are applied by Flyway when the backend starts. `V2__suppliers_active.sql` has not been applied to the development database yet; it runs on the next backend start or rebuild. It is additive (one column with a default), so existing data is kept. Before applying any migration to the development database, test it on a throwaway PostgreSQL 17 database, both fresh and with representative data.
 ## Backend Tests
 Run the tests with JDK 25 against a throwaway PostgreSQL 17 container, never the development database. Point `DB_HOST`, `DB_PORT`, `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD` at the container; environment variables override `.env`. Some integration tests commit for real (`integration/database/*`) and delete only the rows they created. `RevenueConcurrencyIntegrationTest` and `ExpenseConcurrencyIntegrationTest` briefly disable `trg_client_payments_guard` and `trg_expense_payments_guard` during their own cleanup, because payments cannot otherwise be deleted. That is another reason these tests must never run against a database whose data matters.

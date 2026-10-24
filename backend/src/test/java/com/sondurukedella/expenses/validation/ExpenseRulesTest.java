@@ -68,17 +68,17 @@ class ExpenseRulesTest {
     }
 
     private static ExpenseCreateRequest materials(String qty, Long unit, String price, String amount) {
-        return new ExpenseCreateRequest(DATE, ExpenseScope.PROJECT, 4L, 1L, "River sand", "Hardware", dec(amount), null, null,
+        return new ExpenseCreateRequest(DATE, ExpenseScope.PROJECT, 4L, 1L, "River sand", "Hardware", null, dec(amount), null, null,
                 null, dec(qty), unit, dec(price), null, null, null, null, null);
     }
 
     private static ExpenseCreateRequest plain(ExpenseScope scope, Long projectId, String amount) {
-        return new ExpenseCreateRequest(DATE, scope, projectId, 1L, "Banner", "Print shop", dec(amount), null, null, null,
+        return new ExpenseCreateRequest(DATE, scope, projectId, 1L, "Banner", "Print shop", null, dec(amount), null, null, null,
                 null, null, null, null, null, null, null, null);
     }
 
     private static ExpenseCreateRequest rental(LocalDate from, LocalDate to) {
-        return new ExpenseCreateRequest(DATE, ExpenseScope.PROJECT, 4L, 1L, "Excavator", "Hire Co", dec("1000"), null, null,
+        return new ExpenseCreateRequest(DATE, ExpenseScope.PROJECT, 4L, 1L, "Excavator", "Hire Co", null, dec("1000"), null, null,
                 null, null, null, null, "JCB 3CX", from, to, null, null);
     }
 

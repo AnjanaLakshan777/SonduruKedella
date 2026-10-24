@@ -32,6 +32,9 @@ public final class ExpenseSpecifications {
             if (filter.projectId() != null) {
                 predicates.add(cb.equal(root.get("projectId"), filter.projectId()));
             }
+            if (filter.supplierId() != null) {
+                predicates.add(cb.equal(root.get("supplierId"), filter.supplierId()));
+            }
             if (filter.categoryId() != null) {
                 predicates.add(cb.equal(root.get("categoryId"), filter.categoryId()));
             }

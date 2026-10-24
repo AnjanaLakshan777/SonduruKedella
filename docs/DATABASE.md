@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses` and `expense_payments`. The other tables have no entities yet.
+Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses`, `expense_payments` and `suppliers`. The other tables have no entities yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -219,15 +219,21 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
 
   The status filter uses the same rules in SQL. Nothing about the balance is stored.
 - Edits: a full replace with optimistic locking (`version`), under the same row lock. The amount cannot go below what has already been paid (void a payment first). Moving an expense to another project or to company level writes an activity entry on the old project as well.
-- Not implemented, because nothing exists yet to back them:
-  - `supplier_id` is never set, because there is no suppliers module to validate it.
+- `supplier_id` (implemented with the Suppliers module, 2026-10-24) is optional. A newly linked supplier must exist and be active; an expense that already names a supplier keeps it after the supplier is deactivated. `payee` stays required, and the expense dialog sends the supplier name as the payee.
+- Not implemented, because nothing exists yet to back it:
   - The `attachment_*` columns stay null; there is no receipt-file upload yet.
 
   The category-specific fields (machinery, electricity) are accepted for any category, as in V1, which doesn't tie them to one.
 
 ## Suppliers and inventory
 
-- **suppliers**: `name`, `contact_person`, `phone`, `email`, `address`, `supplies`, `credit_days`.
+- **suppliers**: `name`, `contact_person`, `phone`, `email`, `address`, `supplies`, `credit_days`, and `active` (added by `V2__suppliers_active.sql`).
+  - Implemented (2026-10-24):
+    - Name and phone are required; everything else is optional. Text is trimmed, and blanks are stored as null. The email is checked only when given.
+    - `credit_days` defaults to `company_profile.supplier_credit_days`, as the supplier dialog does.
+    - Not unique on name or phone: shops share names, and branches share phones.
+  - Suppliers are never deleted, because expenses (and later supplier invoices) reference them. They are deactivated (`active = false`) instead. An inactive supplier cannot be linked to a new expense, and existing links are untouched.
+  - V2 added no index. Search is a "contains" match (`lower(name) LIKE '%…%'`), which a b-tree index can't serve, and a boolean flag on a small directory table isn't worth one. `ix_expenses_supplier` (V1) already covers the expense-to-supplier join.
 - **materials**:
   - Columns: `sku` (unique), `name`, `category`, `unit_id`, `unit_cost`, `version`.
   - `unit_cost` holds the current weighted average cost. It is updated in the same transaction as each movement and always equals the latest movement's `value_after / quantity_after`.
@@ -565,3 +571,7 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
 - The owner approved the schema on 2026-10-24.
 - V1 was applied to the development database (`sonduru_kedella`) on 2026-10-24. Flyway reports v1 "initial schema" with `success = true`. Before it was applied, the database was checked and held no application data.
 - **V1 is now immutable.** Every later schema change goes in a new versioned migration (`V2__…`).
+- `V2__suppliers_active.sql` (2026-10-24): adds `suppliers.active BOOLEAN NOT NULL DEFAULT TRUE`, so suppliers can be deactivated instead of deleted. It is additive only: existing suppliers become active, and nothing else changes.
+  - Verified on a fresh PostgreSQL 17 database (V1 then V2).
+  - Verified on a V1 database that already held a supplier with a linked expense: after V2 both rows were unchanged and the supplier was active.
+  - Not yet applied to the development database. Flyway applies it on the next backend start.

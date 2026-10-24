@@ -31,6 +31,8 @@ import com.sondurukedella.settings.dto.ExpenseCategoryResponse;
 import com.sondurukedella.settings.entity.ExpenseGroup;
 import com.sondurukedella.settings.service.ExpenseCategoryService;
 import com.sondurukedella.settings.service.MeasurementUnitService;
+import com.sondurukedella.suppliers.dto.SupplierResponse;
+import com.sondurukedella.suppliers.service.SupplierService;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -50,9 +52,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Manual project and company expenses. Projects, categories and units are checked through their
-// owners' services (ProjectService, ExpenseCategoryService, MeasurementUnitService), never their
-// repositories. Expenses are never deleted; corrections are edits (with optimistic locking) or voids.
+// Manual project and company expenses. Projects, categories, units and suppliers are checked through
+// their owners' services (ProjectService, ExpenseCategoryService, MeasurementUnitService,
+// SupplierService), never their repositories. Expenses are never deleted; corrections are edits (with optimistic locking) or voids.
 @Service
 @RequiredArgsConstructor
 public class ExpenseService {
@@ -67,6 +69,7 @@ public class ExpenseService {
     private final ProjectService projectService;
     private final ExpenseCategoryService categories;
     private final MeasurementUnitService units;
+    private final SupplierService suppliers;
     private final ActivityService activityService;
     private final Clock clock;
 
@@ -182,6 +185,16 @@ public class ExpenseService {
             throw new InvalidRequestException("\"" + category.name() + "\" has been removed from the Settings list.");
         }
 
+        if (input.supplierId() != null) {
+            SupplierResponse supplier = suppliers.find(input.supplierId())
+                    .orElseThrow(() -> new InvalidRequestException("The selected supplier does not exist."));
+            // a supplier deactivated later stays on the expenses that already name it
+            boolean sameSupplier = existing != null && input.supplierId().equals(existing.getSupplierId());
+            if (!supplier.active() && !sameSupplier) {
+                throw new InvalidRequestException(supplier.name() + " is inactive and can't be used for new expenses.");
+            }
+        }
+
         if (input.unitId() != null) {
             boolean sameUnit = existing != null && input.unitId().equals(existing.getUnitId());
             if (!sameUnit && !units.isActive(input.unitId())) {
@@ -210,6 +223,8 @@ public class ExpenseService {
         expense.setCategorySystemGenerated(false);
         expense.setDescription(input.description().strip());
         expense.setPayee(input.payee().strip());
+        // null clears the link on an edit; the payee name stays as entered
+        expense.setSupplierId(input.supplierId());
         expense.setAmount(resolved.amount());
         expense.setDueDate(input.dueDate());
         expense.setInvoiceNo(ExpenseRules.trimToNull(input.invoiceNo()));
@@ -237,10 +252,13 @@ public class ExpenseService {
         Map<Long, String> categoryNames = categoryNames(list.stream().map(Expense::getCategoryId).collect(Collectors.toSet()));
         Map<Long, String> unitNames = units.findNames(
                 list.stream().map(Expense::getUnitId).filter(Objects::nonNull).collect(Collectors.toSet()));
+        Map<Long, String> supplierNames = suppliers.findNames(
+                list.stream().map(Expense::getSupplierId).filter(Objects::nonNull).collect(Collectors.toSet()));
         LocalDate today = today();
         return list.stream().map(e -> {
             Balance balance = ExpenseCalculator.of(e.getAmount(), paid.getOrDefault(e.getId(), BigDecimal.ZERO), e.getDueDate(), today);
             return mapper.toResponse(e, categoryNames.get(e.getCategoryId()),
+                    e.getSupplierId() == null ? null : supplierNames.get(e.getSupplierId()),
                     e.getUnitId() == null ? null : unitNames.get(e.getUnitId()), balance);
         }).toList();
     }
