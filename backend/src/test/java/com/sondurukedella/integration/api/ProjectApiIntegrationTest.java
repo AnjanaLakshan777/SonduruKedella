@@ -214,6 +214,108 @@ class ProjectApiIntegrationTest {
     }
 
     @Test
+    void theSavedScheduleAndDelayTermsCanBeReadBack() throws Exception {
+        long client = client("Read Client");
+        // rows sent out of date order on purpose: the read sorts by due date
+        long id = id(create("""
+                {"name":"Library Block","type":"CONSTRUCTION","clientId":%d,"contractValue":9800000,
+                 "startDate":"2035-01-10","expectedCompletion":"2035-12-20",
+                 "schedule":[{"description":"Handover","dueDate":"2035-12-20","amount":1960000},
+                             {"description":"Advance","dueDate":"2035-01-10","amount":2940000},
+                             {"description":"Roof","dueDate":"2035-06-30","amount":4900000}],
+                 "delayTerms":{"contractDeadline":"2035-12-20","rule":"PERCENT_PER_WEEK","percentPerWeek":0.5,
+                               "ratePerDay":15000,"maxDeduction":490000,"notes":"Clause 9.1"}}""".formatted(client)));
+        // billing isn't built yet, so bill the first row directly to check billed/billedOn are read, not assumed
+        jdbc.update("UPDATE installments SET billed_on = DATE '2035-01-12' WHERE project_id = ? AND description = 'Advance'", id);
+        // the test shares one persistence context, so drop the installments cached at creation
+        entityManager.clear();
+
+        mockMvc.perform(get(PROJECTS + "/" + id + "/schedule"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[*].description").value(org.hamcrest.Matchers.contains("Advance", "Roof", "Handover")))
+                .andExpect(jsonPath("$[*].projectId").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is((int) id))))
+                .andExpect(jsonPath("$[0].amount").value(2940000.00))
+                .andExpect(jsonPath("$[0].billed").value(true))
+                .andExpect(jsonPath("$[0].billedOn").value("2035-01-12"))
+                .andExpect(jsonPath("$[1].billed").value(false))
+                .andExpect(jsonPath("$[1].billedOn").doesNotExist())
+                .andExpect(jsonPath("$[2].dueDate").value("2035-12-20"))
+                .andExpect(jsonPath("$[2].kind").value("SCHEDULED"));
+
+        mockMvc.perform(get(PROJECTS + "/" + id + "/delay-terms"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.projectId").value(id))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.contractDeadline").value("2035-12-20"))
+                .andExpect(jsonPath("$.rule").value("PERCENT_PER_WEEK"))
+                .andExpect(jsonPath("$.percentPerWeek").value(0.5))
+                .andExpect(jsonPath("$.ratePerDay").doesNotExist()) // dropped when saved, not invented on read
+                .andExpect(jsonPath("$.fixedAmount").doesNotExist())
+                .andExpect(jsonPath("$.graceDays").value(0))
+                .andExpect(jsonPath("$.maxDeduction").value(490000.00))
+                .andExpect(jsonPath("$.notes").value("Clause 9.1"))
+                .andExpect(jsonPath("$.appliedAmount").doesNotExist())
+                .andExpect(jsonPath("$.appliedToInstallmentId").doesNotExist());
+    }
+
+    @Test
+    void projectsWithoutDelayTermsReturn204() throws Exception {
+        long client = client("No Terms Client");
+        long construction = id(create("""
+                {"name":"No terms","type":"CONSTRUCTION","clientId":%d,"contractValue":500000,
+                 "startDate":"2035-02-01","expectedCompletion":"2035-08-01",
+                 "schedule":[{"description":"All","dueDate":"2035-02-01","amount":500000}]}""".formatted(client)));
+        long design = id(create(design(client, "2035-03-01", "2035-05-01")));
+        long consultation = id(create("""
+                {"name":"Advice","type":"CONSULTATION","clientId":%d,"contractValue":0,
+                 "startDate":"2035-04-01","expectedCompletion":"2035-04-15"}""".formatted(client)));
+
+        for (long id : List.of(construction, design, consultation)) {
+            mockMvc.perform(get(PROJECTS + "/" + id + "/delay-terms")).andExpect(status().isNoContent());
+        }
+        // a no-fee consultation has no schedule at all
+        mockMvc.perform(get(PROJECTS + "/" + consultation + "/schedule"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(get(PROJECTS + "/" + design + "/schedule"))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].amount").value(100000.00));
+    }
+
+    @Test
+    void readingFromAMissingProjectIs404() throws Exception {
+        mockMvc.perform(get(PROJECTS + "/" + Long.MAX_VALUE + "/schedule"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Project not found."));
+        mockMvc.perform(get(PROJECTS + "/" + Long.MAX_VALUE + "/delay-terms"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Project not found."));
+    }
+
+    @Test
+    void readingDoesNotChangeAnything() throws Exception {
+        long id = id(create("""
+                {"name":"Untouched","type":"CONSTRUCTION","clientId":%d,"contractValue":1000000,
+                 "startDate":"2036-01-10","expectedCompletion":"2036-09-01",
+                 "schedule":[{"description":"Advance","dueDate":"2036-01-10","amount":400000},
+                             {"description":"Handover","dueDate":"2036-09-01","amount":600000}],
+                 "delayTerms":{"contractDeadline":"2036-09-01","rule":"FIXED_AMOUNT","fixedAmount":50000}}"""
+                .formatted(client("Untouched Client"))));
+        entityManager.flush();
+        List<Map<String, Object>> before = snapshot(id);
+
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(get(PROJECTS + "/" + id + "/schedule")).andExpect(status().isOk());
+            mockMvc.perform(get(PROJECTS + "/" + id + "/delay-terms")).andExpect(status().isOk());
+            mockMvc.perform(get(PROJECTS + "/" + id)).andExpect(status().isOk());
+        }
+        entityManager.flush();
+
+        assertThat(snapshot(id)).isEqualTo(before);
+    }
+
+    @Test
     void invalidListingParametersAreBadRequests() throws Exception {
         mockMvc.perform(get(PROJECTS).param("sort", "received,desc")).andExpect(status().isBadRequest());
         mockMvc.perform(get(PROJECTS).param("size", "101")).andExpect(status().isBadRequest());
@@ -234,6 +336,11 @@ class ProjectApiIntegrationTest {
     @WithAnonymousUser
     void anonymousRequestsAreRejected() throws Exception {
         mockMvc.perform(get(PROJECTS).accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+        // the schedule and delay terms are client money data, so they're not public either
+        mockMvc.perform(get(PROJECTS + "/1/schedule").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(PROJECTS + "/1/delay-terms").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
     }
 
     private static String design(long clientId, String start, String end) {
@@ -270,6 +377,18 @@ class ProjectApiIntegrationTest {
     private List<Map<String, Object>> activity(long projectId) {
         return jdbc.queryForList(
                 "SELECT kind, message, activity_date FROM activity_log WHERE project_id = ? ORDER BY id", projectId);
+    }
+
+    // versions and updated_at of every row the reads touch, plus row counts - any write would change one
+    private List<Map<String, Object>> snapshot(long projectId) {
+        return List.of(
+                jdbc.queryForMap("SELECT version, updated_at, status FROM projects WHERE id = ?", projectId),
+                Map.of("installments", jdbc.queryForList(
+                        "SELECT id, version, updated_at, billed_on FROM installments WHERE project_id = ? ORDER BY id",
+                        projectId)),
+                jdbc.queryForMap("SELECT id, version, updated_at FROM delay_deduction_terms WHERE project_id = ?", projectId),
+                Map.of("activity", jdbc.queryForObject("SELECT count(*) FROM activity_log WHERE project_id = ?",
+                        Long.class, projectId)));
     }
 
     private static long id(String json) {

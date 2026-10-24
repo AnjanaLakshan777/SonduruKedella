@@ -8,9 +8,12 @@ import com.sondurukedella.projects.dto.ProjectStatusUpdateRequest;
 import com.sondurukedella.projects.entity.ProjectStatus;
 import com.sondurukedella.projects.entity.ProjectType;
 import com.sondurukedella.projects.service.ProjectService;
+import com.sondurukedella.revenue.dto.DelayTermsResponse;
+import com.sondurukedella.revenue.dto.InstallmentResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.time.LocalDate;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -53,6 +56,20 @@ public class ProjectController {
     @GetMapping("/{id}")
     public ProjectResponse get(@PathVariable long id) {
         return service.get(id);
+    }
+
+    // Separate from GET /{id} because ProjectResponse is also the list row; nesting the schedule
+    // there would load it for every project on the page. An empty list means no schedule (no-fee consultation).
+    @GetMapping("/{id}/schedule")
+    public List<InstallmentResponse> schedule(@PathVariable long id) {
+        return service.getSchedule(id);
+    }
+
+    // 204 when the project exists but has no terms (always so for design and consultation).
+    // Not 404 - that would look the same as a wrong project id.
+    @GetMapping("/{id}/delay-terms")
+    public ResponseEntity<DelayTermsResponse> delayTerms(@PathVariable long id) {
+        return service.getDelayTerms(id).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping

@@ -24,7 +24,7 @@ com.sondurukedella
 ├── settings      controller service repository entity dto mapper validation
 ├── clients       controller service repository entity dto mapper validation
 ├── projects      controller service repository entity dto mapper validation
-├── agreements    controller service repository entity dto mapper validation
+├── agreements    controller service repository entity dto mapper validation storage
 ├── revenue       controller service repository entity dto mapper validation
 ├── commissions   controller service repository entity dto mapper validation
 ├── expenses      controller service repository entity dto mapper validation
@@ -39,7 +39,7 @@ com.sondurukedella
 └── security      config user auth
 ```
 
-Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `validation` where a module has its own validators (currently `clients`, `projects` and `revenue`), `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
+Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `validation` where a module has its own validators (currently `clients`, `projects`, `revenue` and `agreements`), `agreements/storage`, `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
 
 ## Module Responsibilities
 Tables are listed in `docs/DATABASE.md`.
@@ -95,6 +95,8 @@ Shared packages:
   - Delay deductions and schedules: `projects` passes the project type (as the plain code `revenue` stores in `project_type`) and the contract value into the `revenue` service operations. `revenue` never imports `projects` or queries its repositories, because `projects` already depends on `revenue`.
   - Recording an event: any module calls the `activity` service.
   - Creating a project (implemented): `projects` checks or creates the client through `ClientService` (`exists`, `create`, `findNames`, `findIdsByName`), creates the schedule and delay terms through `revenue` (`InstallmentScheduleService`, `DelayTermsService`), and records the status event through `ActivityService`. All of this runs in one transaction. The revenue and activity methods use `MANDATORY` propagation, so they cannot commit on their own.
+  - Reading a project's schedule and delay terms (implemented): `ProjectService` checks that the project exists (404 if not), then calls the read-only `InstallmentScheduleService.findSchedule` and `DelayTermsService.findTerms`, which return `revenue` DTOs. These reads use ordinary read-only transactions; only the `revenue` write methods are `MANDATORY`. `revenue` still takes just the project id and never imports `projects`.
+  - Agreements (implemented): `agreements` checks the project through `ProjectService.requireExists` and never touches the projects repository. It records the upload event through `ActivityService` (`DOCUMENT`).
 - Operations that span modules run in one transaction started by the calling module's service.
 - Avoid circular dependencies between modules. If two modules need each other, move the shared contract to the module that owns the data.
 - `reports` reads data from the business modules, either through their services or through dedicated read-only queries in `reports.repository`. It uses the same calculation rules as those modules. It owns no entities, never writes, and never duplicates business records.
@@ -114,6 +116,14 @@ Shared packages:
 - Keep uploaded agreements private.
 - Store document metadata and a storage reference in PostgreSQL, not the PDF binary itself by default.
 - Validate uploaded file type, size, access permissions, and download authorization.
+- Agreement PDFs (implemented):
+  - `agreements.storage.AgreementFileStore` is the only code that touches the disk. Controllers and the database code never build paths.
+  - Files go to `agreements.storage-dir` (env `AGREEMENTS_STORAGE_DIR`): `backend/data/agreements` (git-ignored) when run locally, and the `agreement_files` named volume at `/app/data/agreements` in Docker. The directory is not on the classpath or under any static folder, so nothing serves it except the authenticated download endpoint.
+  - Uploads are streamed to a temp file while they are hashed, counted and checked for the `%PDF-` signature, then renamed to a server-generated `<uuid>.pdf`. Keys are validated against that pattern and must resolve directly inside the storage directory.
+  - Limits: `agreements.max-size` (env `AGREEMENTS_MAX_SIZE`, default 20MB, matching the UI) is enforced while streaming. `spring.servlet.multipart.max-file-size` and `max-request-size` (default 21MB) reject larger requests earlier. Raise them together.
+  - Order of writes: the file is stored first, then the metadata in its own transaction. If the database step fails, the new file is deleted, and the previous agreement row and file are untouched. A crash between the two steps can leave an orphaned file but never metadata without a file.
+  - Downloads are always `Content-Disposition: attachment`, with the cleaned original name encoded per RFC 6266/5987.
+  - Deployment: the storage directory must be persistent and backed up together with the database.
 
 ## Frontend Integration
 Preserve the existing React UI and its shadcn theme. Use typed API contracts and centralized API configuration. Keep frontend secrets out of browser-accessible environment variables.

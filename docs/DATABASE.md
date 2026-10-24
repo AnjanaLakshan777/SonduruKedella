@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms` and `activity_log`. The other tables have no entities yet.
+Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log` and `project_agreements`. The other tables have no entities yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -119,6 +119,8 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
 - **project_agreements**: at most one current agreement PDF per project.
   - Columns: `project_id`, `original_filename`, `content_type` (check `application/pdf`), `size_bytes`, `sha256`, `storage_key` (unique), `uploaded_at`, `removed_at`.
   - Unique `project_id` where `removed_at IS NULL`.
+  - Replacement (implemented 2026-10-24, no migration needed): the service sets `removed_at` on the current row and inserts the new one in a single transaction. The superseded row and its PDF are kept, because the row still points at the file; nothing is hard-deleted. There is no API that lists superseded agreements.
+  - `storage_key` is a server-generated `<uuid>.pdf` inside the private storage directory. It is never returned to clients. `sha256` and `size_bytes` are computed from the bytes actually received, not taken from the client.
 
 ## Revenue and receivables
 

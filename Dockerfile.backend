@@ -22,7 +22,10 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM eclipse-temurin:25-jre
 WORKDIR /app
 
-RUN groupadd --system app && useradd --system --gid app --no-create-home --shell /usr/sbin/nologin app
+# /app/data/agreements is the writable home for uploaded agreement PDFs. compose mounts a named
+# volume there, which copies this ownership on first use, so the non-root app user can write to it.
+RUN groupadd --system app && useradd --system --gid app --no-create-home --shell /usr/sbin/nologin app \
+ && mkdir -p /app/data/agreements && chown -R app:app /app/data
 COPY --from=build --chown=app:app /workspace/app.jar /app/app.jar
 USER app
 

@@ -17,10 +17,15 @@ import com.sondurukedella.projects.mapper.ProjectMapper;
 import com.sondurukedella.projects.repository.ProjectRepository;
 import com.sondurukedella.projects.repository.ProjectSpecifications;
 import com.sondurukedella.projects.validation.ProjectRules;
+import com.sondurukedella.revenue.dto.DelayTermsResponse;
+import com.sondurukedella.revenue.dto.InstallmentResponse;
+import com.sondurukedella.revenue.service.DelayTermsService;
+import com.sondurukedella.revenue.service.InstallmentScheduleService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +57,8 @@ public class ProjectService {
     private final ClientService clientService;
     private final ActivityService activityService;
     private final Clock clock;
+    private final InstallmentScheduleService scheduleService;
+    private final DelayTermsService delayTermsService;
 
     @Transactional(readOnly = true)
     public PageResponse<ProjectResponse> search(ProjectFilter filter, Pageable pageable) {
@@ -107,6 +114,28 @@ public class ProjectService {
         activityService.record(project.getId(), ActivityKind.STATUS,
                 "Status changed from " + from.label() + " to " + to.label() + ".");
         return toResponse(project);
+    }
+
+    // Revenue owns these rows but knows nothing about projects, so the 404 for an unknown project
+    // has to come from here - otherwise a typo'd id would just look like "no schedule".
+    @Transactional(readOnly = true)
+    public List<InstallmentResponse> getSchedule(long id) {
+        requireExists(id);
+        return scheduleService.findSchedule(id);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<DelayTermsResponse> getDelayTerms(long id) {
+        requireExists(id);
+        return delayTermsService.findTerms(id);
+    }
+
+    // Part of the contract other modules (Agreements) use instead of our repository.
+    @Transactional(readOnly = true)
+    public void requireExists(long id) {
+        if (!repository.existsById(id)) {
+            throw new NotFoundException("Project not found.");
+        }
     }
 
     private Project load(long id) {

@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -26,10 +28,15 @@ import com.sondurukedella.projects.dto.ProjectResponse;
 import com.sondurukedella.projects.entity.ProjectStatus;
 import com.sondurukedella.projects.entity.ProjectType;
 import com.sondurukedella.projects.service.ProjectService;
+import com.sondurukedella.revenue.dto.DelayTermsResponse;
+import com.sondurukedella.revenue.dto.InstallmentResponse;
+import com.sondurukedella.revenue.entity.DelayRule;
+import com.sondurukedella.revenue.entity.InstallmentKind;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -243,6 +250,73 @@ class ProjectControllerWebTest {
                 .andExpect(status().isMethodNotAllowed());
         mockMvc.perform(patch(PROJECTS + "/1").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isMethodNotAllowed());
+        verifyNoInteractions(projectService);
+    }
+
+    @Test
+    void theScheduleSerialisesWithBilledFlagsAndIsoDates() throws Exception {
+        when(projectService.getSchedule(5L)).thenReturn(List.of(
+                new InstallmentResponse(11L, 5L, "Advance", LocalDate.of(2026, 11, 1), new BigDecimal("400000.00"),
+                        InstallmentKind.SCHEDULED, true, LocalDate.of(2026, 11, 3), 1L),
+                new InstallmentResponse(12L, 5L, "Handover", LocalDate.of(2027, 9, 1), new BigDecimal("600000.50"),
+                        InstallmentKind.SCHEDULED, false, null, 0L)));
+
+        mockMvc.perform(get(PROJECTS + "/5/schedule").with(user("owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(11))
+                .andExpect(jsonPath("$[0].dueDate").value("2026-11-01"))
+                .andExpect(jsonPath("$[0].billed").value(true))
+                .andExpect(jsonPath("$[0].billedOn").value("2026-11-03"))
+                .andExpect(jsonPath("$[1].amount").value(600000.50))
+                .andExpect(jsonPath("$[1].billed").value(false))
+                .andExpect(jsonPath("$[1].kind").value("SCHEDULED"));
+    }
+
+    @Test
+    void delayTermsAre200WhenSetAnd204WhenThereAreNone() throws Exception {
+        when(projectService.getDelayTerms(5L)).thenReturn(Optional.of(new DelayTermsResponse(3L, 5L, true,
+                LocalDate.of(2027, 9, 1), DelayRule.PER_DAY, new BigDecimal("15000.00"), null, null, 7,
+                new BigDecimal("625000.00"), "Clause 14.2", null, null, null, null, 0L)));
+        when(projectService.getDelayTerms(6L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get(PROJECTS + "/5/delay-terms").with(user("owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rule").value("PER_DAY"))
+                .andExpect(jsonPath("$.ratePerDay").value(15000.00))
+                .andExpect(jsonPath("$.contractDeadline").value("2027-09-01"))
+                .andExpect(jsonPath("$.graceDays").value(7))
+                .andExpect(jsonPath("$.appliedAmount").doesNotExist());
+        mockMvc.perform(get(PROJECTS + "/6/delay-terms").with(user("owner")))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    void readingFromAnUnknownProjectIs404() throws Exception {
+        when(projectService.getSchedule(9L)).thenThrow(new NotFoundException("Project not found."));
+        when(projectService.getDelayTerms(9L)).thenThrow(new NotFoundException("Project not found."));
+
+        mockMvc.perform(get(PROJECTS + "/9/schedule").with(user("owner")))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.detail").value("Project not found."));
+        mockMvc.perform(get(PROJECTS + "/9/delay-terms").with(user("owner")))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.detail").value("Project not found."));
+    }
+
+    @Test
+    void theReadEndpointsNeedASignedInUserAndAcceptNoWrites() throws Exception {
+        mockMvc.perform(get(PROJECTS + "/5/schedule").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(PROJECTS + "/5/delay-terms").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+        for (String path : List.of("/5/schedule", "/5/delay-terms")) {
+            mockMvc.perform(post(PROJECTS + path).with(user("owner")).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isMethodNotAllowed());
+            mockMvc.perform(put(PROJECTS + path).with(user("owner")).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isMethodNotAllowed());
+            mockMvc.perform(delete(PROJECTS + path).with(user("owner")).with(csrf()))
+                    .andExpect(status().isMethodNotAllowed());
+        }
         verifyNoInteractions(projectService);
     }
 

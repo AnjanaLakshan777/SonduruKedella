@@ -3,7 +3,10 @@ package com.sondurukedella.revenue.service;
 import com.sondurukedella.common.exception.BusinessRuleException;
 import com.sondurukedella.common.money.Money;
 import com.sondurukedella.revenue.dto.DelayTermsDraft;
+import com.sondurukedella.revenue.dto.DelayTermsResponse;
 import com.sondurukedella.revenue.entity.DelayDeductionTerms;
+import com.sondurukedella.revenue.mapper.RevenueMapper;
+import java.util.Optional;
 import com.sondurukedella.revenue.repository.DelayDeductionTermsRepository;
 import com.sondurukedella.revenue.validation.DelayTermsRules;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +20,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class DelayTermsService {
 
     private final DelayDeductionTermsRepository repository;
+    private final RevenueMapper mapper;
+
+    // Empty for any project without terms - always the case for design and consultation work,
+    // since the table only accepts construction projects. Nothing is filled in for them.
+    @Transactional(readOnly = true)
+    public Optional<DelayTermsResponse> findTerms(long projectId) {
+        return repository.findByProjectId(projectId).map(mapper::toResponse);
+    }
 
     // projectType is passed as the plain code (what the table stores) so Revenue doesn't have to
     // depend on the projects module, which already depends on us.

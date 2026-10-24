@@ -46,15 +46,15 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 ## Business Modules
 - [x] Settings (2026-10-24): company profile, commission policy, wage settings, expense categories, units, payment methods, and read-only revenue categories.
 - [x] Clients (2026-10-24): create, list (search, type filter, paging), get and update. Financial summaries per client are not included yet; they depend on projects and revenue.
-- [x] Projects (2026-10-24): create (with an inline client, the payment schedule and delay terms, all in one transaction), list, get and status changes. Agreement upload and metadata are not implemented.
-- [ ] Contract payment schedules and receipts. Partial (2026-10-24): only the initial schedule and delay terms, created with the project. Reading, editing and billing the schedule, variations, receipts, write-offs and applying deductions are not implemented.
+- [x] Projects (2026-10-24): create (with an inline client, the payment schedule and delay terms, all in one transaction), list, get, status changes, and reading the saved schedule and delay terms. The agreement PDF is handled by the Agreements module.
+- [ ] Contract payment schedules and receipts. Partial (2026-10-24): the initial schedule and delay terms are created with the project and can be read back. Editing and billing the schedule, variations, receipts, write-offs and applying deductions are not implemented.
 - [ ] Revenue and expenses.
 - [ ] Commission management.
 - [ ] Suppliers and payables.
 - [ ] Inventory and stock movements.
 - [ ] Employee attendance, overtime, advances, and payroll.
 - [ ] Financial reports.
-- [ ] Private agreement document storage.
+- [x] Private agreement document storage (2026-10-24): upload or replace, metadata and download of one current PDF per project. Removing an agreement is not implemented.
 
 ## Completion Log
 For each completed task, record the date, files or migrations changed, verification performed, and known limitations. Do not mark a task complete solely because code was generated.
@@ -289,3 +289,85 @@ For each completed task, record the date, files or migrations changed, verificat
   - The contract value and delay-term values are rejected, not rounded, when they have too many decimals, even when the service is called from code: 2 places for money, 4 for the weekly percentage, which is also capped at what `NUMERIC(7,4)` holds.
   - Removed three unused repository finders. Their presence suggested read-back features that don't exist.
   - A new test confirms the schedule, delay-term and activity services refuse to run outside a transaction.
+
+### 2026-10-24: Project schedule and delay-term read APIs
+- Endpoints (both `GET`, both need a signed-in user):
+  - `/api/v1/projects/{id}/schedule`: a list of `{id, projectId, description, dueDate, amount, kind, billed, billedOn, version}`, ordered by due date and then id.
+    - `billed` is `billedOn != null`; V1 has no separate billing flag.
+    - The list is empty for a project with no fee (a consultation).
+  - `/api/v1/projects/{id}/delay-terms`:
+    - 200 with `{id, projectId, enabled, contractDeadline, rule, ratePerDay, percentPerWeek, fixedAmount, graceDays, maxDeduction, notes, actualCompletion, appliedAmount, appliedOn, appliedToInstallmentId, version}`.
+    - 204 No Content when the project has no terms. That is always the case for design and consultation projects, because the table only accepts construction. Nothing is invented for them.
+  - Both return 404 problem details for an unknown project.
+  - These are separate endpoints rather than fields on `GET /{id}`, because `ProjectResponse` is also the list row.
+- Flow: `ProjectController` → `ProjectService` (checks the project exists) → `InstallmentScheduleService.findSchedule` / `DelayTermsService.findTerms` (read-only, mapped by `revenue.mapper.RevenueMapper`). Revenue's write methods keep `MANDATORY` propagation, and Revenue still never imports `projects`.
+- Tests: 242 passed on JDK 25 against a throwaway PostgreSQL 17 container, 12 of them new.
+  - Unit tests: the 404 is raised before Revenue is called; `billed` is derived from `billedOn`; a project without terms reads as empty.
+  - Web-layer tests: JSON shape and ISO dates, 200/204/404, 401 for anonymous users, and 405 for POST/PUT/DELETE on both paths.
+  - API integration tests against V1:
+    - a three-row schedule read back in due-date order, with one row billed directly in the database to show `billed` and `billedOn` are read, not assumed;
+    - per-week-percentage terms with the stray per-day value dropped and the applied fields null;
+    - 204 for construction without terms and for design and consultation projects;
+    - an empty schedule for a no-fee consultation;
+    - 404 for a missing project;
+    - repeated reads leave versions, `updated_at`, billing and activity counts unchanged;
+    - 401 for anonymous users.
+
+  The throwaway database was back to 0 rows and was removed afterwards. The development database was not touched.
+- Limitations and frontend differences:
+  - Paid, remaining and overdue amounts and the installment status (Paid, Overdue, Partially Paid) are not returned. They need client payments and write-offs.
+  - `rule` uses API constants (`PER_DAY`, `PERCENT_PER_WEEK`, `FIXED_AMOUNT`) where the frontend uses `per_day` and so on.
+  - Ids are numbers.
+  - The frontend has to treat 204 from `/delay-terms` as "no terms" (its `Project.delay` is undefined).
+  - `actualCompletion` and the `applied*` fields stay null until applying deductions is built.
+  - Still not implemented: editing or billing the schedule, variations, receipts, write-offs, applying or reversing deductions, agreement upload, the activity feed, and the financial summary columns.
+
+### 2026-10-24: Agreements module (agreement PDF upload and download)
+- Endpoints (all need a signed-in user; `PUT` also needs a CSRF token):
+  - `GET /api/v1/projects/{projectId}/agreement`: current metadata, `{id, projectId, fileName, contentType, size, sha256, uploadedAt, version}`. `fileName`, `size` and `uploadedAt` match the frontend `AgreementDoc`. The storage key and paths are never returned.
+  - `PUT /api/v1/projects/{projectId}/agreement`: `multipart/form-data` with the PDF in part `file`.
+    - Returns 201 for the first agreement and 200 for a replacement, with the metadata.
+    - 400: empty file, wrong extension, a content type other than `application/pdf`, a body that doesn't start with `%PDF-`, or no `file` part.
+    - 413: over the size limit, whether caught by the servlet multipart limit or while streaming.
+    - 409: a concurrent replacement (`@Version` on the old row) or concurrent first uploads (the one-current-agreement index).
+    - 500, with no paths in the response: a storage failure.
+  - `GET /api/v1/projects/{projectId}/agreement/download`: the PDF as `application/pdf`, `Content-Disposition: attachment`, with the cleaned original name (RFC 5987 `filename*`).
+  - 404 problem details: "Project not found." for an unknown project, and "No agreement has been uploaded for this project." when there is none.
+  - No POST or DELETE (405).
+- Storage, configured in `application.properties`:
+  - `agreements.storage-dir` (`AGREEMENTS_STORAGE_DIR`, default `data/agreements`)
+  - `agreements.max-size` (`AGREEMENTS_MAX_SIZE`, default 20MB)
+  - `spring.servlet.multipart.max-file-size` and `max-request-size` (default 21MB)
+
+  Spring's built-in limit of 1MB was below the UI's 20MB, so these had to be added. Docker:
+  - `compose.yaml` sets `AGREEMENTS_STORAGE_DIR=/app/data/agreements` on a new `agreement_files` named volume.
+  - `Dockerfile.backend` creates that directory owned by the non-root `app` user. Without it, the container could not write files.
+  - `backend/data/` is git-ignored for local runs.
+  - The backend image has not been rebuilt, so the endpoints are not yet live in the local stack.
+- Replacement: no migration. V1 already has `removed_at` and the partial unique index. The old row gets `removed_at` and the new row is inserted in one transaction. Both the old row and its file are kept.
+- Integrity:
+  - The file is stored before the metadata. If the transaction fails, the new file is deleted and the old agreement keeps working.
+  - Uploads are streamed to disk, never held in memory. Writing stops as soon as the limit is passed.
+  - Client file names are only metadata. Directory parts, control characters and quotes are removed.
+  - Each upload writes a `DOCUMENT` activity entry ("Agreement uploaded: …" or "Agreement replaced: …") in the same transaction.
+- Tests: 307 passed on JDK 25 against a throwaway PostgreSQL 17 container, 65 of them new.
+  - File name and type validation: 22.
+  - File store, using a temp directory: 16. Real size and hash; `%PDF-` signature; empty files; an endless stream cut off at the limit; traversal and invalid keys refused; an unwritable directory; no temp files left behind.
+  - Service: 8. A database failure deletes the new file; a storage failure never reaches the database; an unknown project or wrong type is rejected before anything is stored.
+  - Web layer: 9. 401 for anonymous users, 403 without CSRF, 201/200, a missing part, 413 from both layers, no path leaks in 500 responses, attachment headers with a UTF-8 name, 405.
+  - Integration tests that commit for real: 10.
+    - upload, read and download, plus replacement with the old row and file kept;
+    - each invalid file rejected with no rows and no files left;
+    - 404 cases, and no cross-project access;
+    - traversal and header-injection names;
+    - a database failure during replacement leaves the old agreement and file intact and removes the new file;
+    - a storage failure changes no metadata;
+    - stored files are not reachable at any static path.
+
+    Afterwards the database was back to 0 rows, and the temp storage and container were removed. The development database and its volumes were not touched.
+- Limitations:
+  - Removing an agreement (the dropzone's remove action) is not implemented.
+  - There is no API for superseded agreements, and their files are kept indefinitely.
+  - A crash between storing the file and committing can leave an orphaned file; it is logged, and there is no cleanup job.
+  - The frontend dropzone accepts a file that ends in `.pdf` even when the browser reports another content type; the API rejects that.
+  - `id` is a number, and `uploadedAt` is a timestamp rather than a date.

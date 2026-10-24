@@ -28,6 +28,9 @@ logs/
 tmp/
 *.tmp
 
+# ---- Uploaded agreement PDFs (local default storage; private business documents) ----
+backend/data/
+
 # ---- IDE / OS ----
 .idea/
 *.iml

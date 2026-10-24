@@ -12,6 +12,7 @@ import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.revenue.dto.DelayTermsDraft;
 import com.sondurukedella.revenue.entity.DelayDeductionTerms;
 import com.sondurukedella.revenue.entity.DelayRule;
+import com.sondurukedella.revenue.mapper.RevenueMapper;
 import com.sondurukedella.revenue.repository.DelayDeductionTermsRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -31,7 +32,7 @@ class DelayTermsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DelayTermsService(repository);
+        service = new DelayTermsService(repository, new RevenueMapper());
     }
 
     @Test
@@ -60,6 +61,13 @@ class DelayTermsServiceTest {
 
         assertThatThrownBy(() -> service.createTerms(3L, "DESIGN", draft)).isInstanceOf(InvalidRequestException.class);
         verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void aProjectWithoutTermsReadsAsEmptyNotAsDefaults() {
+        when(repository.findByProjectId(8L)).thenReturn(java.util.Optional.empty());
+
+        assertThat(service.findTerms(8L)).isEmpty();
     }
 
     @Test

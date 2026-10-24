@@ -47,6 +47,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Uploaded agreement PDFs. Private (never served as static files) and on a named volume so
+      # they survive rebuilds. Like postgres_data, never remove it as routine cleanup.
+      AGREEMENTS_STORAGE_DIR: /app/data/agreements
+    volumes:
+      - agreement_files:/app/data/agreements
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     networks:
@@ -72,6 +77,7 @@ services:
 
 volumes:
   postgres_data:
+  agreement_files:
 
 networks:
   sonduru_net:

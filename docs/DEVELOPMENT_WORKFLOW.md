@@ -11,6 +11,8 @@
 ## Environment Variables
 Read .env.example for required variable names. Keep actual development credentials in the root .env file and never commit it. Claude Code is authorized to edit .env when required for implementation, but must preserve valid existing credentials unless a change is necessary. Do not print secrets, include them in logs, or copy them into documentation. Ask before rotating credentials that may already be in use.
 
+Optional, with defaults, so not in .env.example: `AGREEMENTS_STORAGE_DIR` (default `data/agreements`, relative to the working directory; compose sets `/app/data/agreements`), `AGREEMENTS_MAX_SIZE` (default `20MB`) and `AGREEMENTS_MAX_REQUEST_SIZE` (default `21MB`). Raise the last two together.
+
 ## Docker Commands
 Validate configuration:
   docker compose config --quiet
@@ -30,7 +32,9 @@ Follow backend logs:
 Stop services without deleting persistent volumes:
   docker compose down
 
-Do not use docker compose down -v as routine cleanup. Never delete persistent data without explicit approval and a confirmed backup.
+Do not use docker compose down -v as routine cleanup. It deletes both persistent volumes: `postgres_data` (the database) and `agreement_files` (uploaded agreement PDFs). Never delete persistent data without explicit approval and a confirmed backup. Back the two volumes up together, because agreement rows point at files in `agreement_files`.
+
+The backend image must be rebuilt (`docker compose up -d --build backend`) before the agreement endpoints work in Docker. The image creates the writable `/app/data/agreements` directory that the volume mounts over.
 
 ## Backend Commands (Windows PowerShell)
 From the backend directory:

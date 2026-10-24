@@ -26,6 +26,10 @@ import com.sondurukedella.projects.entity.ProjectStatus;
 import com.sondurukedella.projects.entity.ProjectType;
 import com.sondurukedella.projects.mapper.ProjectMapper;
 import com.sondurukedella.projects.repository.ProjectRepository;
+import com.sondurukedella.revenue.dto.InstallmentResponse;
+import com.sondurukedella.revenue.entity.InstallmentKind;
+import com.sondurukedella.revenue.service.DelayTermsService;
+import com.sondurukedella.revenue.service.InstallmentScheduleService;
 import com.sondurukedella.support.TestEntities;
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -72,12 +76,17 @@ class ProjectServiceTest {
     private ClientService clientService;
     @Mock
     private ActivityService activityService;
+    @Mock
+    private InstallmentScheduleService scheduleService;
+    @Mock
+    private DelayTermsService delayTermsService;
 
     private ProjectService service;
 
     @BeforeEach
     void setUp() {
-        service = new ProjectService(repository, new ProjectMapper(), creator, clientService, activityService, CLOCK);
+        service = new ProjectService(repository, new ProjectMapper(), creator, clientService, activityService, CLOCK,
+                scheduleService, delayTermsService);
         when(clientService.findNames(anyCollection())).thenReturn(Map.of(7L, "Dilani Jayawardena"));
         when(repository.saveAndFlush(any(Project.class))).thenAnswer(call -> call.getArgument(0));
     }
@@ -242,6 +251,29 @@ class ProjectServiceTest {
         }
         assertThatThrownBy(() -> service.search(emptyFilter(), PageRequest.of(0, ProjectService.MAX_PAGE_SIZE + 1)))
                 .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void readingTheScheduleOrTermsOfAnUnknownProjectIs404AndRevenueIsNotAsked() {
+        when(repository.existsById(9L)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.getSchedule(9L)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.getDelayTerms(9L)).isInstanceOf(NotFoundException.class);
+        verifyNoInteractions(scheduleService, delayTermsService);
+    }
+
+    @Test
+    void scheduleAndTermsComeFromRevenueForAnExistingProject() {
+        when(repository.existsById(1L)).thenReturn(true);
+        List<InstallmentResponse> schedule = List.of(new InstallmentResponse(3L, 1L, "Advance",
+                LocalDate.of(2026, 2, 1), new BigDecimal("1000.00"), InstallmentKind.SCHEDULED, false, null, 0L));
+        when(scheduleService.findSchedule(1L)).thenReturn(schedule);
+        when(delayTermsService.findTerms(1L)).thenReturn(Optional.empty());
+
+        assertThat(service.getSchedule(1L)).isSameAs(schedule);
+        assertThat(service.getDelayTerms(1L)).isEmpty();
+        // reads never save anything
+        verify(repository, never()).saveAndFlush(any());
     }
 
     private static ProjectFilter emptyFilter() {
