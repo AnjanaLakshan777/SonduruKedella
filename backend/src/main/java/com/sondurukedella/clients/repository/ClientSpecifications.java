@@ -33,6 +33,12 @@ public final class ClientSpecifications {
         };
     }
 
+    // Used by the project search, which matches on client name only.
+    public static Specification<Client> nameContains(String query) {
+        String pattern = "%" + escapeLike(query.strip().toLowerCase(Locale.ROOT)) + "%";
+        return (root, criteriaQuery, cb) -> cb.like(cb.lower(root.get("name")), pattern, LIKE_ESCAPE);
+    }
+
     // otherwise typing "100%" in the search box would match everything
     static String escapeLike(String value) {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");

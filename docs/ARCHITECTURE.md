@@ -35,11 +35,11 @@ com.sondurukedella
 ├── reports       controller service repository dto
 ├── activity      controller service repository entity dto mapper
 ├── common        exception web audit money validation
-├── config        persistence web
+├── config        persistence web (plus ClockConfig at the package root)
 └── security      config user auth
 ```
 
-Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `validation` where a module has its own validators (currently `clients`), `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
+Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `validation` where a module has its own validators (currently `clients`, `projects` and `revenue`), `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
 
 ## Module Responsibilities
 Tables are listed in `docs/DATABASE.md`.
@@ -80,6 +80,7 @@ Shared packages:
 - `common.validation`: Generic validators shared by several modules.
 - `config.persistence`: JPA and auditing configuration.
 - `config.web`: Web configuration such as CORS for the frontend origin and JSON settings.
+- `config.ClockConfig`: the application `Clock`, in the Asia/Colombo zone. Business dates such as completion and activity dates come from it, so tests can fix the time.
 - `security.config`: Spring Security configuration.
 - `security.user`: Application users (`app_users`) and the user-details lookup.
 - `security.auth`: Login and session or token handling.
@@ -90,8 +91,10 @@ Shared packages:
   - Posting a `STOCK` supplier invoice: `suppliers` asks `inventory` to record the receipts.
   - Issuing stock or entering overtime: `inventory` and `employees` check with `projects` that the project is a construction project.
   - Editing attendance or overtime: `employees` asks `payroll` whether that employee's week is frozen. A database trigger also enforces the freeze.
-  - Calculating commission and delay deductions: `commissions` and `revenue` read the contract value from `projects`.
+  - Calculating commission: `commissions` reads the contract value from `projects`.
+  - Delay deductions and schedules: `projects` passes the project type (as the plain code `revenue` stores in `project_type`) and the contract value into the `revenue` service operations. `revenue` never imports `projects` or queries its repositories, because `projects` already depends on `revenue`.
   - Recording an event: any module calls the `activity` service.
+  - Creating a project (implemented): `projects` checks or creates the client through `ClientService` (`exists`, `create`, `findNames`, `findIdsByName`), creates the schedule and delay terms through `revenue` (`InstallmentScheduleService`, `DelayTermsService`), and records the status event through `ActivityService`. All of this runs in one transaction. The revenue and activity methods use `MANDATORY` propagation, so they cannot commit on their own.
 - Operations that span modules run in one transaction started by the calling module's service.
 - Avoid circular dependencies between modules. If two modules need each other, move the shared contract to the module that owns the data.
 - `reports` reads data from the business modules, either through their services or through dedicated read-only queries in `reports.repository`. It uses the same calculation rules as those modules. It owns no entities, never writes, and never duplicates business records.

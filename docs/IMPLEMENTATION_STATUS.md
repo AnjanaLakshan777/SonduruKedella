@@ -46,8 +46,8 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 ## Business Modules
 - [x] Settings (2026-10-24): company profile, commission policy, wage settings, expense categories, units, payment methods, and read-only revenue categories.
 - [x] Clients (2026-10-24): create, list (search, type filter, paging), get and update. Financial summaries per client are not included yet; they depend on projects and revenue.
-- [ ] Projects and agreement metadata.
-- [ ] Contract payment schedules and receipts.
+- [x] Projects (2026-10-24): create (with an inline client, the payment schedule and delay terms, all in one transaction), list, get and status changes. Agreement upload and metadata are not implemented.
+- [ ] Contract payment schedules and receipts. Partial (2026-10-24): only the initial schedule and delay terms, created with the project. Reading, editing and billing the schedule, variations, receipts, write-offs and applying deductions are not implemented.
 - [ ] Revenue and expenses.
 - [ ] Commission management.
 - [ ] Suppliers and payables.
@@ -212,3 +212,80 @@ For each completed task, record the date, files or migrations changed, verificat
 - The frontend dialog itself rejects a whitespace-only email, so the API is more lenient than the UI here. That is deliberate: a blank optional field is not an error.
 - Docs: DATABASE.md now lists the tables that have JPA entities (Settings and Clients). ARCHITECTURE.md lists the `clients/validation` test package.
 - Tests: 103 passed on JDK 25 against a throwaway PostgreSQL 17 container: 13 new email validator tests and 2 new API integration tests that check the stored column. The container was removed afterwards. The development database was not touched.
+
+### 2026-10-24: Projects module, with minimal Revenue and Activity support
+- Endpoints (all under `/api/v1/projects`):
+  - `GET` list:
+    - `q` searches name, code, location and client name.
+    - Filters: `type`, `status`, `clientId`, and the inclusive date ranges `startFrom`/`startTo` and `dueFrom`/`dueTo`.
+    - Paging: `page`, `size` (default 10, at most 100) and `sort` (`code`, `name`, `startDate`, `expectedCompletion`, `contractValue`, `createdAt` or `id`). The default is `code` descending, with `id` as a tie-breaker.
+    - Returns `PageResponse`.
+  - `GET /{id}`, `POST` (201 with a `Location` header) and `PUT /{id}/status` (`{status, version}`).
+  - No DELETE and no general edit.
+- Owner decisions applied (2026-10-24):
+  - The code year comes from `startDate`.
+  - Creation is atomic.
+  - Any status can change to any other, and `actual_completion` is kept when a project is reopened or completed again.
+  - "Today" is the Asia/Colombo date, from an injectable `Clock`.
+- Creation: `ProjectCreator` runs in one transaction, in this order:
+  1. Validate the request.
+  2. Create the inline client, or check the existing one, through `ClientService`.
+  3. Take the per-year advisory lock and generate the next code.
+  4. Insert the project.
+  5. `InstallmentScheduleService` validates and inserts the schedule.
+  6. `DelayTermsService` validates and inserts the delay terms, if any.
+  7. `ActivityService` records "Project created in <status>."
+
+  `ProjectService.create` retries the whole transaction, up to 3 times, only when the error is a `uq_projects_code` violation. If the retries run out it returns 409.
+- Rules:
+  - Name is required (at most 200). Location is at most 200. Exactly one of `clientId` and `newClient` is required.
+  - Contract value: more than 0 for design and construction, at least 0 for consultation, at most 2 decimal places.
+  - Expected completion must be after the start date.
+  - A new project can start only as Planning, In Progress or On Hold.
+  - Schedule:
+    - It must add up exactly to the contract value.
+    - Every row needs a description (at most 300), a due date and an amount above 0 with at most 2 decimal places.
+    - There is no schedule when the fee is 0.
+  - Delay terms:
+    - Construction projects only; on other types they are rejected, not ignored.
+    - A deadline and a rule are required, plus the value that rule uses, which must be above 0. Values for the other rules are dropped.
+    - Grace days are at least 0, and the maximum deduction, if given, is above 0.
+- Status changes use optimistic locking (409 on a stale version). Each change writes a `STATUS` entry to `activity_log` in the same transaction. Setting the current status again changes nothing.
+- Shared code added:
+  - `config.ClockConfig`
+  - `common.money.Money`
+  - `ClientService.exists`, `findNames` and `findIdsByName`, which Projects uses instead of the clients repository
+- Tests: 230 passed on JDK 25 against a throwaway PostgreSQL 17 container, 127 of them new (the last run was after the review fixes below).
+  - Unit tests:
+    - all 20 status transitions
+    - completion dates with a fixed clock in Colombo
+    - the retry and its limit
+    - code generation by start year
+    - contract, date, initial-status, schedule and delay-term rules
+  - Web-layer tests: authentication, CSRF, field errors (including `schedule[0].amount`, `newClient.phone` and `delayTerms.*`), enums, malformed filters, 404, 409, and the absence of DELETE and general edit.
+  - Repository tests against V1: search, filters, date ranges, stable paging, the advisory lock, and V1 constraints (duplicate code, contract value, dates, client FK, delay terms on a design project, rule values, zero installments). They also check that a real Postgres duplicate-code error is recognised as a collision.
+  - API integration tests, each rolled back: the full create, numbering per year, consultation with no fee, client-name search, the status sequence with its activity messages, stale versions, and rejected inputs.
+  - Tests that commit for real:
+    - a failure at the schedule, the delay terms or the activity step leaves no client, project, installment, delay-term or activity rows;
+    - a status change rolls back with its failed activity entry;
+    - 8 concurrent creates get `PRJ-2092-001` to `-008`.
+
+    Every table was back to 0 rows afterwards. The container was removed, and the development database was not touched.
+- Limitations and frontend differences:
+  - The project response has no received, costs or outstanding figures, and those columns can't be sorted on; they need Revenue and Expenses. Zeros are not returned in their place.
+  - Not implemented: reading the schedule or delay terms, agreement upload and download, the activity feed, and commission, payment and expense data for the project tabs.
+  - Contract differences:
+    - Enums are API constants (`IN_PROGRESS`, `DESIGN`, `PER_DAY`), not display labels or `per_day`.
+    - Ids are numbers.
+    - `createdAt` is a timestamp.
+    - `location`, `description` and `notes` can be null.
+    - The create body uses `schedule` and `delayTerms` (no `enabled` flag), and `newClient` uses the full client rules.
+    - The server assigns the code, so the page's `PRJ-2026-NNN` preview can differ.
+    - The date presets become `startFrom`/`startTo` and `dueFrom`/`dueTo`.
+  - `created_by` stays null until application users exist.
+  - The running backend container has not been rebuilt.
+- Review fixes (2026-10-24, before commit):
+  - Code numbering ignores suffixes over 9 digits and works for any year length. Previously one oversized hand-entered code would have failed every create for that year.
+  - The contract value and delay-term values are rejected, not rounded, when they have too many decimals, even when the service is called from code: 2 places for money, 4 for the weekly percentage, which is also capped at what `NUMERIC(7,4)` holds.
+  - Removed three unused repository finders. Their presence suggested read-back features that don't exist.
+  - A new test confirms the schedule, delay-term and activity services refuse to run outside a transaction.

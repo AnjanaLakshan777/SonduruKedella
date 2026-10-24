@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`) and for `clients`. The other tables have no entities yet.
+Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms` and `activity_log`. The other tables have no entities yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -113,7 +113,8 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
     - `contract_value > 0`, except for consultation projects, where the agreed fee is optional and may be 0.
   - Rules:
     - The contract value and the project type cannot be changed after the project is created. The UI only lets you change the status.
-    - Setting the status to `COMPLETED` fills in `actual_completion` if it is empty.
+    - Setting the status to `COMPLETED` fills in `actual_completion` with the Asia/Colombo date if it is empty. Reopening keeps it, and completing again does not overwrite it.
+    - `code` is assigned by the server as `PRJ-YYYY-NNN`, numbered per start-date year (owner decision, 2026-10-24). A per-year advisory lock prevents concurrent creates from picking the same number, and `uq_projects_code` is the backstop.
   - A second unique key, (`id`, `project_type`), lets child tables restrict a feature to certain project types through composite foreign keys.
 - **project_agreements**: at most one current agreement PDF per project.
   - Columns: `project_id`, `original_filename`, `content_type` (check `application/pdf`), `size_bytes`, `sha256`, `storage_key` (unique), `uploaded_at`, `removed_at`.

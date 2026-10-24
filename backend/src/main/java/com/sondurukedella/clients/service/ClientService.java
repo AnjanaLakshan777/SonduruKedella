@@ -13,7 +13,11 @@ import com.sondurukedella.common.exception.ConflictException;
 import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.common.exception.NotFoundException;
 import com.sondurukedella.common.web.PageResponse;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -67,6 +71,29 @@ public class ClientService {
         client.setCity(ClientText.trimToNull(request.city()));
         client.setNotes(ClientText.trimToNull(request.notes()));
         return mapper.toResponse(repository.saveAndFlush(client));
+    }
+
+    // The methods below are the contract other modules (Projects) use instead of our repository.
+
+    @Transactional(readOnly = true)
+    public boolean exists(long id) {
+        return repository.existsById(id);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<Long, String> findNames(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return repository.findAllById(ids).stream().collect(Collectors.toMap(Client::getId, Client::getName));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Long> findIdsByName(String query) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        return repository.findAll(ClientSpecifications.nameContains(query)).stream().map(Client::getId).toList();
     }
 
     private Client load(long id) {
