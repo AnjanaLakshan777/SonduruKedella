@@ -29,10 +29,10 @@ This document must be updated as implementation progresses. Mark work complete o
 - [x] V1 applied to the development database (2026-10-24). V1 is now immutable.
 
 ## Planned Frontend Changes
-Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend alignment".
-- [ ] Inventory: "Return from project" action linked to the original issue, with returned movements in the history.
+Required by the owner's decisions. Unticked items are not yet made. See docs/DATABASE.md, "Frontend alignment".
+- [x] Inventory: "Return from project" action linked to the original issue, with returned movements in the history (2026-10-24, local store only; see "Inventory frontend aligned with FIFO").
 - [ ] Inventory: remove the low-stock KPI, the stock-level filter, the "Reorder soon" banner, the reorder level column and field, and `Material.reorderLevel`.
-- [ ] Inventory (FIFO): show the stock value from the API, replace the issue dialog's `q × unitCost` cost preview (wrong under FIFO), and add a unit cost field for positive adjustments.
+- [x] Inventory (FIFO) (2026-10-24, local store only): the FIFO stock value, the `q × unitCost` preview replaced, a unit cost field for positive adjustments. It still has to be wired to the API.
 - [ ] Payroll: paid employee-weeks read-only in attendance, overtime and adjustments, plus a "Record correction" action on paid lines.
 - [ ] Settings: revenue categories shown read-only.
 
@@ -742,3 +742,47 @@ For each completed task, record the date, files or migrations changed, verificat
   - Returns reverse the issue's newest draw first. This is a deterministic rule; it is not chosen by the user.
   - The frontend still shows `unitCost` and previews issue cost as `q × unitCost`. Its adjust dialog has no cost field.
   - Receipts from supplier invoices and payables are still not built.
+
+### 2026-10-24: Inventory frontend aligned with FIFO (local store)
+- Context: the frontend is not connected to the backend yet. It has no API client and no sign-in, and every page reads the local zustand store seeded from `data/seed.ts`. The owner chose to align Inventory with FIFO **inside the local store** for now. Wiring it to `/api/v1/inventory` is a later task: it needs a sign-in design (the backend still has only Spring's default user) and projects from the API.
+- `frontend/src/lib/fifo.ts`: the backend's FIFO rules, ported to the local ledger.
+  - A receipt, or an increase adjustment, is a layer at its own price.
+  - Issues and reductions draw from the oldest layer first, with one allocation per layer.
+  - Returns go back into the layers their issue drew from, newest draw first.
+  - Each draw is rounded once (`HALF_UP`), and the last of a layer or draw takes the exact remainder. The arithmetic uses integer cents and thousandths.
+  - The same pre-posting checks and messages as the backend.
+- Changes in the app:
+  - The stock value (KPI, table, material sheet) is the sum of the open FIFO layers, never `quantity × unitCost`.
+  - `Material.unitCost` is labelled "Default unit cost" (reference only).
+  - Movement costs are the FIFO cost posted with the movement, with the layers each one used ("10 × 2,000.00 + 2 × 2,400.00"). There is a `Returned` movement type with its labels.
+  - The material sheet shows the open FIFO layers (remaining quantity, unit cost, value), plus a "Return from project" action.
+  - In the movement dialog:
+    - a "Return from project" option picks the original issue and shows its returnable quantity;
+    - the `q × unitCost` "Project cost" preview is replaced by a note that the cost is worked out FIFO on posting, and the toast then shows the actual cost;
+    - an increase adjustment requires a unit cost, while a reduction has no cost field and never sends one.
+  - `addStockMovement` validates and returns the posted FIFO cost. It throws, saving nothing, on an invalid movement.
+  - Supplier invoices no longer overwrite a material's default unit cost.
+  - Project material cost (`materialsStock`, used by the project page and reports) is issues at FIFO cost minus returns.
+- Tests: Vitest 2.1.9 added as a dev dependency, with an `npm test` script. 19 tests pass (`npm test`), and `npm run build` succeeds.
+  - `fifo.test.ts`: 14 tests.
+    - the owner's example and its allocation text;
+    - partial and multi-layer draws;
+    - a later receipt not changing an earlier issue;
+    - independent materials;
+    - valuation as the sum of the layers;
+    - receipts with no allocations;
+    - partial, full and awkward-rounding returns;
+    - adjustments;
+    - the pre-posting checks.
+  - `store/inventory.test.ts`: 5 tests.
+    - the seed valued from its layers;
+    - an unchanged value when the default cost changes;
+    - project issue lines at FIFO cost;
+    - stock refreshed after a receipt, an issue, a return and an adjustment, with the project cost reversed;
+    - invalid adjustments and issues refused without saving;
+    - invoices leaving the default cost alone.
+- Not applicable while the frontend runs on the local store (to do when it is wired to the API): `requestId` idempotency and retry reuse, double-submit protection for slow requests, `WAC` legacy movements (the local data has none), the `/materials/{id}/layers` endpoint, and the API's error responses and version conflicts.
+- Unchanged:
+  - The seed data, including the `unitCost` values on seed issues; those are now ignored, because issues are costed FIFO.
+  - Low stock and the reorder level, which remain a separate planned change.
+  - The backend.

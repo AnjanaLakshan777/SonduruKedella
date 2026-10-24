@@ -46,6 +46,8 @@ Use commands appropriate to the actual project and verify the available Maven go
 ## Frontend Commands
 Inspect frontend/package.json and use the package manager matching the existing lockfile. Do not replace the lockfile or install a second package manager without approval.
 
+From `frontend/`: `npm run build` (typecheck + production build), `npm run typecheck`, and `npm test` (Vitest, `vitest run`; unit tests next to the code as `*.test.ts`). The tests need no backend or database.
+
 ## Before Every Change
 1. Inspect the relevant source and Git status.
 2. Understand existing behavior.

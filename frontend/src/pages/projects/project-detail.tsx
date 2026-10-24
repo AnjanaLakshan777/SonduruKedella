@@ -127,7 +127,7 @@ export default function ProjectDetail() {
                   <FigureList decimals={0} rows={[
                     { label: 'Revenue recorded', value: pf.revenueRecorded - pf.writtenOff, note: pf.writtenOff ? 'After write-offs' : undefined },
                     ...(pf.costs.materialsDirect ? [{ kind: 'less' as const, label: 'Materials delivered to site', value: pf.costs.materialsDirect }] : []),
-                    ...(pf.costs.materialsStock ? [{ kind: 'less' as const, label: 'Materials issued from stock', value: pf.costs.materialsStock, note: 'At issue cost — stock purchases are not counted again' }] : []),
+                    ...(pf.costs.materialsStock ? [{ kind: 'less' as const, label: 'Materials issued from stock', value: pf.costs.materialsStock, note: 'At FIFO issue cost, less returns — stock purchases are not counted again' }] : []),
                     ...(pf.costs.labour ? [{ kind: 'less' as const, label: 'Labour (wages and overtime)', value: pf.costs.labour }] : []),
                     ...Object.entries(pf.costs.expensesByCategory).map(([k, v]) => ({ kind: 'less' as const, label: k, value: v })),
                     ...(pf.commissionCommitted ? [{ kind: 'less' as const, label: 'Commission committed', value: pf.commissionCommitted, note: `${formatLKR(pf.commissionPaid)} paid so far` }] : []),

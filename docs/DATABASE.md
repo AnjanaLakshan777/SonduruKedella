@@ -633,16 +633,16 @@ The schema was compared with the frontend types, forms and calculations.
 
 The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `PayrollWeek` and others) are calculated by the API and are not stored, apart from the frozen payroll tables.
 
-**Frontend changes these decisions require** (not yet made)
-1. **Inventory: return to stock.**
+**Frontend changes these decisions require** (1 and 3 made on 2026-10-24 against the local store; the frontend is not yet connected to the API)
+1. **Inventory: return to stock.** Done (local store).
    - Add a "Return from project" action that records the project, the original issue (showing the quantity that can still be returned), the quantity, the date and a reference or reason.
    - Show `Returned` movements in the stock history, with the reduction in project cost.
 2. **Inventory: remove low stock.**
    - Remove the "Low or out of stock" KPI, the "Stock levels" filter, the "Reorder soon" banner, the reorder level column and the reorder level field in the new material dialog.
    - Remove `Material.reorderLevel` and the `Low Stock` status.
-3. **Inventory: costing (FIFO).**
+3. **Inventory: costing (FIFO).** Done in the local store (`frontend/src/lib/fifo.ts`). When the frontend is wired to the API, these values come from the backend instead:
    - The material's stock value comes from the API (`stockValue`). There is no single "unit cost" for stock any more: `defaultUnitCost` is only a suggested receipt price.
-   - The issue dialog's "Project cost" preview (`q × unitCost`) is wrong under FIFO. It should show the cost the API returns, or a FIFO preview from `/materials/{id}/layers`.
+   - The issue dialog no longer previews `q × unitCost`. It says that the cost is worked out FIFO when the movement is posted, and then shows the actual cost. (Use the API response once wired; the backend has no preview endpoint.)
    - A positive adjustment needs a unit cost field.
 4. **Payroll.**
    - Show attendance, overtime and deduction adjustments as read-only for employee-weeks that have been paid.

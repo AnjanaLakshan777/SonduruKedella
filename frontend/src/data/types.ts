@@ -187,10 +187,11 @@ export interface Material {
   category: string
   unit: string
   reorderLevel: number
+  /** Default unit cost: a reference price that pre-fills a purchase. Stock is valued FIFO (lib/fifo.ts), never at this. */
   unitCost: number
 }
 
-export type MovementType = 'Received' | 'Issued' | 'Adjustment'
+export type MovementType = 'Received' | 'Issued' | 'Returned' | 'Adjustment'
 export interface StockMovement {
   id: string
   materialId: string
@@ -198,8 +199,11 @@ export interface StockMovement {
   type: MovementType
   /** Signed: + into stock, − out of stock. */
   qty: number
-  unitCost: number
+  /** Only for stock coming in (a receipt, or an increase adjustment): the price of that batch. Issues, returns and reductions are costed FIFO from the layers. */
+  unitCost?: number
   projectId?: string
+  /** Returned: the issue the stock came back from. */
+  returnedFromId?: string
   invoiceId?: string
   reason?: string
   reference?: string

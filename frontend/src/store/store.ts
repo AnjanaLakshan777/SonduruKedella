@@ -7,6 +7,7 @@ import type {
   Settings, StockMovement, Supplier, SupplierInvoice, SupplierPayment, WriteOff, ActivityEntry,
 } from '@/data/types'
 import { derive } from '@/lib/finance'
+import { movementError, replayFifo, type CostedMovement } from '@/lib/fifo'
 import { TODAY } from '@/lib/dates'
 
 let n = 1000
@@ -34,7 +35,8 @@ interface Actions {
   addSupplierInvoice: (inv: New<SupplierInvoice>, payment?: { amount: number; method: string; date: string; reference?: string }) => string
   recordSupplierPayment: (p: New<SupplierPayment>) => void
   addMaterial: (m: New<Material>) => void
-  addStockMovement: (m: New<StockMovement>) => void
+  /** Posts to the stock ledger and returns its FIFO cost; throws, saving nothing, if the movement isn't allowed. */
+  addStockMovement: (m: New<StockMovement>) => CostedMovement
   addEmployee: (e: New<Employee>) => void
   updateEmployee: (id: string, patch: Partial<Employee>) => void
   saveAttendance: (date: string, rows: Attendance[]) => void
@@ -131,17 +133,13 @@ export const useStore = create<Store>()((set, get) => {
     addSupplierInvoice: (inv, payment) => {
       const id = uid('si')
       set((s) => {
+        // each stock line is a receipt, so a new FIFO layer at its price; the material's default cost is left alone
         const moves: StockMovement[] = inv.projectId
           ? []
           : inv.lines.filter((l) => l.materialId).map((l) => ({ id: uid('sm'), materialId: l.materialId!, date: inv.date, type: 'Received', qty: l.qty, unitCost: l.unitPrice, invoiceId: id, reference: inv.invoiceNo }))
-        const mats = s.materials.map((m) => {
-          const l = inv.lines.find((x) => x.materialId === m.id)
-          return l && !inv.projectId ? { ...m, unitCost: l.unitPrice } : m
-        })
         return {
           supplierInvoices: [...s.supplierInvoices, { ...inv, id }],
           stockMovements: [...s.stockMovements, ...moves],
-          materials: mats,
           supplierPayments: payment && payment.amount > 0 ? [...s.supplierPayments, { id: uid('sp'), invoiceId: id, ...payment }] : s.supplierPayments,
         }
       })
@@ -149,7 +147,16 @@ export const useStore = create<Store>()((set, get) => {
     },
     recordSupplierPayment: (p) => set((s) => ({ supplierPayments: [...s.supplierPayments, { ...p, id: uid('sp') }] })),
     addMaterial: (m) => set((s) => ({ materials: [...s.materials, { ...m, id: uid('m') }] })),
-    addStockMovement: (m) => set((s) => ({ stockMovements: [...s.stockMovements, { ...m, id: uid('sm') }] })),
+    addStockMovement: (m) => {
+      const s = get()
+      const mat = s.materials.find((x) => x.id === m.materialId)
+      const problem = movementError(s.stockMovements, m, mat?.unit, mat?.name)
+      if (problem) throw new Error(problem)
+      const posted = { ...m, id: uid('sm') }
+      const stockMovements = [...s.stockMovements, posted]
+      set({ stockMovements })
+      return replayFifo(stockMovements).costed.get(posted.id)!
+    },
     addEmployee: (e) => set((s) => ({ employees: [...s.employees, { ...e, id: uid('w') }] })),
     updateEmployee: (id, patch) => set((s) => ({ employees: s.employees.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
     saveAttendance: (date, rows) => set((s) => ({ attendance: [...s.attendance.filter((a) => a.date !== date), ...rows] })),

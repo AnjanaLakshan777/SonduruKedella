@@ -18,6 +18,7 @@ import type {
 } from '@/data/types'
 import { addDays, diffDays, formatRange, TODAY, weekStart as weekStartOf, monthKey } from './dates'
 import { formatLKR } from './format'
+import { replayFifo, stockOf, type CostLayer } from './fifo'
 
 const sum = <T,>(xs: T[], f: (x: T) => number) => xs.reduce((t, x) => t + f(x), 0)
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -239,9 +240,12 @@ export interface MaterialView {
   value: number
   received: number
   issued: number
+  returned: number
   adjusted: number
   status: 'In Stock' | 'Low Stock' | 'Out of Stock'
   movements: StockMovement[]
+  /** open FIFO cost layers, next to be used first */
+  layers: CostLayer[]
   lastReceived?: string
 }
 
@@ -372,15 +376,20 @@ export function derive(s: DataState) {
   })
 
   // inventory
+  // stock is valued FIFO: quantity and value are what is left in the material's cost layers
+  const fifo = replayFifo(s.stockMovements)
   const movByMat = groupBy(s.stockMovements, (m) => m.materialId)
+  const layersByMat = groupBy(fifo.layers, (l) => l.materialId)
   const materials: MaterialView[] = s.materials.map((material) => {
     const movements = (movByMat.get(material.id) ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))
-    const qty = sum(movements, (m) => m.qty)
+    const { qty, value } = stockOf(fifo, material.id)
     const received = sum(movements.filter((m) => m.type === 'Received'), (m) => m.qty)
     const issued = -sum(movements.filter((m) => m.type === 'Issued'), (m) => m.qty)
+    const returned = sum(movements.filter((m) => m.type === 'Returned'), (m) => m.qty)
     const adjusted = sum(movements.filter((m) => m.type === 'Adjustment'), (m) => m.qty)
     const status: MaterialView['status'] = qty <= 0 ? 'Out of Stock' : qty <= material.reorderLevel ? 'Low Stock' : 'In Stock'
-    return { material, qty, value: qty * material.unitCost, received, issued, adjusted, status, movements, lastReceived: movements.find((m) => m.type === 'Received')?.date }
+    const layers = (layersByMat.get(material.id) ?? []).filter((l) => l.remainingQty > 0)
+    return { material, qty, value, received, issued, returned, adjusted, status, movements, layers, lastReceived: movements.find((m) => m.type === 'Received')?.date }
   })
 
   // payroll
@@ -432,13 +441,15 @@ export function derive(s: DataState) {
       status: v.status === 'Overdue' ? 'Overdue' : v.status, dueDate: v.invoice.dueDate, refId: v.invoice.id,
     })
   }
+  // an issue is charged at its FIFO cost; a return takes that same cost back off the project
   for (const m of s.stockMovements) {
-    if (m.type !== 'Issued' || !m.projectId) continue
+    if ((m.type !== 'Issued' && m.type !== 'Returned') || !m.projectId) continue
     const mat = materialById.get(m.materialId)!
-    const amount = -m.qty * m.unitCost
+    const amount = -fifo.costed.get(m.id)!.totalCost
+    const what = m.type === 'Issued' ? `${-m.qty} ${mat.unit} issued from stock` : `${m.qty} ${mat.unit} returned to stock`
     expenseLines.push({
       id: `iss:${m.id}`, source: 'Stock issue', date: m.date, scope: 'Project', projectId: m.projectId, group: 'Construction', category: 'Materials',
-      description: `${mat.name} — ${-m.qty} ${mat.unit} issued from stock${m.reference ? ` (${m.reference})` : ''}`, payee: 'Company stock', amount, paid: amount, remaining: 0, status: 'From Stock', refId: m.id,
+      description: `${mat.name} — ${what}${m.reference ? ` (${m.reference})` : ''}`, payee: 'Company stock', amount, paid: amount, remaining: 0, status: 'From Stock', refId: m.id,
     })
   }
   for (const w of payroll) {
@@ -558,7 +569,7 @@ export function derive(s: DataState) {
     expensePayables: sum(expenseLines.filter((l) => l.source === 'Manual'), (l) => l.remaining),
     commissionPayables: sum(commissions.filter((c) => c.arr.status === 'Confirmed'), (c) => c.remaining),
     payrollPayables: sum(payroll.filter((w) => w.closed), (w) => w.remaining),
-    stockValue: sum(materials, (m) => m.value),
+    stockValue: r2(sum(materials, (m) => m.value)),
   }
   const revenueRecorded = totals.revenueProjects + totals.revenueOther
   const paymentsReceived = totals.received + totals.receivedOther
@@ -583,6 +594,8 @@ export function derive(s: DataState) {
 
   return {
     s, clientById, projectById, supplierById, empById, materialById,
+    // FIFO cost of every stock movement, keyed by movement id
+    stockCost: fifo.costed,
     installments, invoices, materials, payroll, advances, commissions, policyCheck, expenseLines, projects, projectFinById, otherIncome,
     totals: { ...totals, revenueRecorded, paymentsReceived },
     monthly, payablesDue,
