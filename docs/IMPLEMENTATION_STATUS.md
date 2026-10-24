@@ -45,7 +45,7 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 
 ## Business Modules
 - [x] Settings (2026-10-24): company profile, commission policy, wage settings, expense categories, units, payment methods, and read-only revenue categories.
-- [ ] Clients.
+- [x] Clients (2026-10-24): create, list (search, type filter, paging), get and update. Financial summaries per client are not included yet; they depend on projects and revenue.
 - [ ] Projects and agreement metadata.
 - [ ] Contract payment schedules and receipts.
 - [ ] Revenue and expenses.
@@ -175,4 +175,34 @@ For each completed task, record the date, files or migrations changed, verificat
     - Revenue categories are `{code, name}` objects.
     - Expense categories are a flat list with `group`, `id` and flags, not a map of name lists.
     - Units and payment methods are `{id, name, active, sortOrder}` objects, so entries can be removed by id.
+  - The running backend container has not been rebuilt, so these endpoints are not yet live in the local stack.
+
+### 2026-10-24: Clients module
+- Endpoints (all under `/api/v1/clients`):
+  - `GET` list: `q` searches name, city and phone (case-insensitive, `%` and `_` matched literally); `kind` filters by `INDIVIDUAL` or `BUSINESS`; `page` (zero-based), `size` (default 20, at most 100) and `sort` (`name`, `city`, `createdAt` or `id`; default `name`, with `id` as a tie-breaker). Returns `{content, page, size, totalElements, totalPages}`.
+  - `GET /{id}`, `POST` (201 with a `Location` header) and `PUT /{id}`.
+- Rules:
+  - Validation follows V1 and the client dialog: name required (at most 200); phone required and, once trimmed, 9 to 15 digits, spaces or "+"; email optional and in the form something@something.something (at most 150); address at most 300; city at most 100; `kind` required.
+  - Text is trimmed and blank optional fields are stored as null.
+  - Updates require the current `version`; a stale version returns 409 and leaves the client unchanged.
+  - No duplicate check: V1 defines no unique identifier for clients.
+  - No delete or archive: V1 has no active flag and the UI has no such action.
+  - No activity log entry: `activity_log` is the project feed and has no client event kind.
+- Shared code added: `common.web.PageResponse`, the paging contract for list endpoints.
+- Authorization: unchanged from Settings. Every endpoint requires an authenticated user and writes require a CSRF token. No roles are defined in the docs.
+- Tests: 88 passed on JDK 25 (local, `C:\Tools\Java\jdk-25.0.4.1`) against a throwaway PostgreSQL 17 container, 51 of them new:
+  - Unit tests: 9 for the service, 13 for the phone validator
+  - Web-layer tests: 15, covering authentication, CSRF, validation messages, unknown types, paging parameters, 404, 409 and the absence of delete
+  - Repository tests: 7 against the real V1 schema (search, type filter, literal wildcards, audit defaults, database constraints)
+  - API integration tests: 7, each in a transaction that is rolled back
+  - The throwaway database held no clients after the run, which confirms the rollback. The container was then removed. The development database was not touched.
+- Limitations:
+  - `created_by` stays null until application users and login exist.
+  - The API differs from the frontend `Client` type in these ways, which the frontend must map when it is integrated:
+    - `id` is a number, not a string.
+    - `kind` is an API constant (`INDIVIDUAL`, `BUSINESS`), not `Individual` or `Business`.
+    - `createdAt` is an ISO-8601 timestamp, not a `YYYY-MM-DD` date. The frontend can use its date part for "Client since".
+    - `address` and `city` can be null; the frontend type has them as required strings.
+    - Responses add `updatedAt` and `version`, and `PUT` requires `version`.
+    - The directory's contract value, received, outstanding, overdue and project codes are not returned. They need the projects and revenue modules.
   - The running backend container has not been rebuilt, so these endpoints are not yet live in the local stack.
