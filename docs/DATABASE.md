@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments` and `receivable_write_offs`. The other tables have no entities yet.
+Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses` and `expense_payments`. The other tables have no entities yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -194,6 +194,36 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
 - **expense_payments**: `expense_id` plus the common payment columns. The expense form's "paid in full / part / unpaid" choice creates zero or one payment in the same transaction.
 
 Machinery rental is a manual expense in the `Machinery Rental` category, recording the provider, machine type, usage period and project, with payments recorded against the expense. There is no separate rental module.
+
+**Implemented (2026-10-24, no migration needed)**
+- Only manual expenses are stored here. Labour (payroll), commission, supplier invoices and stock issues reach project costs through their own modules. The service rejects `system_generated` categories (Labour, Commission) with a clear message, and the V1 check refuses them as well. Materials is not system-generated, so a purchase made outside the inventory workflow is a valid manual expense.
+- Scope:
+  - `PROJECT` needs an existing project. Its type sets `expense_group` and `project_type`.
+  - `COMPANY` must have no project. Company expenses never appear in a project's list or costs.
+  - New expenses cannot be added to a `CANCELLED` project; the UI doesn't offer cancelled projects either.
+- Category: it must exist, be active, belong to the expense's group and not be system-generated. On an edit, a category, unit or cancelled project the expense already had is still accepted, so historical expenses stay editable.
+- Materials line: `quantity`, `unit_id` and `unit_price` come together. The amount is worked out as `round(quantity × unit_price, 2)` (`HALF_UP`, as the V1 check does). A client-sent amount must match.
+- Payments:
+  - The expense row is locked (`SELECT … FOR UPDATE`) before the balance is read, so concurrent payments cannot overpay.
+  - `request_id` is the client's idempotency key: a resent request returns the original payment, and reusing the id for a different payment is a 409.
+  - Corrections only void a payment (`voided_at`, `void_reason`), which the V1 trigger enforces. Voided payments are kept and listed, but never counted.
+  - The form's "paid in full / part" choice is an optional `initialPayment`, saved in the same transaction as the expense.
+- Calculation (`expenses.service.ExpenseCalculator`, the same rules as `lib/finance.ts`):
+  - paid = `Σ` non-voided payments
+  - outstanding = `max(0, amount − paid)`
+  - status:
+    - `PAID` when outstanding is 0
+    - else `OVERDUE` when `due_date < today` (Colombo)
+    - else `PARTIALLY_PAID` when paid > 0
+    - else `UNPAID`
+
+  The status filter uses the same rules in SQL. Nothing about the balance is stored.
+- Edits: a full replace with optimistic locking (`version`), under the same row lock. The amount cannot go below what has already been paid (void a payment first). Moving an expense to another project or to company level writes an activity entry on the old project as well.
+- Not implemented, because nothing exists yet to back them:
+  - `supplier_id` is never set, because there is no suppliers module to validate it.
+  - The `attachment_*` columns stay null; there is no receipt-file upload yet.
+
+  The category-specific fields (machinery, electricity) are accepted for any category, as in V1, which doesn't tie them to one.
 
 ## Suppliers and inventory
 

@@ -48,7 +48,7 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 - [x] Clients (2026-10-24): create, list (search, type filter, paging), get and update. Financial summaries per client are not included yet; they depend on projects and revenue.
 - [x] Projects (2026-10-24): create (with an inline client, the payment schedule and delay terms, all in one transaction), list, get, status changes, and reading the saved schedule and delay terms. The agreement PDF is handled by the Agreements module.
 - [x] Contract payment schedules and receipts (2026-10-24): schedule created with the project and readable; billing; client receipts (idempotent, voidable); write-offs (create only); delay deductions (apply and reverse); receivables per project and a company-wide summary. Not yet: editing a schedule, variations, write-off reversal (needs a migration).
-- [ ] Revenue and expenses. Partial (2026-10-24): project revenue is recognised at billing and reported per project. Other income and expenses are not implemented.
+- [ ] Revenue and expenses. Partial (2026-10-24): project revenue is recognised at billing, and manual project and company expenses with their payments are implemented. Other income is not implemented.
 - [ ] Commission management.
 - [ ] Suppliers and payables.
 - [ ] Inventory and stock movements.
@@ -429,4 +429,75 @@ For each completed task, record the date, files or migrations changed, verificat
   - The UI's default target installment may be unbilled; the API requires a billed one.
   - The UI keeps `actualCompletion` on the terms after a reversal; the API clears it, as the V1 check requires.
   - No date rules are enforced on payment, write-off or billing dates; none are documented.
+  - `created_by` stays null until application users exist.
+
+### 2026-10-24: Expenses (manual project and company expenses, and their payments)
+- No migration: V1's `expenses` and `expense_payments` already had every column, constraint and trigger needed.
+- Endpoints (all under `/api/v1/expenses`; signed-in users only, and every `POST`/`PUT` needs a CSRF token):
+
+  | Method | Path | Request | Response |
+  | --- | --- | --- | --- |
+  | GET | `/` | `q, scope, projectId, categoryId, group, status, from, to, page, size (default 20, max 100), sort (expenseDate, amount, dueDate, createdAt, id)` | `PageResponse` of expenses, newest first |
+  | GET | `/summary` | same filters | `{count, total, projectTotal, companyTotal, paid, outstanding, overdueOutstanding}` |
+  | GET | `/{id}` | — | `{expense, payments[]}` |
+  | POST | `/` | `{date, scope, projectId?, categoryId, description, payee, amount?, dueDate?, invoiceNo?, notes?, quantity?, unitId?, unitPrice?, machineType?, usageFrom?, usageTo?, billingPeriod?, initialPayment?}` | 201 expense |
+  | PUT | `/{id}` | the same fields without `initialPayment`, plus `version` | expense |
+  | GET | `/{id}/payments` | — | payments, voided ones flagged |
+  | POST | `/{id}/payments` | `{requestId, paymentDate, amount, paymentMethodId, reference?, notes?}` | 201 payment, or 200 for a resent `requestId` |
+  | POST | `/{id}/payments/{paymentId}/void` | `{reason, version}` | payment |
+
+  - An expense is `{id, date, scope, projectId, group, categoryId, category, description, payee, amount, dueDate, invoiceNo, notes, quantity, unitId, unit, unitPrice, machineType, usageFrom, usageTo, billingPeriod, paid, outstanding, status, createdAt, updatedAt, version}`.
+  - A project's expenses are `GET /api/v1/expenses?projectId={id}`; there is no separate project endpoint.
+  - Errors:
+    - 404: an unknown expense or payment.
+    - 400:
+      - validation, and an amount ≤ 0 or with more than 2 decimals;
+      - a project that doesn't exist or is cancelled;
+      - a scope that doesn't match the project;
+      - a category that is missing, inactive, from the wrong group or system-generated;
+      - a materials line that doesn't add up;
+      - a usage period that ends before it starts;
+      - an inactive payment method;
+      - an overpayment;
+      - an amount lowered below what was paid;
+      - a bad filter or sort.
+    - 409: a stale version, a payment voided twice, or a `requestId` reused for a different payment.
+  - No DELETE.
+- Business rules: see DATABASE.md, Expenses, "Implemented". In short:
+  - only manual costs;
+  - Labour and Commission are refused;
+  - the category must fit the project type, or `COMPANY`;
+  - outstanding = `max(0, amount − active payments)`;
+  - statuses `PAID`, `OVERDUE`, `PARTIALLY_PAID` and `UNPAID`, using the Colombo date (the same labels as the UI);
+  - payments lock the expense row;
+  - each change writes an `EXPENSE` activity entry (with the project id for project expenses, none for company ones).
+- Tests: 392 passed on JDK 25 against a throwaway PostgreSQL 17 container, 42 of them new.
+  - Unit tests: 11. Every status and the zero floor; the materials amount and its rounding, a mismatch and a partial line; scope and project consistency; the usage period.
+  - Web-layer tests: 9. 401 for anonymous users, 403 without CSRF, field errors (including `initialPayment.*`), malformed dates and enums, 201 then 200 on a resent payment, 400/404/409 mapping, filter binding, no DELETE.
+  - API integration tests: 19, each rolled back, with a fixed clock at 19:00 UTC (already the next day in Colombo).
+    - project and company expenses, including paid in full at creation;
+    - the materials amount;
+    - Labour refused;
+    - the wrong group, and missing or inactive categories (an existing expense keeps its now-inactive category when edited);
+    - missing or cancelled projects;
+    - invalid dates and amounts;
+    - 404 cases;
+    - partial and full payments, overpayment, a resent payment, an inactive payment method, voiding (the V1 trigger still blocks deletes);
+    - the Colombo overdue status;
+    - edit rules, including the version and moving to company level;
+    - filters, paging, sorting and the summary;
+    - the database refusing a mismatched category;
+    - reads that change nothing.
+  - Concurrency tests that commit for real: 3. Eight payments of 20,000 against 100,000 give exactly five; six copies of one submission give one payment; a failure after the expense was written rolls back the expense and its first payment.
+  - Afterwards every table was back to 0 rows and both payment guard triggers were enabled again. The container was removed, and the development database was not touched.
+- Limitations and frontend differences:
+  - Supplier link: `supplierId` isn't accepted yet (there is no suppliers module), so `payee` is always required. The UI allows a supplier instead of a payee.
+  - Receipt attachments are not uploaded or stored.
+  - The UI's free-form `details` map becomes typed fields. `unitId` replaces the unit name.
+  - The category is sent by id, not name.
+  - Enums are API constants (`PROJECT`, `COMPANY`, `PARTIALLY_PAID`).
+  - Every payment needs a `requestId` (UUID) and the `version` of the last read.
+  - The Expenses page's ledger also shows supplier invoices, stock issues, payroll and commissions; this API returns manual expenses only, and those other sources arrive with their modules.
+  - No rules are enforced on expense, due or payment dates; none are documented.
+  - Payments are recorded through `/expenses` only; there are no supplier payables yet.
   - `created_by` stays null until application users exist.

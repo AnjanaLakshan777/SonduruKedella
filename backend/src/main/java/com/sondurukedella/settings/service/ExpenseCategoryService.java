@@ -36,6 +36,13 @@ public class ExpenseCategoryService {
         return categories.stream().map(mapper::toResponse).toList();
     }
 
+    // Contract for the expenses module. Returns inactive categories too: an expense recorded before
+    // a category was removed keeps it, and editing that expense must still be able to read it.
+    @Transactional(readOnly = true)
+    public Optional<ExpenseCategoryResponse> findById(long id) {
+        return repository.findById(id).map(mapper::toResponse);
+    }
+
     @Transactional
     public LookupAddResult<ExpenseCategoryResponse> add(ExpenseCategoryCreateRequest request) {
         String name = SettingsText.requireName(request.name(), ExpenseCategory.NAME_MAX_LENGTH);
