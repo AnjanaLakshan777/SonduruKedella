@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses`, `expense_payments` and `suppliers`. The other tables have no entities yet.
+Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses`, `expense_payments`, `suppliers`, `materials`, `stock_movements`, `stock_cost_layers` and `stock_cost_allocations` (the last two added by V4). The other tables have no entities yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -64,7 +64,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - Instants: `TIMESTAMPTZ`.
 - Every table has `created_at`, `created_by` and `updated_at`. Tables whose rows can change also have `version BIGINT` for optimistic locking.
   - `created_by` references `app_users` and stays nullable until authentication exists.
-  - Append-only and frozen tables (`stock_movements`, `payroll_lines`, `payroll_line_costs`, `advance_recoveries`, `activity_log`) have no `updated_at` or `version`.
+  - Append-only and frozen tables (`stock_movements`, `stock_cost_allocations`, `payroll_lines`, `payroll_line_costs`, `advance_recoveries`, `activity_log`) have no `updated_at` or `version`.
 - Single-row settings tables use `id SMALLINT = 1`.
 - Some child tables carry a copy of a parent value, such as `project_type`, `allocation` or `expense_group`. That copy lets a composite foreign key enforce a cross-table rule in the database. The service sets the copy, and the foreign key guarantees it matches the parent.
 - **Payments** (client, other income, expense, supplier, commission, payroll) and **salary advances** follow the same rules:
@@ -74,7 +74,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - Payments are never deleted. A correction voids the row (`voided_at`, `void_reason`), and voided rows are left out of every balance.
 - Index every foreign key, plus the date columns that reports filter on.
 - Balances are calculated, never stored. That covers outstanding, overdue, advance balances and payroll figures. There are two deliberate exceptions:
-  - the running stock balance on each stock movement, which records the weighted average as it changes
+  - the running stock balance on each stock movement, and the FIFO cost layers' remaining quantity and value, which are kept in step with it in the same transaction
   - the frozen payroll snapshot
 
   Both are described below.
@@ -236,10 +236,14 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
   - V2 added no index. Search is a "contains" match (`lower(name) LIKE '%…%'`), which a b-tree index can't serve, and a boolean flag on a small directory table isn't worth one. `ix_expenses_supplier` (V1) already covers the expense-to-supplier join.
 - **materials**:
   - Columns: `sku` (unique), `name`, `category`, `unit_id`, `unit_cost`, `version`.
-  - `unit_cost` holds the current weighted average cost. It is updated in the same transaction as each movement and always equals the latest movement's `value_after / quantity_after`.
-    - The "Default unit cost" entered when a material is created is used only until the first receipt.
-    - When stock reaches zero, the last average is kept.
+  - `unit_cost` is the **default unit cost**: a reference price entered in the catalogue and offered as the starting price on a receipt. Since FIFO (V4) it prices nothing, because every movement is costed from the cost layers. No movement changes it.
+    - Under the weighted average (before V4) the ledger kept it at the current average, so materials from that time still hold their last average until someone edits it. That value has no effect on costing.
   - There is no reorder level and no low-stock tracking.
+  - `active` (added by `V3__inventory_ledger_additions.sql`, default `TRUE`): materials are deactivated, never deleted, because the ledger references them. An inactive material takes no new receipts, issues or adjustments. Its history stays readable, and its issued stock can still be returned.
+  - Implemented (2026-10-24):
+    - SKU, name, category and unit are required. The SKU is unique ignoring case (409).
+    - The unit must be active in Settings.
+    - Once the material has any movement, the unit can no longer be edited, because the ledger's quantities are in that unit. The default unit cost can be edited at any time, and editing it revalues nothing.
 - **supplier_invoices**:
   - Columns:
     - `supplier_id`, `invoice_no`, `invoice_date`, `due_date`
@@ -280,12 +284,54 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
     - Materials that reached a project through a `PROJECT` supplier invoice or a manual `Materials` expense were never issued from stock, so they cannot be returned.
   - Ledger order:
     - Each material's ledger is ordered by `id`, which is the posting order. `movement_date` is the business date.
-    - The weighted average is never recalculated retroactively, so a late-entered receipt affects only movements posted after it.
+    - Costs are never recalculated retroactively. A late-entered (back-dated) receipt becomes the newest FIFO layer: it is used after every layer posted before it and affects only movements posted after it.
     - Index: (`material_id`, `id`), plus (`project_id`, `material_id`) for project usage.
   - Where receipts come from:
     - A posted `STOCK` invoice creates one `RECEIVED` movement for each line.
     - A `RECEIVED` movement without an invoice line comes from "Record stock received", for example a cash purchase or opening stock, and creates no payable.
   - Rows are never updated or deleted. Mistakes are corrected with an `ADJUSTMENT`, or a `RETURNED` movement for an issue.
+  - Added by `V3__inventory_ledger_additions.sql`:
+    - `supplier_id`: nullable FK to `suppliers`. `ck_stock_movements_supplier` allows it only on `RECEIVED` rows, so a manual receipt (cash purchase) can name its supplier. It is indexed (`ix_stock_movements_supplier`).
+    - `request_id`: nullable UUID, unique (`uq_stock_movements_request`). It is the client's idempotency key for receipts, issues, returns and adjustments. NULL is allowed for movements the system posts, such as supplier invoice receipts later.
+  - Added by `V4__inventory_fifo_cost_layers.sql`:
+    - `costing_method` (`WAC` | `FIFO`, NOT NULL). Rows that existed before V4 are `WAC`, set through the column default when the column was added, so no row was updated. The default then became `FIFO` for every new row. A `WAC` row keeps the weighted-average cost it was posted at and has no allocations.
+    - `uq_stock_movements_id_material` (`id`, `material_id`): the target of the composite keys that keep layers and allocations on the same material as their movement.
+  - Implemented (2026-10-24, `inventory.service.StockMovementService` and `StockLedger`):
+    - Each movement locks the `materials` row (`SELECT … FOR UPDATE`), checks the `request_id`, validates, prices the movement from the FIFO layers, and saves the movement, its layer or allocations, and the changed layer balances, all in one transaction. A posting is refused and rolled back if the open layers afterwards don't add up exactly to the ledger's `quantity_after` and `value_after`.
+    - A resent `request_id` returns the first movement; the same id with different details is a 409.
+    - Issues go only to `CONSTRUCTION` projects in `PLANNING`, `IN_PROGRESS` or `ON_HOLD`, for an active material, and never more than the stock on hand.
+    - Returns reference an `ISSUED` row. The material and project come from it. Returns are allowed for an inactive material and for any project status, because stock already on site can always come back. The service checks the remaining quantity under the material lock; the V1 trigger checks it again.
+    - Receipts need an active material, a unit cost above 0 (the UI rule), and, when a supplier is named, an existing active supplier.
+    - Adjustments need an active material, a non-zero signed quantity and a reason of at least 5 characters. They never touch a project.
+      - A reduction is costed FIFO and must not state a unit cost.
+      - An increase must state its unit cost (`unitCost ≥ 0`), which becomes the new layer's cost. The cost is never guessed, because there is no purchase behind the stock.
+    - Only issues and returns write an activity entry (`EXPENSE`, on the project), because they change project cost.
+- **stock_cost_layers** (V4): one FIFO cost layer per batch of stock that came in.
+  - Columns:
+    - `material_id`, `source_movement_id` (unique), `origin` (`RECEIPT` | `ADJUSTMENT` | `LEGACY_BALANCE` | `LEGACY_RETURN`), `layer_date`
+    - `original_quantity`, `unit_cost`, `original_cost`
+    - `remaining_quantity`, `remaining_value`
+    - `version`, plus the audit columns
+  - Origins:
+    - A receipt (opening stock included) creates a `RECEIPT` layer. A positive adjustment creates an `ADJUSTMENT` layer.
+    - `LEGACY_BALANCE` is a material's stock and value when V4 ran.
+    - `LEGACY_RETURN` is a return against a pre-FIFO issue.
+  - The layer copies its movement: `original_quantity = quantity_change`, `original_cost = total_cost`, `unit_cost` = the movement's unit cost.
+  - FIFO order is `id` order (posting order). It is deterministic even when two receipts share a date. `layer_date` is the business date, kept for display.
+  - Only `remaining_quantity` and `remaining_value` ever change. Draws lower them, and returns put back what the issue took.
+  - Checks:
+    - `0 ≤ remaining_quantity ≤ original_quantity`, and `0 ≤ remaining_value ≤ original_cost`.
+    - An empty layer is worth 0 (`remaining_quantity > 0 OR remaining_value = 0`).
+    - A composite FK (`source_movement_id`, `material_id`) keeps the layer on its movement's material.
+  - Index: partial (`material_id`, `id`) `WHERE remaining_quantity > 0`, for the open layers.
+- **stock_cost_allocations** (V4): append-only. Each row is one movement's share of one layer.
+  - Columns: `movement_id`, `material_id`, `layer_id`, `quantity`, `cost`, `reverses_allocation_id`.
+  - A **draw** (from an issue or a negative adjustment) is negative and reverses nothing.
+  - A **reversal** (from a return) is positive and names the draw it reverses (`ck_stock_cost_allocations_sign`). One issue can draw from many layers, and one layer can supply many issues.
+  - Composite FKs keep the movement and the layer on the same material.
+  - `trg_stock_cost_allocations_immutable` refuses updates and deletes.
+  - `trg_stock_cost_allocations_reversal` locks the draw it reverses and checks two things: the reversal is on the same layer, and the reversals together don't exceed the draw's quantity or cost.
+  - Invariant (checked by tests): a FIFO `ISSUED`, `RETURNED` or negative `ADJUSTMENT` movement's allocations sum exactly to its `quantity_change` and `total_cost`.
 
 ## Payroll
 
@@ -348,7 +394,7 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
 **Enforced by the service**, inside a transaction that locks the parent row
 - Overtime entries and stock issues are accepted only for construction projects. The owner decided this is a service rule, matching the project lists the UI already offers.
 - Payment totals cannot exceed the remaining balance.
-- Weighted-average costing and running balances are calculated by the service.
+- FIFO costing, the layer balances and the running balances are calculated by the service.
 - Schedule totals must match the contract value plus variations.
 - Payments and write-offs are accepted only on billed installments.
 - Invoice totals must equal the sum of their lines.
@@ -409,27 +455,60 @@ These follow `lib/finance.ts` unless noted.
 - Reversing clears all four applied columns, including `actual_completion`, as `ck_delay_deduction_terms_applied` requires. The terms stay.
 - Open question: the design said the owner "may apply a different final amount" without saying whether a higher one is allowed. The implementation allows only lower; revisit if the owner wants otherwise.
 
-**Stock costing (weighted average)**
+**Stock costing (FIFO, since V4 — replaces the weighted average)**
 
-Each movement is posted with the `materials` row locked. Let `Q` and `V` be the previous movement's `quantity_after` and `value_after`, or 0 for the first movement. Then:
+The oldest stock is used first. Each movement is posted with the `materials` row locked, and the open layers are also locked (`FOR UPDATE`). This is implemented in `inventory.service.FifoCosting`, which holds the arithmetic, and `StockLedger`, which does the posting. Money is rounded `HALF_UP` to 2 decimals, and unit costs to 4 decimals.
 
-| Movement | `unit_cost` | `total_cost` | New average |
+**The pricing rule, `share(q, pool)`.** Taking `q` out of a pool (a layer, or what is still out on one draw) that holds quantity `P`, is worth `W` and has unit cost `u` costs:
+- `round(q × u, 2)`, capped at `W`;
+- or exactly `W` when `q = P`.
+
+The last of a pool therefore always takes exactly what is left. An emptied layer is worth 0.00, and no draw can take more than the layer is worth.
+
+| Movement | Effect on layers | `total_cost` | `unit_cost` stored on the movement |
 | --- | --- | --- | --- |
-| `RECEIVED` | the purchase price | `round(q × price, 2)` | `(V + total_cost) / (Q + q)` |
-| `RETURNED` | the referenced issue's `unit_cost` | `round(q × issue unit_cost, 2)` | `(V + total_cost) / (Q + q)` |
-| `ISSUED` | the current average (`V / Q`) | `−round(q × average, 2)` | unchanged |
-| `ADJUSTMENT` | the current average (`V / Q`, or `materials.unit_cost` when `Q = 0`) | `±round(q × average, 2)` | unchanged |
+| `RECEIVED` | a new `RECEIPT` layer | `round(q × price, 2)` | the price |
+| `ADJUSTMENT` + | a new `ADJUSTMENT` layer at the stated unit cost | `round(q × unit cost, 2)` | the stated cost |
+| `ISSUED`, `ADJUSTMENT` − | draws from the open layers in `id` order, oldest first, until `q` is covered; one allocation per layer, each priced with `share` | `−Σ` draws | `|total| / q`, 4 dp, for display only |
+| `RETURNED` (FIFO issue) | reverses the issue's own draws, **newest draw first**, and puts each quantity and cost back into the layer it came from; each priced with `share` over what is still out on that draw | `Σ` reversals | `total / q`, 4 dp, for display only |
+| `RETURNED` (pre-FIFO `WAC` issue) | a new `LEGACY_RETURN` layer at the issue's own `unit_cost` | `share(q, still out on the issue)`: the last return takes the issue's remaining cost | the issue's `unit_cost` |
 
+- The owner's example: receipt A of 10 at 2,000, receipt B of 10 at 2,400, then an issue of 12.
+  - The issue draws 10 from A (20,000) and 2 from B (4,800), so the project is charged **24,800**.
+  - What remains is 8 of B, worth **19,200**.
+  - Nothing is averaged. A later, more expensive receipt never changes the 24,800.
+- A return restores the composition of the original issue. Say the issue above is returned 1, then 2, then 9:
+  - the 1 goes back to B at 2,400;
+  - the 2 go back as 1 to B (2,400) and 1 to A (2,000), so 4,400;
+  - the 9 go back to A, 18,000.
+  - In total 24,800 comes back, exactly the issue cost, and A and B again hold exactly 10 / 20,000 and 10 / 24,000.
+- Rounding:
+  - Each draw or reversal is rounded once, to 2 decimals.
+  - Intermediate products are not rounded.
+  - The last of each layer, and the last of each draw, takes the exact remainder. A fully returned issue therefore nets to exactly 0.00 on the project. For example, 3 units worth 100.00 come back as 33.33 + 33.33 + 33.34.
 - After every movement:
   - `quantity_after = Q + quantity_change`
-  - `value_after = V + total_cost`
-  - `materials.unit_cost = value_after / quantity_after` (4 decimal places). When `quantity_after = 0`, the previous average is kept.
-- Rounding: a movement that takes stock to exactly zero takes `total_cost = −V`, so no rounding residue is left in stock. A return that completes the return of an issue takes the issue's remaining cost.
+  - `value_after = V + total_cost`, where `Q` and `V` are the previous row's values
+  - the service then checks that `Σ remaining_quantity` and `Σ remaining_value` over the material's layers equal `quantity_after` and `value_after` exactly, and otherwise rolls the posting back
 - The service rejects:
-  - issues or negative adjustments larger than `Q`
-  - returns larger than the quantity still un-returned on the referenced issue
-- Project material usage (quantity and cost) = `−Σ` of the project's `ISSUED` and `RETURNED` movements.
-- Stock on hand and stock value = the latest `quantity_after` and `value_after`. These always equal `Σ quantity_change` and `Σ total_cost`, and a reconciliation query and tests check that they do.
+  - issues or negative adjustments larger than the stock on hand;
+  - returns larger than the quantity still un-returned on the referenced issue.
+
+  The V1 return trigger and the V4 reversal trigger check these again in the database.
+- Project material usage (quantity and cost) = `−Σ` of the project's `ISSUED` and `RETURNED` movements. These are FIFO costs fixed when posted, or for pre-FIFO rows the average they were posted at.
+- Stock on hand = the latest `quantity_after`.
+- Stock value (per material and in `/valuation`) = `Σ remaining_value` of the open layers. This equals the latest `value_after`, `Σ total_cost` and the plain sums, and a reconciliation check plus tests confirm it.
+- No average enters FIFO pricing. The display-only `unit_cost` on a multi-layer movement is never used to price anything.
+
+**FIFO migration of existing data (V4)**
+- A database used under the weighted average cannot be turned into honest FIFO layers. The posted issues were charged at the average, so replaying the history FIFO would charge projects different amounts than they were actually charged, and the resulting layers would no longer add up to the stock value the ledger records.
+- V4 therefore rewrites nothing. For each material with stock on hand, it carries the current balance forward as **one `LEGACY_BALANCE` layer**:
+  - its quantity and value are exactly the last row's `quantity_after` and `value_after`, at the unit cost `round(V / Q, 4)`;
+  - its source is that last movement;
+  - it is the oldest layer, so it is used first, and new receipts queue behind it.
+- Materials at zero stock get no layer.
+- Every pre-V4 movement keeps its cost and is marked `costing_method = 'WAC'`.
+- Before carrying anything forward, V4 checks every material's ledger: the running balances must equal `Σ quantity_change` and `Σ total_cost`, and zero stock must be worth zero. If any material fails, the migration **stops** with an error naming the materials, and nothing is applied. No ledger is guessed or "fixed".
 
 **Project costs**: each cost has exactly one source.
 
@@ -472,17 +551,19 @@ Each movement is posted with the `materials` row locked. Let `Q` and `V` be the 
 
 ## Examples
 
-**Weighted average stock, issue and return**
+**FIFO stock, issue and return**
 1. A `STOCK` invoice for 100 bags of cement at 2,400.
-   - Payable: 240,000. Stock: 100 bags, 240,000. Average: 2,400. Project cost: 0.
+   - Payable: 240,000. Stock: layer A, 100 bags, 240,000. Project cost: 0.
 2. A second `STOCK` invoice for 50 bags at 2,550.
-   - Payable: +127,500. Stock: 150 bags, 367,500. Average: 2,450.
-3. Issue 60 bags to SK-2026-014 at 2,450.
-   - Project cost: 147,000. Stock: 90 bags, 220,500. Average: still 2,450.
-4. Return 5 bags against that issue, at 2,450.
-   - Project cost: 134,750. Stock: 95 bags, 232,750.
+   - Payable: +127,500. Stock: A (100 at 2,400) + B (50 at 2,550) = 150 bags, 367,500.
+3. Issue 110 bags to SK-2026-014.
+   - The issue draws all 100 of A (240,000) and 10 of B (25,500).
+   - Project cost: 265,500. Stock: 40 bags of B, 102,000.
+4. Return 15 bags against that issue.
+   - Newest draw first: 10 go back to B (25,500) and 5 to A (12,000).
+   - Project cost: 228,000. Stock: A 5 + B 50 = 55 bags, 139,500.
 5. Pay both invoices, in one or several payments each.
-   - Payables: 0. Project cost: still 134,750.
+   - Payables: 0. Project cost: still 228,000.
 
 The purchases never appear as project cost.
 
@@ -529,7 +610,7 @@ The schema was compared with the frontend types, forms and calculations.
 **Owner decisions (2026-10-24)**
 1. **Material returns:** each return is linked to the originating project and its stock issue. The stock goes back to company stock, and the project's material cost falls by the original issue cost of the returned quantity.
 2. **Low stock:** removed. There is no reorder level, no low-stock status and no alerts.
-3. **Stock costing:** weighted average, held in the movement ledger (see [Stock costing](#calculations)).
+3. **Stock costing:** FIFO, with persistent cost layers and issue allocations (see [Stock costing](#calculations)). This was changed by the owner on 2026-10-24, from the weighted average originally chosen. Movements posted under the average keep their costs (`costing_method = 'WAC'`).
 4. **Paid payroll weeks:** a week is frozen for an employee at that employee's first payment for it. Later changes are made through `payroll_corrections`.
 5. **Revenue categories:** fixed to the four categories and shown read-only in Settings.
 
@@ -559,7 +640,10 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
 2. **Inventory: remove low stock.**
    - Remove the "Low or out of stock" KPI, the "Stock levels" filter, the "Reorder soon" banner, the reorder level column and the reorder level field in the new material dialog.
    - Remove `Material.reorderLevel` and the `Low Stock` status.
-3. **Inventory: costing.** The unit cost shown is the weighted average returned by the API. Receiving stock no longer overwrites it with the latest price.
+3. **Inventory: costing (FIFO).**
+   - The material's stock value comes from the API (`stockValue`). There is no single "unit cost" for stock any more: `defaultUnitCost` is only a suggested receipt price.
+   - The issue dialog's "Project cost" preview (`q × unitCost`) is wrong under FIFO. It should show the cost the API returns, or a FIFO preview from `/materials/{id}/layers`.
+   - A positive adjustment needs a unit cost field.
 4. **Payroll.**
    - Show attendance, overtime and deduction adjustments as read-only for employee-weeks that have been paid.
    - Add a "Record correction" action, with an amount, a reason and an optional project, on paid payroll lines.
@@ -575,3 +659,24 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
   - Verified on a fresh PostgreSQL 17 database (V1 then V2).
   - Verified on a V1 database that already held a supplier with a linked expense: after V2 both rows were unchanged and the supplier was active.
   - Not yet applied to the development database. Flyway applies it on the next backend start.
+- `V3__inventory_ledger_additions.sql` (2026-10-24): adds `materials.active` (default `TRUE`), plus `stock_movements.supplier_id` (nullable FK, receipts only, indexed) and `stock_movements.request_id` (nullable UUID, unique).
+  - It is additive only: existing materials become active, existing movements get NULLs, and the append-only and return triggers are unchanged.
+  - Verified on a fresh PostgreSQL 17 database (V1 to V3).
+  - Verified on a V1 and V2 database holding a supplier, a supplier-linked expense, a material and a received, issued and returned ledger: every row was unchanged after V3, the immutability trigger still refused updates, and the new check and unique constraint worked.
+  - Not yet applied to the development database. Flyway applies it, after V2, on the next backend start.
+- `V4__inventory_fifo_cost_layers.sql` (2026-10-24): switches inventory costing to FIFO. It adds:
+  - `stock_movements.costing_method` (existing rows `WAC`, new rows `FIFO`), with a check constraint and the unique key `uq_stock_movements_id_material`;
+  - the tables `stock_cost_layers` and `stock_cost_allocations`, with their checks, composite FKs and indexes;
+  - the triggers `trg_stock_cost_allocations_immutable` and `trg_stock_cost_allocations_reversal` (function `sk_check_cost_reversal`);
+  - a backfill that carries each material's stock forward as one `LEGACY_BALANCE` layer, after first checking that every ledger reconciles. See "FIFO migration of existing data".
+
+  It is additive only: no existing row is updated or deleted.
+  - Verified on a fresh PostgreSQL 17 database: Flyway applied V1 to V4 in order.
+  - Verified on a V1 + V2 + V3 database holding WAC-era data:
+    - the data: a supplier and a supplier-linked expense; a project; cement received twice, issued and partly returned; sand received and fully issued; an unused material; an `EXPENSE` activity entry;
+    - after V4, the checksums of every pre-existing movement, material, supplier, expense, project and activity row were identical;
+    - all 6 movements were `WAC`;
+    - cement got one `LEGACY_BALANCE` layer of 125 bags / 325,000.00, equal to its last `quantity_after` / `value_after`; sand (zero stock) and the unused material got none;
+    - the column default was `FIFO`, and the immutability triggers still refused updates.
+  - Verified on a V1 to V3 database whose ledger did not reconcile: V4 stopped with "Stock ledger running balances do not reconcile for material(s) 1", and nothing was applied (no new table or column).
+  - Not yet applied to the development database. Flyway applies it, after V2 and V3, on the next backend start. The development database holds no materials or movements.

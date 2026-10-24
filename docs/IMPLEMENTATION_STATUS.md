@@ -22,7 +22,7 @@ This document must be updated as implementation progresses. Mark work complete o
 ## Database Design
 - [x] Proposed schema documented in docs/DATABASE.md (v2, aligned with the existing frontend).
 - [x] Retention money and the separate machinery rental module removed from scope.
-- [x] Owner decisions recorded (2026-10-24): material returns, low-stock removal, weighted average costing, freezing paid payroll weeks, fixed revenue categories.
+- [x] Owner decisions recorded (2026-10-24): material returns, low-stock removal, weighted average costing (changed by the owner to FIFO the same day, see "Inventory costing changed to FIFO"), freezing paid payroll weeks, fixed revenue categories.
 - [x] Payroll freeze rule finalized (2026-10-24): it applies to each employee and week at that employee's first payment. Corrections go in `payroll_corrections`.
 - [x] Initial Flyway migration `V1__initial_schema.sql` written and verified against PostgreSQL 17.11.
 - [x] Owner sign-off on the schema (2026-10-24), with these clarifications: construction-only overtime and stock issues are enforced in the service; payroll weeks run Monday to Sunday; corrections need an audit trail before they can be edited.
@@ -32,7 +32,7 @@ This document must be updated as implementation progresses. Mark work complete o
 Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend alignment".
 - [ ] Inventory: "Return from project" action linked to the original issue, with returned movements in the history.
 - [ ] Inventory: remove the low-stock KPI, the stock-level filter, the "Reorder soon" banner, the reorder level column and field, and `Material.reorderLevel`.
-- [ ] Inventory: show the weighted average unit cost from the API.
+- [ ] Inventory (FIFO): show the stock value from the API, replace the issue dialog's `q × unitCost` cost preview (wrong under FIFO), and add a unit cost field for positive adjustments.
 - [ ] Payroll: paid employee-weeks read-only in attendance, overtime and adjustments, plus a "Record correction" action on paid lines.
 - [ ] Settings: revenue categories shown read-only.
 
@@ -51,7 +51,7 @@ Required by the owner's decisions. Not yet made. See docs/DATABASE.md, "Frontend
 - [ ] Revenue and expenses. Partial (2026-10-24): project revenue is recognised at billing, and manual project and company expenses with their payments are implemented. Other income is not implemented.
 - [ ] Commission management.
 - [ ] Suppliers and payables. Partial (2026-10-24): the supplier directory (create, list or search, get, edit, activate or deactivate) and the optional supplier link on expenses. Supplier invoices, supplier payments and payables are not implemented.
-- [ ] Inventory and stock movements.
+- [x] Inventory and stock movements (2026-10-24): the materials catalogue; receipts, issues to construction projects, returns against the original issue and adjustments, costed FIFO from persistent cost layers with issue allocations (changed from the weighted average the same day, migration V4); balances, valuation, movement history and project material usage. Receipts from supplier invoices are not built yet.
 - [ ] Employee attendance, overtime, advances, and payroll.
 - [ ] Financial reports.
 - [x] Private agreement document storage (2026-10-24): upload or replace, metadata and download of one current PDF per project. Removing an agreement is not implemented.
@@ -558,3 +558,187 @@ For each completed task, record the date, files or migrations changed, verificat
   - The frontend has no active/inactive UI yet; it would call `PUT /{id}/status` and pass `active=true` for pick lists.
   - Ids are numbers, and `contactPerson`, `address` and `supplies` can be null.
   - Supplier changes write no activity entry, matching Clients; there is no project to attach one to.
+
+### 2026-10-24: Inventory (materials and the stock ledger)
+
+> Superseded in part: costing was changed to FIFO later the same day (see "Inventory costing changed to FIFO" below). The weighted-average costing, `averageUnitCost`, the frozen default cost and the WAC-specific tests described in this entry no longer apply; everything else does.
+
+- Migration `V3__inventory_ledger_additions.sql`. All of it is additive:
+  - `materials.active`: materials couldn't be retired without deleting them.
+  - `stock_movements.supplier_id`: receipts only. V1 reached a supplier only through supplier invoice lines, which don't exist yet.
+  - `stock_movements.request_id`: unique. Without it, a double-submitted receipt or issue would be permanent, since the ledger is append-only.
+
+  It was verified on a fresh database and on a V1+V2 database with representative suppliers, expenses, materials and ledger rows. It is not applied to the development database yet.
+- Endpoints. All are under `/api/v1/inventory`, for signed-in users only, and every `POST`/`PUT` needs a CSRF token.
+
+  | Method | Path | Request | Response |
+  | --- | --- | --- | --- |
+  | GET | `/materials` | `q` (SKU, name, category), `category`, `active`, paging (default 20, max 100), `sort` (sku, name, category, createdAt, id) | `PageResponse` of materials with stock |
+  | GET | `/materials/{id}` | — | material |
+  | POST | `/materials` | `{sku, name, category, unitId, defaultUnitCost?}` | 201 material |
+  | PUT | `/materials/{id}` | the same fields, plus `version` | material |
+  | PUT | `/materials/{id}/status` | `{active, version}` | material |
+  | GET | `/materials/{id}/movements` | paging | that material's ledger, newest first |
+  | GET | `/valuation` | — | `{materials, materialsInStock, stockValue}` |
+  | GET | `/movements` | `materialId, type, projectId, supplierId, from, to`, paging, `sort` (movementDate, id) | `PageResponse` of movements, newest first |
+  | GET | `/movements/{id}` | — | movement |
+  | POST | `/receipts` | `{requestId, materialId, date, quantity, unitCost, supplierId?, reference?, notes?}` | 201 movement, or 200 for a resent `requestId` |
+  | POST | `/issues` | `{requestId, materialId, projectId, date, quantity, reference?, notes?}` | 201, or 200 for a resent `requestId` |
+  | POST | `/returns` | `{requestId, issueId, materialId?, projectId?, date, quantity, reference?, notes?}` | 201, or 200 for a resent `requestId` |
+  | POST | `/adjustments` | `{requestId, materialId, date, quantityChange (signed), reason, reference?}` | 201, or 200 for a resent `requestId` |
+  | GET | `/projects/{projectId}/usage` | — | the project's issued, returned and net quantity and cost per material |
+
+  - A material is `{id, sku, name, category, unitId, unit, averageUnitCost, quantityOnHand, stockValue, active, createdAt, updatedAt, version}`.
+  - A movement is `{id, materialId, material, date, type, quantityChange, unitCost, totalCost, quantityAfter, valueAfter, projectId, supplierId, supplier, returnedFromMovementId, returnedQuantity, returnableQuantity, reference, notes, requestId, createdAt}`, signed like the ledger.
+  - Errors:
+    - 400:
+      - validation;
+      - insufficient stock;
+      - an over-return;
+      - a return that doesn't match its issue;
+      - an inactive material or supplier;
+      - an unknown material, project, supplier or issue in the request body;
+      - a project that isn't construction or isn't open;
+      - an edit of the unit or cost after movements;
+      - a bad filter or sort.
+    - 404: an unknown material or movement in the URL.
+    - 409: a duplicate SKU, a stale version, or a `requestId` reused for something else.
+  - No PUT or DELETE on movements, and no DELETE on materials.
+- Costing: moving weighted average, exactly as DATABASE.md "Stock costing".
+  - Receipt cost is `round(q × price, 2)`.
+  - The new average is `(V + cost) / (Q + q)`, stored to 4 decimals and rounded `HALF_UP`.
+  - An issue costs `round(q × V / Q, 2)` and fixes that cost on the movement; issuing everything takes exactly `V`.
+  - A return comes back at the issue's unit cost; the last return of an issue takes exactly what is left of its cost, so a full return nets to 0.
+  - At zero stock the last average is kept.
+- Project cost:
+  - A project's stock material cost is `Σ issued − Σ returned`, at each movement's own cost (`/projects/{id}/usage`).
+  - Buying into stock is not a project cost.
+  - Manual `Materials` expenses and `PROJECT` supplier invoices are separate sources and never generated from stock, so nothing is counted twice.
+- Tests: 456 passed on JDK 25 against a throwaway PostgreSQL 17 container, 42 of them new.
+  - Unit tests: 11.
+    - receipt rounding, the moving average over three receipts, keeping the average at zero stock;
+    - an issue of everything taking exactly V, partial issue rounding, never exceeding V;
+    - returns at the issue cost, with the last one taking the remainder and a full return netting to 0;
+    - adjustment rules.
+  - Web-layer tests: 7. 401 for anonymous users, 403 without CSRF on every write, field validation, 201 then 200 on a resend, 400/404/409 mapping, no editing or deleting of the ledger.
+  - API integration tests: 19, each rolled back.
+    - the catalogue: a case-insensitive unique SKU, unit checks, search, filters, paging and sorting, the unit and cost frozen after movements, a stale version;
+    - the weighted average over receipts;
+    - issue cost fixed even after a dearer receipt, project usage and activity;
+    - insufficient stock, zero stock, and a fresh average after running out;
+    - issues only to open construction projects;
+    - partial, multiple, full and over-returns, and returns that don't match their issue;
+    - adjustments;
+    - inactive materials;
+    - suppliers on receipts, including an inactive supplier with its history kept;
+    - resends;
+    - history filters;
+    - the running balance equalling the plain sums;
+    - the ledger being append-only;
+    - reads that change nothing;
+    - 401 for anonymous users.
+  - Concurrency tests that commit for real: 5.
+    - Eight issues of 20 against 100 in stock: exactly five.
+    - Ten receipts at once: an exact value and average.
+    - Six returns of 10 against an issue of 30: exactly three.
+    - Six copies of one submission: one movement.
+    - A failed issue leaves no movement and an unchanged average.
+
+    Each one checks that every running balance equals the plain sums.
+  - All existing Suppliers, Expenses, Clients, Projects, Revenue and Settings tests still pass.
+  - Afterwards every table was back to 0 rows and all four ledger and payment triggers were enabled. The container was removed, and the development database was not touched.
+- Limitations and frontend differences:
+  - Receipts from supplier invoices (`supplier_invoice_line_id`) are not implemented; the column is read-only here.
+  - Receipts create no payable.
+  - The UI's `Material.reorderLevel` is gone (owner decision); the UI's `MovementType` has no `Returned` yet; `unit` is now `unitId` plus the unit name; ids are numbers.
+  - Every movement needs a `requestId` (UUID).
+  - No date rules are enforced on movement dates. The ledger is ordered by posting (id), not by date, as documented.
+  - A wrong movement is corrected only by an adjustment or a return; there is no reversal of a receipt as such.
+  - Project profitability (combining stock usage, expenses, payroll and commissions) is not built yet.
+
+### 2026-10-24: Inventory costing changed to FIFO
+- Owner decision: inventory is costed FIFO (the oldest stock is used first). This replaces the moving weighted average. Posted history is kept as it was.
+- Migration `V4__inventory_fifo_cost_layers.sql`, additive only:
+  - `stock_movements.costing_method`: existing rows are `WAC`, new rows `FIFO`. No row was updated.
+  - `stock_cost_layers`: one layer per receipt or positive adjustment, with its remaining quantity and value.
+  - `stock_cost_allocations`: append-only. It records which layers each issue or negative adjustment drew from, and what returns put back, each reversal naming its draw.
+  - Two triggers: allocations are immutable, and a reversal can't exceed its draw.
+  - A backfill that carries each material's existing balance forward as one `LEGACY_BALANCE` layer, after checking that every ledger reconciles. If any ledger doesn't, it stops.
+
+  It was verified on a fresh PostgreSQL 17 database, and on a populated V1 + V2 + V3 database: all pre-existing rows were identical by checksum, and the layers equalled the balances. It was also verified to refuse a ledger that doesn't reconcile, applying nothing. Details are in DATABASE.md, "Current Schema Status". Not yet applied to the development database.
+- Costing, as DATABASE.md "Stock costing (FIFO)" describes (`inventory.service.FifoCosting`, `StockLedger`):
+  - A receipt is a new layer at its price.
+  - An issue draws from the oldest open layers first, with one allocation per layer, and its cost (the sum of its draws) is fixed when it is posted.
+  - A return puts stock back into the layers its issue drew from, newest draw first, at their cost.
+  - Each draw or reversal is rounded once (`HALF_UP`, 2 dp). The last of a layer, or of a draw, takes the exact remainder, so emptied layers are worth 0.00 and a full return reverses the issue to the cent.
+  - The owner's example (10 at 2,000, then 10 at 2,400, then an issue of 12) gives 24,800, leaving 8 worth 19,200. This is tested end to end.
+  - Every posting checks that the open layers add up exactly to the ledger's running balance, or it is rolled back.
+- API changes. Endpoints and status codes are as before, with these additions and changes:
+  - New: `GET /api/v1/inventory/materials/{id}/layers?openOnly=true` returns the material's FIFO layers in the order they will be used, as `{id, materialId, origin, sourceMovementId, date, originalQuantity, unitCost, originalCost, remainingQuantity, remainingValue}`.
+  - Movements gain:
+    - `costingMethod` (`WAC` | `FIFO`);
+    - `costLayerId`, the layer a receipt or positive adjustment created;
+    - `allocations[]`, as `{id, layerId, layerSourceMovementId, layerOrigin, layerDate, quantity, unitCost, cost, reversesAllocationId}`, signed like the ledger.
+
+    On a multi-layer movement `unitCost` is `|totalCost| / quantity`, for display only.
+  - Materials: `averageUnitCost` is renamed **`defaultUnitCost`**. It is `materials.unit_cost`, a reference price only, and can now be edited even after movements; editing it revalues nothing. `stockValue` is the sum of the open layers. The unit is still frozen once stock has moved.
+  - `/valuation` sums the open layers.
+  - Adjustments take an optional `unitCost`:
+    - an increase **must** state it (400 otherwise), and it becomes an `ADJUSTMENT` layer;
+    - a reduction must not state it (400), and is costed FIFO.
+  - Returns against a pre-FIFO (`WAC`) issue come back at that issue's own cost as a `LEGACY_RETURN` layer. The last such return takes the issue's remaining cost, as before.
+- Concurrency and idempotency:
+  - Every posting still takes the material row lock first. The open layers (for issues) and the issue's layers (for returns) are also locked `FOR UPDATE`.
+  - A resent `requestId` returns the first movement and writes no new layer or allocation. A reused id with different details is still 409.
+- Tests: 462 passed (`./mvnw -B -o test`, JDK 25, throwaway PostgreSQL 17 container). The inventory tests went from 42 to 48. The WAC tests were replaced or rewritten to FIFO, and no other module's test changed.
+  - `FifoCostingTest`: 8 tests.
+    - receipt rounding;
+    - the owner's example;
+    - a partial draw from the oldest layer;
+    - skipping used-up layers;
+    - the last of a layer taking the exact remainder (33.33 + 33.33 + 33.34);
+    - never more than the layer is worth;
+    - layers that can't cover a draw being a bug;
+    - the display-only unit cost.
+  - `InventoryControllerWebTest`: 7 tests, now covering the layers endpoint's authentication, the new movement fields, and a negative adjustment `unitCost` being rejected.
+  - `InventoryApiIntegrationTest`: 24 tests, each rolled back. They cover:
+    - receipts as layers, and the stock value as their sum;
+    - the owner's example, with its allocations, remaining layer and unchanged cost after a dearer receipt, plus project usage and activity;
+    - successive issues walking through three layers, with the value after each;
+    - independent layers per material;
+    - insufficient stock leaving nothing behind;
+    - running out and restocking;
+    - issues only to open construction projects;
+    - partial and multiple returns going back into their original layers, with project cost reversed to 0;
+    - full returns of single-layer and multi-layer issues;
+    - returns of awkward costs reconciling to the cent;
+    - returns that don't match their issue;
+    - FIFO reductions, additions needing a stated cost, a reduction with a cost rejected, and insufficient stock;
+    - inactive materials;
+    - suppliers on receipts;
+    - resends, with no duplicate layers or allocations, and 409 on a changed resend;
+    - history filters;
+    - ledger, layer and allocation reconciliation over a mixed sequence;
+    - legacy WAC data: a carried-forward layer used first, a return against a WAC issue at its own cost, and the house's WAC charge untouched;
+    - the unit frozen while the default cost is free to change;
+    - the database guards (immutable ledger and allocations, layer bounds, an over-reversal refused);
+    - reads that change nothing;
+    - 401 for anonymous users.
+  - `InventoryConcurrencyIntegrationTest`: 6 tests that commit for real.
+    - Eight issues of 20 against two layers of 50: exactly five succeed, each layer is drawn exactly once, and the total is 250,000.
+    - Ten receipts at once: ten layers in posting order, and an exact value.
+    - Six returns of 10 against a two-layer issue of 30: exactly three succeed, 65,000 comes back, and the layers are restored exactly.
+    - Six copies of one receipt: one movement and one layer.
+    - Six copies of one issue: one movement and two allocations.
+    - A failed issue leaves no movement, no allocation and no changed layer.
+
+    Every test checks that the running balances, the layer totals and the allocation totals reconcile.
+  - All Suppliers, Expenses, Clients, Projects, Revenue, Agreements and Settings tests still pass.
+  - Afterwards every table was back to 0 rows, and the ledger, allocation and payment triggers were enabled. The scratch databases and the container were removed. The development database and its volume were not touched.
+- Limitations and open decisions:
+  - **Pre-FIFO history is not re-costed.** Exact FIFO allocations can't be reconstructed from weighted-average postings without changing what projects were charged, so V4 carries each balance forward as one `LEGACY_BALANCE` layer at its recorded value. Old issues stay `WAC` and have no allocations.
+  - FIFO order is posting order (`id`), not `movement_date`. A back-dated receipt is used after every layer posted before it.
+  - A positive adjustment must state its cost. There is no automatic price for found stock.
+  - Returns reverse the issue's newest draw first. This is a deterministic rule; it is not chosen by the user.
+  - The frontend still shows `unitCost` and previews issue cost as `q × unitCost`. Its adjust dialog has no cost field.
+  - Receipts from supplier invoices and payables are still not built.
