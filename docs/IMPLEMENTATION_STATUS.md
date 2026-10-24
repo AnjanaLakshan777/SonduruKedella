@@ -206,3 +206,9 @@ For each completed task, record the date, files or migrations changed, verificat
     - Responses add `updatedAt` and `version`, and `PUT` requires `version`.
     - The directory's contract value, received, outstanding, overdue and project codes are not returned. They need the projects and revenue modules.
   - The running backend container has not been rebuilt, so these endpoints are not yet live in the local stack.
+
+### 2026-10-24: Clients review fix
+- A whitespace-only email was rejected with 400, because `@Email` fails on `"   "`. It is now stored as null. The new `clients.validation.OptionalEmail` constraint checks the trimmed value, so a padded valid email is accepted and saved trimmed, and an invalid non-empty email is still rejected.
+- The frontend dialog itself rejects a whitespace-only email, so the API is more lenient than the UI here. That is deliberate: a blank optional field is not an error.
+- Docs: DATABASE.md now lists the tables that have JPA entities (Settings and Clients). ARCHITECTURE.md lists the `clients/validation` test package.
+- Tests: 103 passed on JDK 25 against a throwaway PostgreSQL 17 container: 13 new email validator tests and 2 new API integration tests that check the stored column. The container was removed afterwards. The development database was not touched.

@@ -1,5 +1,6 @@
 package com.sondurukedella.integration.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
@@ -31,6 +33,9 @@ class ClientApiIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void aClientCanBeCreatedReadAndUpdated() throws Exception {
@@ -57,6 +62,40 @@ class ClientApiIntegrationTest {
                 .andExpect(jsonPath("$.email").value("sanjeewa.r@yahoo.com"))
                 .andExpect(jsonPath("$.city").value("Mihintale"))
                 .andExpect(jsonPath("$.version").value(1));
+    }
+
+    // Check the column directly - jsonPath can't tell a null email from a missing one.
+    @Test
+    void blankEmailsAreStoredAsNullAndPaddedOnesAreTrimmed() throws Exception {
+        long id = create("{\"name\":\"Email Test\",\"kind\":\"INDIVIDUAL\",\"phone\":\"0710000000\",\"email\":\"   \"}");
+        assertThat(storedEmail(id)).isNull();
+
+        mockMvc.perform(put(CLIENTS + "/" + id).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"name":"Email Test","kind":"INDIVIDUAL","phone":"0710000000",
+                         "email":"  dilani.j@gmail.com ","version":0}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("dilani.j@gmail.com"));
+        assertThat(storedEmail(id)).isEqualTo("dilani.j@gmail.com");
+
+        mockMvc.perform(put(CLIENTS + "/" + id).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"name":"Email Test","kind":"INDIVIDUAL","phone":"0710000000","email":"\\t","version":1}"""))
+                .andExpect(status().isOk());
+        assertThat(storedEmail(id)).isNull();
+    }
+
+    @Test
+    void invalidEmailsAreRejectedOnCreateAndUpdate() throws Exception {
+        mockMvc.perform(post(CLIENTS).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Bad Email\",\"kind\":\"INDIVIDUAL\",\"phone\":\"0710000000\",\"email\":\"name@host\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[*].field", hasItem("email")));
+
+        long id = create("{\"name\":\"Bad Email\",\"kind\":\"INDIVIDUAL\",\"phone\":\"0710000000\",\"email\":\"a@b.lk\"}");
+        mockMvc.perform(put(CLIENTS + "/" + id).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Bad Email\",\"kind\":\"INDIVIDUAL\",\"phone\":\"0710000000\","
+                                + "\"email\":\"not an email\",\"version\":0}"))
+                .andExpect(status().isBadRequest());
+        assertThat(storedEmail(id)).isEqualTo("a@b.lk");
     }
 
     @Test
@@ -138,6 +177,10 @@ class ClientApiIntegrationTest {
         mockMvc.perform(post(CLIENTS).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"X\",\"kind\":\"INDIVIDUAL\",\"phone\":\"0710000000\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    private String storedEmail(long id) {
+        return jdbc.queryForObject("SELECT email FROM clients WHERE id = ?", String.class, id);
     }
 
     private long create(String body) throws Exception {

@@ -59,7 +59,7 @@ class ClientServiceTest {
         });
 
         ClientResponse created = service.create(new ClientCreateRequest(
-                "  Dilani Jayawardena ", ClientKind.INDIVIDUAL, " 071 438 2291 ", "", "  ", " Anuradhapura ", "\n"));
+                "  Dilani Jayawardena ", ClientKind.INDIVIDUAL, " 071 438 2291 ", "   ", "  ", " Anuradhapura ", "\n"));
 
         assertThat(created.id()).isEqualTo(11L);
         assertThat(created.name()).isEqualTo("Dilani Jayawardena");

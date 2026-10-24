@@ -123,7 +123,7 @@ class ClientControllerWebTest {
 
         mockMvc.perform(post(CLIENTS).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
                         {"name":"A Client","kind":"INDIVIDUAL","phone":"0712345678",
-                         "email":"","address":"","city":"","notes":""}"""))
+                         "email":"   ","address":"","city":"","notes":""}"""))
                 .andExpect(status().isCreated());
     }
 

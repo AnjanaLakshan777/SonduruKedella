@@ -39,7 +39,7 @@ com.sondurukedella
 └── security      config user auth
 ```
 
-Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
+Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `validation` where a module has its own validators (currently `clients`), `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
 
 ## Module Responsibilities
 Tables are listed in `docs/DATABASE.md`.

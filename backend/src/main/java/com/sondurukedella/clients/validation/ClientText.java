@@ -2,10 +2,6 @@ package com.sondurukedella.clients.validation;
 
 public final class ClientText {
 
-    // Same check the frontend does. The empty alternative is needed because Hibernate
-    // runs the regexp even on "", and email is optional.
-    public static final String EMAIL_PATTERN = "^(|\\S+@\\S+\\.\\S+)$";
-
     private ClientText() {
     }
 
