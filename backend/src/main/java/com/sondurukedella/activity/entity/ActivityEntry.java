@@ -1,5 +1,6 @@
 package com.sondurukedella.activity.entity;
 
+import com.sondurukedella.common.audit.CurrentUser;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -42,7 +43,7 @@ public class ActivityEntry {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    // stays null until there are application users to attribute entries to
+    // the signed-in user, or null when there is none
     @Column(name = "created_by", updatable = false)
     private Long createdBy;
 
@@ -53,5 +54,6 @@ public class ActivityEntry {
         this.kind = kind;
         this.message = message;
         this.createdAt = createdAt;
+        this.createdBy = CurrentUser.idOrNull();
     }
 }

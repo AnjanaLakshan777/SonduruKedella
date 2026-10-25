@@ -1,5 +1,6 @@
 package com.sondurukedella.payroll.entity;
 
+import com.sondurukedella.common.audit.CurrentUser;
 import com.sondurukedella.payroll.service.PayrollCalculator.Result;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -84,6 +85,7 @@ public class PayrollLine {
     @PrePersist
     void onCreate() {
         createdAt = OffsetDateTime.now();
+        createdBy = CurrentUser.idOrNull();
     }
 
     public static PayrollLine freeze(long employeeId, LocalDate weekStart, LocalDate weekEnd, BigDecimal dailyWage, Result r,

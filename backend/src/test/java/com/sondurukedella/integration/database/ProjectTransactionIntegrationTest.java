@@ -55,7 +55,7 @@ import org.springframework.test.web.servlet.MockMvc;
 // DB only. Everything they create is named "TxTest ..." (years 2091+) and deleted afterwards.
 @SpringBootTest
 @AutoConfigureMockMvc
-@WithMockUser
+@WithMockUser(roles = "ADMIN")
 class ProjectTransactionIntegrationTest {
 
     private static final String MARK = "TxTest ";

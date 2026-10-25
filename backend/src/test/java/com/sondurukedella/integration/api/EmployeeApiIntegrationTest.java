@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@WithMockUser
+@WithMockUser(roles = "ADMIN")
 class EmployeeApiIntegrationTest {
 
     // a past Monday-to-Saturday week, so no date is in the future
@@ -158,7 +158,7 @@ class EmployeeApiIntegrationTest {
     }
 
     private ResultActions create(String name, String role, String wage, String ot) throws Exception {
-        return mockMvc.perform(post("/api/v1/employees").with(user("setup")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
+        return mockMvc.perform(post("/api/v1/employees").with(user("setup").roles("ADMIN")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
                 {"name":"%s","role":"%s","dailyWage":%s,"overtimeRate":%s,"joinedOn":"2026-01-05"}""".formatted(name, role, wage, ot)));
     }
 

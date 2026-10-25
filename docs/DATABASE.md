@@ -63,7 +63,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - Dates: `DATE`.
   - Instants: `TIMESTAMPTZ`.
 - Every table has `created_at`, `created_by` and `updated_at`. Tables whose rows can change also have `version BIGINT` for optimistic locking.
-  - `created_by` references `app_users` and stays nullable until authentication exists.
+  - `created_by` references `app_users` and is nullable. Since 2026-10-25 the application fills it with the signed-in user (null for work done without a signed-in user, such as startup tasks).
   - Append-only and frozen tables (`stock_movements`, `stock_cost_allocations`, `payroll_lines`, `payroll_line_costs`, `advance_recoveries`, `activity_log`) have no `updated_at` or `version`.
 - Single-row settings tables use `id SMALLINT = 1`.
 - Some child tables carry a copy of a parent value, such as `project_type`, `allocation` or `expense_group`. That copy lets a composite foreign key enforce a cross-table rule in the database. The service sets the copy, and the foreign key guarantees it matches the parent.
@@ -95,7 +95,17 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - The seed data is the frontend's default category list.
 - **Revenue categories** are fixed and have no table: Design, Construction, Consultation and Other Income. The category comes from `projects.project_type`, and `other_income` is always Other Income. Settings shows the list read-only.
 - **units** and **payment_methods**: editable lists (`name` unique, `active`). Seed payment methods: Cash, Bank Transfer, Cheque, Online Payment.
-- **app_users**: `username` (unique), `display_name`, `password_hash`, `enabled`. This is the minimum Spring Security needs. The UI has no user management yet.
+- **app_users**: `username` (unique, and unique ignoring case via `uq_app_users_username_lower`), `display_name`, `password_hash` (BCrypt, `{bcrypt}` prefix; never plain text), `enabled`.
+  - V5 added `role` (`SUPER_ADMIN` | `ADMIN`, no default) and `auth_version` (bumped when access changes, which ends existing sessions).
+  - Users are never deleted, only deactivated, because every `created_by` and `security_events` row points here.
+  - The partial index `ix_app_users_active_super_admins` serves the "at least one active Super Admin" check.
+- **security_events** (V5): the security audit trail. Columns:
+  - `event_type`, checked against the `SecurityEventType` values;
+  - `actor_user_id` and `target_user_id`, nullable FKs to `app_users`;
+  - `username`, as typed at sign-in;
+  - `remote_address`, `details`, `occurred_at`.
+
+  Append-only (`trg_security_events_immutable`, using V1's `sk_reject_change`). It never holds a password, hash or session id. Indexed by time, actor and target.
 - **activity_log**: `project_id` (nullable), `activity_date`, `kind` (`PAYMENT` | `EXPENSE` | `DOCUMENT` | `STATUS` | `COMMISSION` | `NOTE` | `WRITEOFF` | `DEDUCTION`), `message`. It feeds the project activity feed.
 
 ## Clients and projects
@@ -710,3 +720,16 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
     - the column default was `FIFO`, and the immutability triggers still refused updates.
   - Verified on a V1 to V3 database whose ledger did not reconcile: V4 stopped with "Stock ledger running balances do not reconcile for material(s) 1", and nothing was applied (no new table or column).
   - Not yet applied to the development database. Flyway applies it, after V2 and V3, on the next backend start. The development database holds no materials or movements.
+- `V5__users_roles_and_security_events.sql` (2026-10-25): authentication and roles.
+  - It adds `app_users.role` (check `ck_app_users_role`: `SUPER_ADMIN` or `ADMIN`; existing rows become `ADMIN`, then the default is dropped) and `app_users.auth_version` (default 0).
+  - It adds the index `uq_app_users_username_lower` (unique on `lower(username)`), the partial index `ix_app_users_active_super_admins`, and the table `security_events` with its check, indexes and the `trg_security_events_immutable` trigger.
+
+  It is additive only: no row is deleted and no user is promoted. It contains no user accounts or credentials; the first Super Admin is created at startup from environment variables (see DEVELOPMENT_WORKFLOW.md).
+  - Verified on a fresh PostgreSQL 17 database: Flyway applied V1 to V5 in order, and Hibernate validation passed.
+  - Verified on a database that Flyway took to V4, holding two pre-V5 users (one mixed-case, one disabled) and a client whose `created_by` pointed at one of them. After V5:
+    - both users were `ADMIN` with `auth_version` 0, and their `enabled` values were unchanged;
+    - the client row was unchanged;
+    - `role` had no default.
+  - Verified on a database whose `app_users` held usernames that differ only in case (`Kamal` and `kamal`): V5 stopped at `uq_app_users_username_lower`, and nothing was applied (no `role` column, no `security_events`).
+    - Before applying V5 anywhere with real users, check that `SELECT lower(username) FROM app_users GROUP BY 1 HAVING count(*) > 1` returns no rows.
+  - Not yet applied to the development database. Flyway applies it, after V2 to V4, on the next backend start.

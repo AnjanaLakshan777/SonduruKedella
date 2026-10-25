@@ -50,6 +50,16 @@ services:
       # Uploaded agreement PDFs. Private (never served as static files) and on a named volume so
       # they survive rebuilds. Like postgres_data, never remove it as routine cleanup.
       AGREEMENTS_STORAGE_DIR: /app/data/agreements
+      # Sign-in. Local development runs over plain HTTP, so the session cookie can't be Secure here;
+      # the application default (true) is for HTTPS deployments.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      # The Vite dev server calls the API from another port, with the session cookie.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:${FRONTEND_PORT:-5173}}
+      # One-time creation of the first Super Admin (docs/DEVELOPMENT_WORKFLOW.md). Empty unless set
+      # in .env; remove the password again once the account exists.
+      BOOTSTRAP_SUPER_ADMIN_USERNAME: ${BOOTSTRAP_SUPER_ADMIN_USERNAME:-}
+      BOOTSTRAP_SUPER_ADMIN_PASSWORD: ${BOOTSTRAP_SUPER_ADMIN_PASSWORD:-}
+      BOOTSTRAP_SUPER_ADMIN_DISPLAY_NAME: ${BOOTSTRAP_SUPER_ADMIN_DISPLAY_NAME:-}
     volumes:
       - agreement_files:/app/data/agreements
     ports:

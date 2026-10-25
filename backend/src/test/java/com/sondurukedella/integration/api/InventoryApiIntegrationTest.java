@@ -37,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@WithMockUser
+@WithMockUser(roles = "ADMIN")
 class InventoryApiIntegrationTest {
 
     private static final String URL = "/api/v1/inventory";
@@ -543,7 +543,7 @@ class InventoryApiIntegrationTest {
 
     private ResultActions material(String sku, String name, long unitId) throws Exception {
         // setup helpers sign in themselves, so they also work under @WithAnonymousUser
-        return mockMvc.perform(post(URL + "/materials").with(user("setup")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
+        return mockMvc.perform(post(URL + "/materials").with(user("setup").roles("ADMIN")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
                 {"sku":"%s","name":"%s","category":"Building","unitId":%d}""".formatted(sku, name, unitId)));
     }
 
@@ -675,7 +675,7 @@ class InventoryApiIntegrationTest {
     }
 
     private long project(long clientId, String type, String name) throws Exception {
-        String json = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/projects").with(user("setup"))
+        String json = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/projects").with(user("setup").roles("ADMIN"))
                         .with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
                         {"name":"%s","type":"%s","clientId":%d,"contractValue":100000,"startDate":"2026-01-01",
                          "expectedCompletion":"2026-12-31","schedule":[{"description":"All","dueDate":"2026-12-31","amount":100000}]}"""

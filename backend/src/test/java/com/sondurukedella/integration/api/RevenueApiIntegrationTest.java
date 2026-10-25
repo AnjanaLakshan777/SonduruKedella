@@ -38,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@WithMockUser
+@WithMockUser(roles = "ADMIN")
 class RevenueApiIntegrationTest {
 
     // 19:00 UTC on the 24th is 00:30 on the 25th in Colombo

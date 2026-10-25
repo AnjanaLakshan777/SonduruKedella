@@ -1,5 +1,6 @@
 package com.sondurukedella.inventory.entity;
 
+import com.sondurukedella.common.audit.CurrentUser;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -99,6 +100,7 @@ public class StockMovement {
     @PrePersist
     void onCreate() {
         createdAt = OffsetDateTime.now();
+        createdBy = CurrentUser.idOrNull();
     }
 
     // Only StockLedger builds these, after it has worked out the cost and the running balance.

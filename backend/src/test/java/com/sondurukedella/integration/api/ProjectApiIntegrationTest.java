@@ -39,7 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@WithMockUser
+@WithMockUser(roles = "ADMIN")
 class ProjectApiIntegrationTest {
 
     private static final String PROJECTS = "/api/v1/projects";

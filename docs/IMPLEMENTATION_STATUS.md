@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-10-24
+Last updated: 2026-10-25
 
 This document must be updated as implementation progresses. Mark work complete only after inspecting or testing the actual result.
 
@@ -40,7 +40,7 @@ Required by the owner's decisions. Unticked items are not yet made. See docs/DAT
 - [x] Modular package structure established (2026-10-24).
 - [x] Global exception handling and validation configured (2026-10-24): `common.exception.GlobalExceptionHandler` returns RFC 9457 problem details. Status codes: 400 for validation errors (field list included), 404 not found, 409 conflict or stale version, 422 business rule.
 - [ ] API response and error conventions established.
-- [ ] Spring Security configuration implemented and tested.
+- [x] Spring Security configuration implemented and tested (2026-10-25): session sign-in, the two roles `SUPER_ADMIN` and `ADMIN`, user administration, first Super Admin bootstrap, security audit trail. See the completion log, "Authentication, users and roles".
 - [ ] Automated test strategy established.
 
 ## Business Modules
@@ -857,7 +857,7 @@ For each completed task, record the date, files or migrations changed, verificat
     - a refused payment leaves the week unfrozen.
   - All existing module tests still pass. Afterwards every table was back to 0 rows and all 17 triggers were enabled.
 - Limitations and decisions for the owner:
-  - **No role model.** The backend still has only Spring's default security: any signed-in user can see and pay payroll. Roles need an owner decision and a real user setup.
+  - ~~No role model.~~ Superseded 2026-10-25: payroll requires a signed-in `ADMIN` or `SUPER_ADMIN` (see "Authentication, users and roles"). Both roles may pay payroll; no finer split was requested.
   - Payment is allowed from payday. The original DATABASE.md wording said "once the week has ended" (after Sunday); the UI pays on payday.
   - The default advance deduction counts only recoveries already frozen, so two unpaid weeks can both show the same advance until one is paid. The UI instead schedules deductions week by week.
   - `payroll_corrections` has no `request_id`, so a resent correction is recorded twice. It can't be edited or deleted either: the audit trail it needs before that is not built.
@@ -865,3 +865,64 @@ For each completed task, record the date, files or migrations changed, verificat
   - No staff number, email or NIC: none are in the schema or the UI.
   - An overpayment from a negative correction is recovered by hand, as an other deduction in a later week.
   - The frontend still runs on its local store; it isn't connected to these endpoints.
+
+### 2026-10-25: Authentication, users and roles
+- Approach: Spring Security with server-side sessions (`JSESSIONID`) and a JSON login endpoint.
+  - Before this, only Spring Boot's default security existed: a generated in-memory user, HTTP Basic and form login, no roles, and no `SecurityFilterChain`. That is all replaced.
+  - No JWT, no HTTP Basic, no form login, no public sign-up.
+  - Details: ARCHITECTURE.md, "Authentication and Authorization".
+- Roles (owner decision, exactly two):
+  - `SUPER_ADMIN`: everything, plus user administration and the actuator endpoints other than health.
+  - `ADMIN`: all business modules, and their own profile and password.
+  - Every business endpoint was checked. All are open to both roles, because no requirement restricts any of them to Super Admin. Settings is included; the owner may want to reserve it.
+- Endpoints:
+
+  | Method and path | Access | Purpose |
+  | --- | --- | --- |
+  | GET `/api/v1/auth/csrf` | public | sets the `XSRF-TOKEN` cookie (204) |
+  | POST `/api/v1/auth/login` | public (CSRF required) | `{username, password}` → `{id, username, displayName, role}` |
+  | POST `/api/v1/auth/logout` | signed in or not (CSRF required) | invalidates the session (204) |
+  | GET `/api/v1/auth/me` | both roles | the signed-in user |
+  | PUT `/api/v1/auth/me/password` | both roles | `{currentPassword, newPassword}` (204) |
+  | GET `/api/v1/users` | Super Admin | list (`q`, `role`, `enabled`, paging, sort `username`/`displayName`/`createdAt`/`id`) |
+  | GET `/api/v1/users/{id}` | Super Admin | one user |
+  | POST `/api/v1/users` | Super Admin | create (`role` defaults to `ADMIN`) → 201 + `Location` |
+  | PUT `/api/v1/users/{id}` | Super Admin | display name (`version` required) |
+  | PUT `/api/v1/users/{id}/role` | Super Admin | change role (`version` required) |
+  | PUT `/api/v1/users/{id}/status` | Super Admin | activate or deactivate (`version` required) |
+  | PUT `/api/v1/users/{id}/password` | Super Admin | reset someone else's password (204, never echoed) |
+
+- Rules:
+  - Nobody changes their own role or status, or resets their own password, through user administration (422).
+  - There is always at least one active Super Admin. Account changes lock the active Super Admin rows and re-check the actor.
+  - Deactivation, a role change or a password reset bumps `auth_version`, so that user's sessions end on their next request.
+  - Generic 401 `Invalid username or password.` for an unknown user, a wrong password and a disabled account.
+  - New session id at sign-in. CSRF on every write, login and logout included.
+  - 429 + `Retry-After` after 5 failures per username or 20 per address in 15 minutes.
+  - CORS only for the configured origins.
+- First Super Admin: created once at startup from `BOOTSTRAP_SUPER_ADMIN_USERNAME` and `BOOTSTRAP_SUPER_ADMIN_PASSWORD`, only while no `SUPER_ADMIN` exists. It is never re-applied, and the password is never logged. The steps are in DEVELOPMENT_WORKFLOW.md, "Authentication setup".
+- Audit: new append-only `security_events` table (sign-ins, sign-outs, every account change; never credentials). `created_by` on business rows is now the signed-in user.
+- Migration: `V5__users_roles_and_security_events.sql` (see DATABASE.md, "Current Schema Status"). Verified on fresh and upgraded throwaway PostgreSQL 17 databases. Not applied to the development database.
+- Files:
+  - New: `security/config/*`, `security/user/*` (including `dto/*`), `security/auth/*`, `security/audit/*`, `config/web/CorsConfig` and `CorsProperties`, `common/audit/AuditUser` and `CurrentUser`.
+  - Changed: `AuditableEntity`, `StockMovement`, `PayrollLine` and `ActivityEntry` (fill `created_by`), `application.properties`, and `compose.yaml` (passes the new variables through; local `SESSION_COOKIE_SECURE=false` and `CORS_ALLOWED_ORIGINS`).
+  - `.env` and `.env.example` were not changed (owner instruction). The new variables are documented in DEVELOPMENT_WORKFLOW.md instead.
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-25): 64 classes, 570 tests, 0 failures, 0 errors. Before this work there were 505 tests.
+  - New:
+    - `AuthApiIntegrationTest`: login, generic errors, disabled accounts, a legacy mixed-case username, session-id rotation, the real CSRF cookie flow, logout, CSRF on writes, security headers, the throttle, audit, password change, `created_by`, no sign-up.
+    - `UserAdministrationApiIntegrationTest`: create and validation, every admin endpoint refused to an Admin (including self-promotion), filters, versions, promotion and demotion ending sessions, no self-change, the last Super Admin, deactivation ending sessions, password reset.
+    - `EndpointAuthorizationIntegrationTest`: every mapped endpoint × anonymous, Admin and Super Admin; methods without a handler; unknown paths; actuator; CSRF.
+    - `CorsIntegrationTest`.
+    - `SuperAdminBootstrapIntegrationTest`.
+    - `SecuritySchemaIntegrationTest`: the V5 constraints and the immutability trigger.
+    - `UserAdministrationConcurrencyIntegrationTest`: two Super Admins deactivating each other at once.
+    - `LoginAttemptThrottleTest`, `PasswordAndUsernameRulesTest`, `CorsPropertiesTest`.
+  - Changed: the existing `@SpringBootTest` tests sign in as `@WithMockUser(roles = "ADMIN")` instead of the role-less default. `AgreementStorageIntegrationTest` now expects 403 rather than 404 for non-API paths: they are still never served, but the new rules deny them before routing.
+- Known limitations:
+  - Sessions and the sign-in throttle live in memory. They reset on restart and assume one backend instance.
+  - Behind a reverse proxy, the per-address limit sees only the proxy until forwarded headers are configured deliberately.
+  - No API reads `security_events` yet.
+  - No self-service password reset by email (no email infrastructure), and no account lockout beyond the time-boxed throttle.
+  - Lost the only Super Admin password: another Super Admin can reset it; otherwise a deliberate database-level action is needed. The bootstrap never runs twice.
+  - The frontend is not connected yet. It needs a login screen, `credentials: 'include'` on every call, the `X-XSRF-TOKEN` header on writes, and handling of 401 (sign in again) and 403. Hiding Super Admin screens in the UI is cosmetic; the backend enforces the rules.
+  - Tests read the repository-root `.env` like the application does. If it contains `BOOTSTRAP_SUPER_ADMIN_*`, the test context creates that Super Admin in the throwaway test database (harmless, but expected).

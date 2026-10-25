@@ -17,7 +17,7 @@ final class ApiFixtures {
     }
 
     static long project(MockMvc mockMvc, long clientId, String type, String name) throws Exception {
-        String json = mockMvc.perform(post("/api/v1/projects").with(user("setup")).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+        String json = mockMvc.perform(post("/api/v1/projects").with(user("setup").roles("ADMIN")).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("""
                         {"name":"%s","type":"%s","clientId":%d,"contractValue":100000,"startDate":"2026-01-01",
                          "expectedCompletion":"2026-12-31","schedule":[{"description":"All","dueDate":"2026-12-31","amount":100000}]}"""
@@ -27,7 +27,7 @@ final class ApiFixtures {
     }
 
     static void setProjectStatus(MockMvc mockMvc, long projectId, String projectStatus, long version) throws Exception {
-        mockMvc.perform(put("/api/v1/projects/" + projectId + "/status").with(user("setup")).with(csrf())
+        mockMvc.perform(put("/api/v1/projects/" + projectId + "/status").with(user("setup").roles("ADMIN")).with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"%s\",\"version\":%d}".formatted(projectStatus, version)))
                 .andExpect(status().isOk());
     }

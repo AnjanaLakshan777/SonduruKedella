@@ -54,7 +54,7 @@ import org.springframework.test.web.servlet.ResultActions;
 // and every row this creates (codes AGTEST-*) is deleted afterwards. Throwaway DB only.
 @SpringBootTest
 @AutoConfigureMockMvc
-@WithMockUser
+@WithMockUser(roles = "ADMIN")
 class AgreementStorageIntegrationTest {
 
     private static final Path STORAGE = tempDir();
@@ -263,10 +263,11 @@ class AgreementStorageIntegrationTest {
         upload(project, "private.pdf", PDF_V1).andExpect(status().isCreated());
         String key = (String) currentRow(project).get("storage_key");
 
-        // nothing maps the storage directory: even a signed-in user only gets a 404, never the bytes
+        // nothing maps the storage directory, and nothing outside /api is allowed anyway: even a
+        // signed-in user gets a refusal, never the bytes
         for (String path : List.of("/" + key, "/data/agreements/" + key, "/agreements/" + key, "/static/" + key)) {
             mockMvc.perform(get(path))
-                    .andExpect(status().isNotFound())
+                    .andExpect(status().isForbidden())
                     .andExpect(content().string(not(containsString("%PDF"))));
         }
         assertThat(STORAGE.toString()).doesNotContain("static", "public", "classes");

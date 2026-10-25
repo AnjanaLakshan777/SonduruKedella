@@ -37,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@WithMockUser
+@WithMockUser(roles = "ADMIN")
 class PayrollApiIntegrationTest {
 
     private static final String URL = "/api/v1/payroll";
@@ -308,7 +308,7 @@ class PayrollApiIntegrationTest {
     }
 
     private long employee(String name, String wage, String ot) throws Exception {
-        return id(mockMvc.perform(post("/api/v1/employees").with(user("setup")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
+        return id(mockMvc.perform(post("/api/v1/employees").with(user("setup").roles("ADMIN")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
                 {"name":"%s","role":"Labourer","dailyWage":%s,"overtimeRate":%s,"joinedOn":"2026-01-05"}""".formatted(name, wage, ot)))
                 .andExpect(status().isCreated()));
     }

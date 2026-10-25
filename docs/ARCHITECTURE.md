@@ -36,7 +36,7 @@ com.sondurukedella
 ├── activity      controller service repository entity dto mapper
 ├── common        exception web audit money validation
 ├── config        persistence web (plus ClockConfig at the package root)
-└── security      config user auth
+└── security      config user auth audit
 ```
 
 Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `validation` where a module has its own validators (currently `clients`, `projects`, `revenue` and `agreements`), `agreements/storage`, `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
@@ -61,7 +61,7 @@ Tables are listed in `docs/DATABASE.md`.
 | `activity` | The project activity feed, written by the other modules. | `activity_log` |
 | `common` | Shared code that contains no business rules. | — |
 | `config` | Application-wide configuration. | — |
-| `security` | Authentication and authorization. | `app_users` |
+| `security` | Sign-in, sessions, the two roles, user administration, the first Super Admin bootstrap and the security audit trail. | `app_users`, `security_events` |
 
 ## Layer Responsibilities
 - `controller`: HTTP endpoints under `/api/v1`. Controllers bind and validate request DTOs, call a service and return response DTOs. They contain no business rules and never return entities.
@@ -79,11 +79,13 @@ Shared packages:
 - `common.money`: `BigDecimal` scale and rounding helpers (`HALF_UP`, 2 decimal places for amounts).
 - `common.validation`: Generic validators shared by several modules, for example `OptionalEmail` (used by Clients and Suppliers).
 - `config.persistence`: JPA and auditing configuration.
-- `config.web`: Web configuration such as CORS for the frontend origin and JSON settings.
+- `config.web`: Web configuration. `CorsConfig` allows credentialed requests from the origins in `security.cors.allowed-origins` only.
 - `config.ClockConfig`: the application `Clock`, in the Asia/Colombo zone. Business dates such as completion and activity dates come from it, so tests can fix the time.
-- `security.config`: Spring Security configuration.
-- `security.user`: Application users (`app_users`) and the user-details lookup.
-- `security.auth`: Login and session or token handling.
+- `security.config`: `SecurityConfig` (the filter chain and every URL rule), `SessionUserFilter` and the JSON 401/403 responses.
+- `security.user`: Application users (`app_users`), roles, the user-details lookup, user administration (`/api/v1/users`), the user's own account, and the first Super Admin bootstrap.
+- `security.auth`: Sign-in (`/api/v1/auth`), the sign-in throttle, and changing your own password.
+- `security.audit`: The append-only security audit trail (`security_events`).
+- `common.audit.CurrentUser`: reads the signed-in user id for `created_by`, without `common` depending on `security`.
 
 ## Module Boundaries
 - A module reads and writes only its own tables through its own repositories. It never uses another module's repositories or entities.
@@ -139,8 +141,89 @@ Shared packages:
 - Preserve finalized payroll and confirmed commission history.
 - Do not count stock purchases and stock issues twice as expenses.
 
+## Authentication and Authorization
+Implemented 2026-10-25. Spring Security, server-side sessions, two roles. No JWT, no HTTP Basic, no form login, no public sign-up.
+
+### Roles (owner decision: these two only)
+| Role | May use |
+| --- | --- |
+| `SUPER_ADMIN` | Everything an Admin can, plus user administration (`/api/v1/users/**`: list, view, create, edit, change role, activate or deactivate, reset password) and the actuator endpoints other than health. Only a Super Admin can make someone a Super Admin. |
+| `ADMIN` | All business modules under `/api/v1` (settings, clients, projects, agreements, revenue, receipts, expenses, suppliers, inventory, employees, attendance, overtime, payroll), plus their own profile, password change and sign-out. No user administration. |
+
+Roles are the `app_users.role` column (`UserRole` enum, authorities `ROLE_SUPER_ADMIN` / `ROLE_ADMIN`). Every rule is in one place, `security.config.SecurityConfig`. Controllers carry no role checks. The user-administration service checks again against locked rows, because the actor's own role may have just changed.
+
+| Path | Who |
+| --- | --- |
+| `POST /api/v1/auth/login`, `GET /api/v1/auth/csrf` | anyone |
+| `GET /actuator/health` | anyone (shows UP/DOWN only, no details), for container and load-balancer probes |
+| `/api/v1/users`, `/api/v1/users/**` | `SUPER_ADMIN` |
+| `/actuator/**` (other than health) | `SUPER_ADMIN` |
+| every other `/api/v1/**` | `SUPER_ADMIN` or `ADMIN` |
+| anything else | denied |
+
+The rules match paths only, never HTTP methods, so GET, POST, PUT, PATCH and DELETE are covered alike. `EndpointAuthorizationIntegrationTest` reads every mapped endpoint from Spring MVC and checks it as an anonymous caller, an Admin and a Super Admin, so a new endpoint is checked automatically.
+
+Settings (company profile, commission policy, wages and the lists) are open to both roles. Nothing in the requirements reserves them for Super Admin; the owner can change that with one rule in `SecurityConfig`.
+
+### Sign-in flow (React app)
+1. `GET /api/v1/auth/csrf` sets the `XSRF-TOKEN` cookie (readable by JavaScript). Returns 204.
+2. `POST /api/v1/auth/login` with JSON `{username, password}` and the header `X-XSRF-TOKEN: <cookie value>`.
+   - On success: 200 with `{id, username, displayName, role}`. The session id is changed (no session fixation), a new CSRF token is issued, and the session (`JSESSIONID`) holds the principal without the password hash.
+   - On failure: 401 `Invalid username or password.` The same answer for an unknown user, a wrong password and a disabled account. The password is checked before the account status, so even the timing is alike.
+3. Later requests send the `JSESSIONID` cookie automatically (`credentials: 'include'`, or `withCredentials` in axios). Every POST, PUT, PATCH and DELETE also sends `X-XSRF-TOKEN`.
+4. `GET /api/v1/auth/me` returns the signed-in user; it returns 401 once the session has ended.
+5. `POST /api/v1/auth/logout` (with the CSRF header) invalidates the session, deletes the cookie, and returns 204.
+
+Errors from the security layer are RFC 9457 JSON: 401 `Sign in to continue.`, 403 `You don't have permission to do this.` (also for a missing or wrong CSRF token). There is no `WWW-Authenticate` header, so the browser never shows a Basic login box.
+
+### Sessions
+- The session lives in memory in the one backend instance. It is lost on restart, and everyone signs in again. Idle timeout is `SESSION_TIMEOUT` (default 30 minutes).
+- Cookie: `HttpOnly`, `SameSite=Lax`, `Secure` unless `SESSION_COOKIE_SECURE=false` (compose sets false for plain-HTTP local development). Session ids are never put in URLs.
+- `SessionUserFilter` checks every signed-in request against `app_users` (one primary-key lookup). Each session remembers the `auth_version` it signed in with. Deactivating a user, changing their role, or changing or resetting their password bumps `auth_version`, so their existing sessions end on the next request (401). Changing your own password keeps the current session, under a new id, and ends all the others.
+
+### Brute-force protection
+- `LoginAttemptThrottle`, in memory:
+  - at most 5 failed sign-ins per typed username, and 20 per client address, per 15 minutes (`LOGIN_MAX_FAILURES_PER_USERNAME`, `LOGIN_MAX_FAILURES_PER_ADDRESS`, `LOGIN_FAILURE_WINDOW`);
+  - past the limit, sign-in answers 429 with `Retry-After`, even with the right password;
+  - wrong "current password" entries on the password change count too.
+- It is keyed by what was typed, so unknown usernames are throttled the same way and nothing reveals which accounts exist.
+- The client address is the direct peer address. `X-Forwarded-For` is not trusted.
+- Limits: it resets on restart and isn't shared between instances. Behind a reverse proxy, every request has the proxy's address, so the per-address limit applies to everyone together until forwarded headers are configured deliberately (`server.forward-headers-strategy`).
+
+### Passwords
+- BCrypt via Spring's delegating encoder (stored as `{bcrypt}$2…`). They are never returned, logged or stored in plain text.
+- Rules for a new password (`PasswordPolicy`): at least 12 characters, at most 72 bytes (BCrypt's limit).
+- Request DTOs override `toString` so a logged request can't show a password.
+
+### CSRF and CORS
+- CSRF stays on for every state-changing request, login and logout included (cookie-to-header pattern, `csrf.spa()`). The `XSRF-TOKEN` cookie is readable by JavaScript by design; it is useless without the HttpOnly session cookie.
+- CORS (`config.web.CorsConfig`) allows credentialed requests only from the exact origins in `CORS_ALLOWED_ORIGINS` (comma separated). A `*`, a path or a trailing slash is refused at startup. Empty means same-origin only. Locally, compose sets `http://localhost:${FRONTEND_PORT}`.
+- Response headers: Spring's defaults (`X-Content-Type-Options`, `X-Frame-Options: DENY`, no-store caching, and HSTS over HTTPS), plus `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` and `Referrer-Policy: no-referrer`.
+
+### User administration rules (`UserAdministrationService`)
+- Users are created only by a Super Admin (`POST /api/v1/users`, role defaults to `ADMIN`). Users are never deleted, only deactivated.
+- Nobody changes their own role or status, or resets their own password, through user administration. Use `PUT /api/v1/auth/me/password` instead. A self-change answers 422.
+- There is always at least one active Super Admin. Each account change first locks every active Super Admin row (`SELECT … FOR UPDATE`, in id order), then checks that the actor is still one of them. So two Super Admins deactivating each other at the same moment can't both succeed (`UserAdministrationConcurrencyIntegrationTest`).
+- Usernames are case-insensitive: stored lower case, compared on `lower(username)`. 3 to 50 characters: letters, digits, `.`, `-` or `_`.
+
+### First Super Admin
+- No account is created by migrations or code defaults.
+- At startup, `SuperAdminProvisioner` creates one from `BOOTSTRAP_SUPER_ADMIN_USERNAME` and `BOOTSTRAP_SUPER_ADMIN_PASSWORD` (optional `BOOTSTRAP_SUPER_ADMIN_DISPLAY_NAME`), only while no `SUPER_ADMIN` row exists at all.
+- After that the settings are ignored: nothing is overwritten and no password is reset on restart.
+- A PostgreSQL advisory lock stops two instances that start together from both creating one.
+- Half-set or invalid settings stop the start with a message that never includes the values. The password is never logged.
+- See DEVELOPMENT_WORKFLOW.md, "Authentication setup".
+
+### Audit
+- `security_events` records sign-ins (succeeded, failed, throttled), sign-outs, and every account change: created, updated, role changed, activated or deactivated, password changed or reset, and the bootstrap.
+- Each row has the actor, the target user, the typed username and the client address. It never holds a password, hash or session id.
+- It is append-only: a V5 trigger refuses updates and deletes.
+- Account changes write their event in the same transaction. Sign-in events commit on their own.
+- No API reads it yet.
+- `created_by` on business tables is now filled with the signed-in user's id (`common.audit.CurrentUser`): through `AuditableEntity`, `StockMovement`, `PayrollLine` and `ActivityEntry`.
+
 ## Security and Documents
-- Use Spring Security for authentication and authorization.
+- Use Spring Security for authentication and authorization (see "Authentication and Authorization").
 - Never store credentials in source code.
 - Keep uploaded agreements private.
 - Store document metadata and a storage reference in PostgreSQL, not the PDF binary itself by default.
