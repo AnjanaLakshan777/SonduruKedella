@@ -71,6 +71,13 @@ public class ReceivableService {
         return receipts(projectId, ids);
     }
 
+    // Every billed installment with its money worked out, across all projects. Read by the reports
+    // module, so the receivables report uses exactly this module's formula.
+    @Transactional(readOnly = true)
+    public List<InstallmentReceivableResponse> billedReceivables() {
+        return receivables(installments.findByBilledOnIsNotNull());
+    }
+
     // Company-wide KPIs for the Receivables tab. Only billed installments are receivables.
     @Transactional(readOnly = true)
     public ReceivablesSummaryResponse summary() {

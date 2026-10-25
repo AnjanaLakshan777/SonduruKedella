@@ -57,7 +57,7 @@ Tables are listed in `docs/DATABASE.md`.
 | `inventory` | Materials and the stock movement ledger: receipts, issues, returns to stock and adjustments, costed FIFO from persistent cost layers. | `materials`, `stock_movements`, `stock_cost_layers`, `stock_cost_allocations` |
 | `employees` | Workers and their daily inputs: attendance and overtime. | `employees`, `attendance`, `overtime_entries` |
 | `payroll` | Weekly payroll: salary advances and their recovery, adjustments, the per-employee weekly freeze, corrections and payroll payments. | `salary_advances`, `payroll_adjustments`, `payroll_lines`, `payroll_line_costs`, `advance_recoveries`, `payroll_corrections`, `payroll_payments` |
-| `reports` | Read-only reports: income, expenses, project profitability, client receivables, supplier payables and labour payments. | Nothing |
+| `reports` | Read-only reports: dashboard, company financial summary, project financials and cost breakdown, client receivables (aging), inventory valuation and payroll weeks. Supplier payables wait for supplier invoices. | Nothing |
 | `activity` | The project activity feed, written by the other modules. | `activity_log` |
 | `common` | Shared code that contains no business rules. | — |
 | `config` | Application-wide configuration. | — |
@@ -142,6 +142,58 @@ Shared packages:
 - Operations that span modules run in one transaction started by the calling module's service.
 - Avoid circular dependencies between modules. If two modules need each other, move the shared contract to the module that owns the data.
 - `reports` reads data from the business modules, either through their services or through dedicated read-only queries in `reports.repository`. It uses the same calculation rules as those modules. It owns no entities, never writes, and never duplicates business records.
+
+## Reports (implemented 2026-10-25)
+All under `/api/v1/reports`, GET only, both roles through the central `/api/v1/**` rule (anonymous callers get 401). They are a **management view**, not formal financial statements. Nothing is cached, and no report writes.
+
+### Where each figure comes from
+Rule-heavy figures always come from the owning module's service. `reports.repository.ReportQueries` holds only plain SELECT sums over a clear, indexed date column.
+
+| Figure | Authoritative source | Date basis |
+| --- | --- | --- |
+| Contract value | `ProjectService` | none (agreed; never revenue) |
+| Revenue recorded (per project) | `ReceivableService.forProject`: billed installments net of the applied delay deduction | `installments.billed_on` |
+| Revenue recorded, receipts, write-offs (company, by period) | `ReportQueries.billing/receipts/writeOffs`: the same per-installment rule, `max(amount − deduction, 0)`; voided receipts excluded | `billed_on`, `payment_date`, `write_off_date` |
+| Receivables outstanding, overdue, aging | `ReceivableService` (`summary`, `forProject`, `billedReceivables`) | as of today (Colombo) |
+| Manual expenses | `ExpenseService.summary` (expenses are never voided; payments don't change cost) | `expense_date` |
+| Materials (per project) | `StockMovementService.projectUsage`: issued − returned at the FIFO cost fixed on each movement | movement date |
+| Materials (company, by period) | `ReportQueries.materialUse`: the same movement costs | `movement_date` |
+| Labour (per project) | `PayrollService.projectLabour`: frozen split + corrections + open weeks priced live | payroll week |
+| Labour (company, by period) | `PayrollService.weeks`: labour cost = gross pay + corrections | weeks whose Monday falls in the range |
+| Commission cost (per project) | `CommissionService.forProject`: confirmed arrangements' stored amounts | — |
+| Commission confirmed and paid (company, by period) | `ReportQueries.commissionConfirmed/commissionPaid`: status `CONFIRMED` only; voided payments excluded | `confirmed_on`, `payment_date` |
+| Commission outstanding | `CommissionService.summary` | as of today |
+| Inventory value | `MaterialService.valuation` and `search`: Σ remaining value of open FIFO layers | as of today |
+
+### Project figures
+- Project costs = manual project expenses + materials (issued − returned) + labour + confirmed commission.
+- Profit = revenue recorded − written off − project costs. This is the rule in DATABASE.md "Profitability" and the frontend's `finance.ts`.
+- The basis is `RECORDED` when the project is `COMPLETED`, otherwise `ESTIMATED`.
+- Margin = profit ÷ revenue recorded × 100, rounded half-up to 2 places. It is null when nothing has been billed.
+- The cost breakdown's lines add up to each category, and the categories to the total, to the cent. The project report's `costs.total` is the same number.
+
+### Double counting, prevented by construction
+- Stock purchases are never cost; only issues less returns are.
+- Labour is gross wages plus corrections. Payroll advances and payroll payments are cash, never cost.
+- Commission cost is confirmed arrangements only. Commission payments settle it; drafts and voided arrangements are excluded.
+- Payroll and commission can't appear as manual expenses: their categories are system-generated, and the V1 check refuses them.
+- Company expenses are never project costs.
+- The financial summary keeps every block separate (revenue, expenses, materials, labour, commission), because each is recognised on a different date. It never adds them into one profit figure. Current inventory value is a position, not a period expense.
+
+### Consistency and scale
+- Each report runs in one read-only `REPEATABLE READ` transaction, so all its figures come from one database snapshot.
+- Period sums are SQL aggregates on indexed date columns.
+- These run in memory:
+  - receivables: every billed installment through `ReceivableService`, then filtered and paged;
+  - the dashboard's project totals: every project's own report, summed, so the dashboard and the project pages always agree;
+  - payroll weeks: up to 53, each through `PayrollService.week`.
+
+  That is fine for this company's volumes (tens to hundreds of projects). At much larger volumes the dashboard project loop is the first thing to replace with aggregated queries.
+- Ranges (`financial-summary`, `payroll`) need both dates and are at most 366 days.
+
+### Not available yet (and not shown as zero)
+- Supplier invoices (`PROJECT` invoices as material cost, supplier payables) and other income are in the schema but not built.
+- Each report lists them in `notIncluded` / `excluded` rather than returning a misleading 0.
 
 ## Financial Integrity
 - Use BigDecimal for Java monetary calculations.

@@ -53,7 +53,7 @@ Required by the owner's decisions. Unticked items are not yet made. See docs/DAT
 - [ ] Suppliers and payables. Partial (2026-10-24): the supplier directory (create, list or search, get, edit, activate or deactivate) and the optional supplier link on expenses. Supplier invoices, supplier payments and payables are not implemented.
 - [x] Inventory and stock movements (2026-10-24): the materials catalogue; receipts, issues to construction projects, returns against the original issue and adjustments, costed FIFO from persistent cost layers with issue allocations (changed from the weighted average the same day, migration V4); balances, valuation, movement history and project material usage. Receipts from supplier invoices are not built yet.
 - [x] Employee attendance, overtime, advances, and payroll (2026-10-24, backend): employees, the attendance register, overtime and approval, advances, weekly payroll worked out live, payments that freeze the week, closing a zero week, corrections, history, period summaries and project labour cost. The frontend still runs on its local store.
-- [ ] Financial reports.
+- [x] Financial reports (2026-10-25, backend): dashboard, financial summary, project financials and cost breakdown, receivables aging, inventory valuation and payroll weeks, all read-only. Supplier payables wait for supplier invoices. See the completion log, "Reports and dashboard".
 - [x] Private agreement document storage (2026-10-24): upload or replace, metadata and download of one current PDF per project. Removing an agreement is not implemented.
 
 ## Completion Log
@@ -992,4 +992,47 @@ For each completed task, record the date, files or migrations changed, verificat
   - Policy exceptions can be confirmed by both roles (the task restricted only the company-wide policy). The owner may want exceptions to be Super Admin only.
   - The cost is recognised at confirmation, with no further accrual basis. Commission doesn't follow billing or collection, by the documented rule, so a project billed in parts carries its full confirmed commission from the start.
   - The directory, summary and recipient views compute paid and outstanding in memory over the matching arrangements. That's fine for a company's hundreds of commissions; it would need SQL aggregation at much larger volumes.
-  - No report module yet. Project profitability will read the project totals from this module when the reports are built.
+  - No report module yet. Project profitability will read the project totals from this module when the reports are built. (Done: see "Reports and dashboard".)
+
+### 2026-10-25: Reports and dashboard
+- Read-only reports module (`reports`). No migration: every figure comes from the existing schema. Definitions, sources and date bases are in ARCHITECTURE.md, "Reports". The definitions match DATABASE.md and the frontend's `finance.ts`.
+- Endpoints (GET only, `SUPER_ADMIN` and `ADMIN`, 401 when anonymous):
+
+  | Path | What |
+  | --- | --- |
+  | `/api/v1/reports/dashboard` | active projects (`IN_PROGRESS` + `ON_HOLD`) by type and all statuses, active contract value, revenue recorded / payments received / written off (all time), receivables outstanding and overdue (now), project costs and estimated project profit (every project's own report, summed), company expenses, expense and commission payables, FIFO inventory value, monthly revenue recorded / payments received / manual expenses for the financial year to date |
+  | `/api/v1/reports/financial-summary?from&to` | per-block period figures with their own date basis (billing, receipts, write-offs, manual expenses, materials issued less returns, payroll weeks, commission confirmed and paid) plus a position as of today |
+  | `/api/v1/reports/projects/{id}/financial` | contract value; billed, deductions, revenue recorded, received, written off, outstanding, overdue, unbilled; costs (manual, materials, labour with its open-week part, commission, total); commission paid, outstanding and drafts; profit, margin, `RECORDED`/`ESTIMATED` |
+  | `/api/v1/reports/projects/{id}/cost-breakdown` | the four cost categories with their lines (expense categories, materials, labour parts, confirmed arrangements); total = Σ categories to the cent; exclusions listed |
+  | `/api/v1/reports/receivables` | billed installments with project, client, amounts, due date, days overdue and aging bucket; filters `projectId`, `status`, `aging`, `openOnly` (default true); paging; sort `daysOverdue`, `dueDate`, `outstanding`, `billedOn`, `project`; totals for the filter |
+  | `/api/v1/reports/inventory-valuation` | FIFO totals plus a page of materials with their layer value (`q`, `category`) |
+  | `/api/v1/reports/payroll?from&to` | payroll weeks (Mondays in range) with labour cost = gross + corrections, paid, remaining payable / not yet due |
+
+- Commission summaries were not repeated: `/api/v1/commissions/summary`, `/recipients` and `/payments` already exist.
+- Changes outside `reports`: one additive read method, `ReceivableService.billedReceivables()`, so the receivables report uses the Revenue module's own formula. Nothing else changed in any module.
+- Files:
+  - New: `reports/controller/ReportController`, `reports/service/ReportService`, `reports/repository/ReportQueries`, `reports/dto/*` (8 records).
+  - Changed: `revenue/service/ReceivableService` (the new read method).
+  - Removed: the reports placeholder `package-info.java` files (main 4, test 2).
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-25): 71 classes, 629 tests, 0 failures, 0 errors, 0 skipped (616 before; 13 new).
+  - `ReportApiIntegrationTest` (12). A fixture built through every module's real API: billing with a delay deduction, a voided receipt, a write-off, project and company expenses with a payment, a stock purchase, issue and return, two days of attendance, commissions confirmed, voided and draft, and a design project with commission. It checks:
+    - every project figure by hand (profit 399,000, margin 68.79%);
+    - the cost breakdown adding up to the cent;
+    - the recorded basis after completion;
+    - an empty project and a missing project (404);
+    - dashboard and summary deltas;
+    - inclusive date boundaries;
+    - range validation;
+    - receivables aging and filters;
+    - FIFO valuation (75,000 left of 100,000 bought);
+    - payroll gross only;
+    - that reading every report changes no table (checksums).
+  - `ReceivableAgingTest` (1): the bucket edges.
+  - `EndpointAuthorizationIntegrationTest` now covers the 7 report endpoints automatically.
+- Known limitations:
+  - **Not available yet:** supplier invoices (project material cost, payables) and other income (revenue). Each report lists them in `notIncluded`/`excluded` instead of showing 0.
+  - **Current state, not history:** period figures reflect records as they are now. For example, a commission confirmed in a period and voided later no longer counts for that period, and the dashboard's open-week labour can still change.
+  - **The dashboard has no payroll liability:** payroll is per week, see `/reports/payroll`. The financial summary has none either for weeks outside its range.
+  - **No combined period profit:** revenue is recognised at billing while costs carry their own dates, so the summary keeps them apart. Project profit is per project, to date.
+  - **Scale:** receivables, the dashboard's project totals and payroll weeks are computed in memory (see ARCHITECTURE.md). That is fine at this company's volume.
+  - **Frontend:** not connected yet. The UI's dashboard "Expenses" series also included stock, payroll and commission lines; the API's monthly series is manual expenses only, and named so.
