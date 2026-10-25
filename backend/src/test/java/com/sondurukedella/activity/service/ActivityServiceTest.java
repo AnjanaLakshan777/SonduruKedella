@@ -3,6 +3,7 @@ package com.sondurukedella.activity.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 
+import com.sondurukedella.activity.mapper.ActivityMapper;
 import com.sondurukedella.activity.entity.ActivityEntry;
 import com.sondurukedella.activity.entity.ActivityKind;
 import com.sondurukedella.activity.repository.ActivityEntryRepository;
@@ -28,7 +29,7 @@ class ActivityServiceTest {
         Clock clock = Clock.fixed(Instant.parse("2026-12-31T20:00:00Z"), ClockConfig.BUSINESS_ZONE);
         ArgumentCaptor<ActivityEntry> entry = ArgumentCaptor.forClass(ActivityEntry.class);
 
-        new ActivityService(repository, clock).record(4L, ActivityKind.STATUS, "Status changed.");
+        new ActivityService(repository, new ActivityMapper(), clock).record(4L, ActivityKind.STATUS, "Status changed.");
 
         verify(repository).save(entry.capture());
         assertThat(entry.getValue().getActivityDate()).isEqualTo(LocalDate.of(2027, 1, 1));

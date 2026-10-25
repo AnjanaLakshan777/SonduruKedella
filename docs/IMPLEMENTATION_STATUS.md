@@ -1114,3 +1114,14 @@ For each completed task, record the date, files or migrations changed, verificat
   - `OtherIncomeApiIntegrationTest` (4): receipts with idempotency and voids, validation, overdue and summary, report figures.
   - `ReportApiIntegrationTest` updated.
 - Not built: editing or deleting an income record.
+
+### 2026-10-26: Activity feed and config cleanup
+- Activity: `GET /api/v1/activity` reads the activity log written by the other modules.
+  - Filters: `projectId` (a project's Activity tab), `kind`, `from`/`to` (activity date).
+  - Newest first, paged (at most 100 per page), both roles, read-only.
+  - New: `ActivityController`, `ActivityResponse`, `ActivityMapper`; `ActivityService.feed`. The repository gained `JpaSpecificationExecutor`.
+- Config: removed the empty `config.persistence` placeholder. Nothing needs JPA configuration beyond Spring Boot's defaults (audit columns come from `AuditableEntity` and `CurrentUser`), so none was added. `config` is `ClockConfig` plus `config.web` (CORS).
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-26): 75 classes, 643 tests, 0 failures, 0 errors, 0 skipped (641 before).
+  - `ActivityApiIntegrationTest` (2).
+  - `ActivityServiceTest` updated for the new constructor.
+  - `EndpointAuthorizationIntegrationTest` covers the endpoint automatically.

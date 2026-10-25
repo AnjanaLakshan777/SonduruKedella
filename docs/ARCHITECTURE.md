@@ -35,7 +35,7 @@ com.sondurukedella
 ├── reports       controller service repository dto
 ├── activity      controller service repository entity dto mapper
 ├── common        exception web audit money validation
-├── config        persistence web (plus ClockConfig at the package root)
+├── config        web (plus ClockConfig at the package root)
 └── security      config user auth audit
 ```
 
@@ -78,7 +78,7 @@ Shared packages:
 - `common.audit`: Audit fields (`created_at`, `created_by`, `updated_at`) and how the current user is resolved. Each entity whose table has a `version` column declares it for optimistic locking.
 - `common.money`: `BigDecimal` scale and rounding helpers (`HALF_UP`, 2 decimal places for amounts).
 - `common.validation`: Generic validators shared by several modules, for example `OptionalEmail` (used by Clients and Suppliers).
-- `config.persistence`: JPA and auditing configuration.
+- (No `config.persistence` package: nothing needs JPA configuration beyond Spring Boot's defaults. Audit columns are filled by `common.audit.AuditableEntity` and `CurrentUser`. The placeholder was removed on 2026-10-26.)
 - `config.web`: Web configuration. `CorsConfig` allows credentialed requests from the origins in `security.cors.allowed-origins` only.
 - `config.ClockConfig`: the application `Clock`, in the Asia/Colombo zone. Business dates such as completion and activity dates come from it, so tests can fix the time.
 - `security.config`: `SecurityConfig` (the filter chain and every URL rule), `SessionUserFilter` and the JSON 401/403 responses.
@@ -106,7 +106,7 @@ Shared packages:
       - the Commission expense category is system-generated, so a manual expense can't count it again (the V1 check refuses it too).
     - The 80/20 design split is the commission policy's pool (default 20%) against the company share (100 − pool). It is a view and a warning level, not a ledger entry; the company share is simply what is left of the contract value.
   - Delay deductions and schedules: `projects` passes the project type (as the plain code `revenue` stores in `project_type`) and the contract value into the `revenue` service operations. `revenue` never imports `projects` or queries its repositories, because `projects` already depends on `revenue`.
-  - Recording an event: any module calls the `activity` service.
+  - Recording an event: any module calls the `activity` service. Reading the feed (implemented 2026-10-26): `GET /api/v1/activity` (`projectId`, `kind`, `from`/`to`, paging), newest first. It never checks the project, because `projects` depends on `activity`.
   - Creating a project (implemented): `projects` checks or creates the client through `ClientService` (`exists`, `create`, `findNames`, `findIdsByName`), creates the schedule and delay terms through `revenue` (`InstallmentScheduleService`, `DelayTermsService`), and records the status event through `ActivityService`. All of this runs in one transaction. The revenue and activity methods use `MANDATORY` propagation, so they cannot commit on their own.
   - Reading a project's schedule and delay terms (implemented): `ProjectService` checks that the project exists (404 if not), then calls the read-only `InstallmentScheduleService.findSchedule` and `DelayTermsService.findTerms`, which return `revenue` DTOs. These reads use ordinary read-only transactions; only the `revenue` write methods are `MANDATORY`. `revenue` still takes just the project id and never imports `projects`.
   - Agreements (implemented): `agreements` checks the project through `ProjectService.requireExists` and never touches the projects repository. It records the upload event through `ActivityService` (`DOCUMENT`).
