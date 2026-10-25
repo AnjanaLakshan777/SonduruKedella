@@ -100,6 +100,8 @@ class AgreementStorageIntegrationTest {
         jdbc.update("DELETE FROM project_agreements WHERE project_id IN (" + projects + ")");
         jdbc.update("DELETE FROM projects WHERE code LIKE 'AGTEST-%'");
         jdbc.update("DELETE FROM clients WHERE name LIKE 'AgTest%'");
+        jdbc.update("DELETE FROM supplier_invoices WHERE supplier_id IN (SELECT id FROM suppliers WHERE name LIKE 'AgTest%')");
+        jdbc.update("DELETE FROM suppliers WHERE name LIKE 'AgTest%'");
         // the directory is shared by the whole class, so empty it for the next test's file checks
         try (Stream<Path> paths = Files.list(STORAGE)) {
             paths.forEach(p -> p.toFile().delete());
@@ -113,6 +115,47 @@ class AgreementStorageIntegrationTest {
         try (Stream<Path> paths = Files.walk(STORAGE)) {
             paths.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
         }
+    }
+
+    @Test
+    void anAgreementCanBeRemovedAndItsFileIsKept() throws Exception {
+        upload(project, "contract.pdf", PDF_V1).andExpect(status().isCreated());
+        String key = (String) currentRow(project).get("storage_key");
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(url(project)).with(csrf()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get(url(project))).andExpect(status().isNotFound());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(url(project)).with(csrf()))
+                .andExpect(status().isNotFound());
+        // retired, not deleted: the row (removed_at set) and its PDF stay
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM project_agreements WHERE project_id = ? AND removed_at IS NOT NULL",
+                Long.class, project)).isOne();
+        assertThat(STORAGE.resolve(key)).exists();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM activity_log WHERE project_id = ? AND message = 'Agreement removed.'",
+                Long.class, project)).isOne();
+        // and a new one can be uploaded afterwards
+        upload(project, "signed.pdf", PDF_V2).andExpect(status().isCreated());
+    }
+
+    @Test
+    void aSupplierInvoiceCanCarryAPrivatePdf() throws Exception {
+        long supplier = jdbc.queryForObject("INSERT INTO suppliers (name, phone) VALUES ('AgTest Shop', '0710000000') RETURNING id", Long.class);
+        long invoice = jdbc.queryForObject("""
+                INSERT INTO supplier_invoices (supplier_id, invoice_no, invoice_date, due_date, allocation, total_amount)
+                VALUES (?, 'ATT-1', DATE '2026-10-01', DATE '2026-10-31', 'STOCK', 1000) RETURNING id""", Long.class, supplier);
+        String attachment = "/api/v1/supplier-invoices/" + invoice + "/attachment";
+        mockMvc.perform(get(attachment + "/download")).andExpect(status().isNotFound());
+        mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "bill.txt", "text/plain", "hello".getBytes()))
+                .with(csrf())).andExpect(status().isBadRequest());
+        mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "bill.pdf", "application/pdf", PDF_V1)).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.invoice.attachmentFilename").value("bill.pdf"));
+        String firstKey = jdbc.queryForObject("SELECT attachment_storage_key FROM supplier_invoices WHERE id = ?", String.class, invoice);
+        mockMvc.perform(get(attachment + "/download")).andExpect(status().isOk()).andExpect(content().bytes(PDF_V1))
+                .andExpect(header().string("Content-Disposition", containsString("attachment")));
+        // replacing it removes the old file
+        mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "bill2.pdf", "application/pdf", PDF_V2)).with(csrf()))
+                .andExpect(status().isOk());
+        assertThat(STORAGE.resolve(firstKey)).doesNotExist();
+        mockMvc.perform(get(attachment + "/download")).andExpect(content().bytes(PDF_V2));
     }
 
     @Test

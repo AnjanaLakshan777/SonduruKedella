@@ -41,7 +41,8 @@ public class ExpenseMapper {
                 balance.status(),
                 expense.getCreatedAt(),
                 expense.getUpdatedAt(),
-                expense.getVersion());
+                expense.getVersion(),
+                null);
     }
 
     public ExpensePaymentResponse toResponse(ExpensePayment payment, String methodName) {

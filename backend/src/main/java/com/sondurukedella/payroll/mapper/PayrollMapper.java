@@ -21,7 +21,8 @@ public class PayrollMapper {
 
     public PayrollCorrectionResponse toResponse(PayrollCorrection c, long employeeId, LocalDate weekStart) {
         return new PayrollCorrectionResponse(c.getId(), employeeId, weekStart, c.getCorrectionDate(), c.getWageDelta(),
-                c.getProjectId(), c.getReason(), c.getCreatedAt());
+                c.getProjectId(), c.getReason(), c.getCreatedAt(), c.getRequestId(), c.isVoided(), c.getVoidedAt(), c.getVoidReason(),
+                c.getVersion());
     }
 
     public SalaryAdvanceResponse toResponse(SalaryAdvance a, String employee, String method, BigDecimal recovered) {

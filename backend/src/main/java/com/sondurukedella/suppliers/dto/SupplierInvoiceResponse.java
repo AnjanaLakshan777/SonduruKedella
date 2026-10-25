@@ -5,8 +5,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
-// paid counts active payments only; outstanding = total − paid. status: UNPAID, PARTIALLY_PAID, PAID,
-// or OVERDUE when something is outstanding and the due date has passed (as the UI shows it).
+// paid counts active payments only; outstanding = total − paid (0 once cancelled). status: UNPAID,
+// PARTIALLY_PAID, PAID, OVERDUE when something is outstanding and the due date has passed (as the UI
+// shows it), or CANCELLED. A cancelled invoice is no payable and no cost.
 public record SupplierInvoiceResponse(
         long id,
         long supplierId,
@@ -21,8 +22,12 @@ public record SupplierInvoiceResponse(
         BigDecimal outstanding,
         InvoiceStatus status,
         String notes,
+        OffsetDateTime cancelledAt,
+        String cancelReason,
+        String attachmentFilename,
+        Long attachmentSize,
         OffsetDateTime createdAt,
         long version) {
 
-    public enum InvoiceStatus { UNPAID, PARTIALLY_PAID, PAID, OVERDUE }
+    public enum InvoiceStatus { UNPAID, PARTIALLY_PAID, PAID, OVERDUE, CANCELLED }
 }

@@ -2,6 +2,7 @@ package com.sondurukedella.agreements.service;
 
 import com.sondurukedella.activity.entity.ActivityKind;
 import com.sondurukedella.activity.service.ActivityService;
+import com.sondurukedella.common.exception.NotFoundException;
 import com.sondurukedella.agreements.entity.ProjectAgreement;
 import com.sondurukedella.agreements.mapper.AgreementMapper;
 import com.sondurukedella.agreements.repository.ProjectAgreementRepository;
@@ -41,5 +42,16 @@ class AgreementRecorder {
         activityService.record(projectId, ActivityKind.DOCUMENT,
                 (current.isPresent() ? "Agreement replaced: " : "Agreement uploaded: ") + fileName);
         return new AgreementUpload(mapper.toResponse(saved), current.isPresent());
+    }
+
+    // Removing works like replacing without a new file: the row is retired (removed_at) and its PDF kept,
+    // because the row still points at it. Nothing is hard-deleted.
+    @Transactional
+    public void remove(long projectId) {
+        ProjectAgreement current = repository.findByProjectIdAndRemovedAtIsNull(projectId)
+                .orElseThrow(() -> new NotFoundException("No agreement has been uploaded for this project."));
+        current.markRemoved(OffsetDateTime.now(clock));
+        repository.saveAndFlush(current);
+        activityService.record(projectId, ActivityKind.DOCUMENT, "Agreement removed.");
     }
 }

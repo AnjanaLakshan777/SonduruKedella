@@ -1,5 +1,6 @@
 package com.sondurukedella.revenue.service;
 
+import com.sondurukedella.common.exception.BusinessRuleException;
 import com.sondurukedella.common.exception.ConflictException;
 import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.common.exception.NotFoundException;
@@ -10,6 +11,7 @@ import com.sondurukedella.revenue.dto.OtherIncomeReceiptResponse;
 import com.sondurukedella.revenue.dto.OtherIncomeResponse;
 import com.sondurukedella.revenue.dto.OtherIncomeResponse.Status;
 import com.sondurukedella.revenue.dto.OtherIncomeSummary;
+import com.sondurukedella.revenue.dto.OtherIncomeUpdateRequest;
 import com.sondurukedella.revenue.dto.ReceiptCreateRequest;
 import com.sondurukedella.revenue.dto.ReceiptVoidRequest;
 import com.sondurukedella.revenue.entity.OtherIncome;
@@ -35,7 +37,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Other income (revenue category "Other Income", not tied to a project). Recognised on its income
+// Other income (revenue category "Other Income", not tied to a project). Editable, and deletable while
+// nothing was received against it. Recognised on its income
 // date; receipts settle it and are never more income. Receipts lock the income row (no receiving more
 // than is owed under concurrency), use request_id idempotency, and are voided, never deleted.
 @Service
@@ -57,6 +60,33 @@ public class OtherIncomeService {
         OtherIncome saved = incomes.saveAndFlush(new OtherIncome(request.date(), request.description().strip(), trimToNull(request.payer()),
                 Money.amount(request.amount()), request.dueDate(), trimToNull(request.reference()), trimToNull(request.notes())));
         return toResponse(saved, BigDecimal.ZERO, today());
+    }
+
+    // Locked like a receipt, so an edit and a receipt can't cross.
+    @Transactional
+    public OtherIncomeResponse update(long id, OtherIncomeUpdateRequest request) {
+        OtherIncome income = incomes.findByIdForUpdate(id).orElseThrow(OtherIncomeService::notFound);
+        ConflictException.requireCurrentVersion(request.version(), income.getVersion());
+        if (request.dueDate() != null && request.dueDate().isBefore(request.date())) {
+            throw new InvalidRequestException("The due date can't be before the income date.");
+        }
+        BigDecimal received = receipts.sumActive(id);
+        if (request.amount().compareTo(received) < 0) {
+            throw new BusinessRuleException(Money.format(received) + " has already been received, so the amount can't be less.");
+        }
+        income.revise(request.date(), request.description().strip(), trimToNull(request.payer()), Money.amount(request.amount()),
+                request.dueDate(), trimToNull(request.reference()), trimToNull(request.notes()));
+        return toResponse(incomes.saveAndFlush(income), received, today());
+    }
+
+    // Only a record nothing was received against (not even a voided receipt, which keeps its history).
+    @Transactional
+    public void delete(long id) {
+        OtherIncome income = incomes.findByIdForUpdate(id).orElseThrow(OtherIncomeService::notFound);
+        if (receipts.existsByOtherIncomeId(id)) {
+            throw new BusinessRuleException("This income has receipts and can't be deleted. Edit it instead.");
+        }
+        incomes.delete(income);
     }
 
     @Transactional(readOnly = true)

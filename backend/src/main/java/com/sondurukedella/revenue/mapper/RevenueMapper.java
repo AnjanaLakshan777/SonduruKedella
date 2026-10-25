@@ -75,7 +75,11 @@ public class RevenueMapper {
                 writeOff.getWriteOffDate(),
                 writeOff.getAmount(),
                 writeOff.getReason(),
-                writeOff.getCreatedAt());
+                writeOff.getCreatedAt(),
+                writeOff.isVoided(),
+                writeOff.getVoidedAt(),
+                writeOff.getVoidReason(),
+                writeOff.getVersion());
     }
 
     public DelayTermsResponse toResponse(DelayDeductionTerms terms) {

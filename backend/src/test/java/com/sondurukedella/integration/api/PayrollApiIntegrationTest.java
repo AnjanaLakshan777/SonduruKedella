@@ -229,6 +229,33 @@ class PayrollApiIntegrationTest {
     }
 
     @Test
+    void aResentCorrectionIsRecordedOnceAndAWrongOneIsVoidedNotEdited() throws Exception {
+        threeDays(kamal, W1);
+        pay(W1, kamal, "9000", UUID.randomUUID());
+        String body = """
+                {"requestId":"%s","correctionDate":"2026-10-01","wageDelta":1500,"projectId":%d,"reason":"Missed overtime"}""";
+        UUID request = UUID.randomUUID();
+        String url = URL + "/weeks/" + W1 + "/employees/" + kamal + "/corrections";
+        mockMvc.perform(post(url).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body.formatted(request, house))).andExpect(status().isCreated());
+        mockMvc.perform(post(url).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body.formatted(request, house))).andExpect(status().isOk());
+        mockMvc.perform(post(url).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body.replace("1500", "1600").formatted(request, house)))
+                .andExpect(status().isConflict());
+        long id = jdbc.queryForObject("SELECT id FROM payroll_corrections WHERE request_id = ?", Long.class, request);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payroll_corrections c JOIN payroll_lines l ON l.id = c.payroll_line_id WHERE l.employee_id = ?",
+                Long.class, kamal)).isOne();
+
+        mockMvc.perform(post(url + "/" + id + "/void").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Wrong amount\",\"version\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.voided").value(true)).andExpect(jsonPath("$.voidReason").value("Wrong amount"));
+        mockMvc.perform(post(url + "/" + id + "/void").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"again\",\"version\":1}"))
+                .andExpect(status().isConflict());
+        // the voided correction no longer counts: the week owes 9,000 again and the labour cost drops back
+        line(W1, kamal).andExpect(jsonPath("$.line.corrections").value(0)).andExpect(jsonPath("$.line.owed").value(9000.0));
+        mockMvc.perform(get(URL + "/projects/" + house + "/labour")).andExpect(jsonPath("$.corrections").value(0));
+        mockMvc.perform(post(url + "/999999999/void").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"x\",\"version\":0}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void correctionsChangeWhatAPaidWeekOwesWithinItsLabourShares() throws Exception {
         threeDays(kamal, W1);   // 9,000, all on the house
         correct(W1, kamal, "500", house).andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("Only a paid week")));
@@ -363,8 +390,8 @@ class PayrollApiIntegrationTest {
     private ResultActions correct(LocalDate weekStart, long employeeId, String delta, Long projectId) throws Exception {
         return mockMvc.perform(post(URL + "/weeks/" + weekStart + "/employees/" + employeeId + "/corrections").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content("""
-                {"correctionDate":"2026-10-01","wageDelta":%s,%s"reason":"Missed overtime"}"""
-                .formatted(delta, projectId == null ? "" : "\"projectId\":" + projectId + ",")));
+                {"requestId":"%s","correctionDate":"2026-10-01","wageDelta":%s,%s"reason":"Missed overtime"}"""
+                .formatted(java.util.UUID.randomUUID(), delta, projectId == null ? "" : "\"projectId\":" + projectId + ",")));
     }
 
     private ResultActions advance(long employeeId, String date, String amount) throws Exception {

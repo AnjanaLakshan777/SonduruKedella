@@ -17,6 +17,11 @@ import com.sondurukedella.revenue.dto.ReceiptResponse;
 import com.sondurukedella.revenue.dto.ReceiptVoidRequest;
 import com.sondurukedella.revenue.dto.WriteOffCreateRequest;
 import com.sondurukedella.revenue.dto.WriteOffResponse;
+import com.sondurukedella.revenue.dto.WriteOffReversalRequest;
+import com.sondurukedella.revenue.dto.InstallmentResponse;
+import com.sondurukedella.revenue.dto.ScheduleRevisionRequest;
+import com.sondurukedella.revenue.dto.VariationRequest;
+import com.sondurukedella.revenue.service.InstallmentScheduleService;
 import com.sondurukedella.revenue.service.BillingService;
 import com.sondurukedella.revenue.service.DelayDeductionService;
 import com.sondurukedella.revenue.service.ReceiptService;
@@ -41,6 +46,7 @@ public class ProjectRevenueService {
     private final ReceiptService receipts;
     private final WriteOffService writeOffs;
     private final DelayDeductionService deductions;
+    private final InstallmentScheduleService schedule;
 
     public ProjectReceivablesResponse receivables(long projectId) {
         requireExists(projectId);
@@ -80,6 +86,21 @@ public class ProjectRevenueService {
     public WriteOffResponse writeOff(long projectId, long installmentId, WriteOffCreateRequest request) {
         requireExists(projectId);
         return writeOffs.create(projectId, installmentId, request);
+    }
+
+    public WriteOffResponse reverseWriteOff(long projectId, long writeOffId, WriteOffReversalRequest request) {
+        requireExists(projectId);
+        return writeOffs.reverse(projectId, writeOffId, request);
+    }
+
+    // the contract value comes from the project, never from the request
+    public List<InstallmentResponse> reviseSchedule(long projectId, ScheduleRevisionRequest request) {
+        return schedule.revise(projectId, facts(projectId).contractValue(), request);
+    }
+
+    public InstallmentResponse addVariation(long projectId, VariationRequest request) {
+        requireExists(projectId);
+        return schedule.addVariation(projectId, request);
     }
 
     public DelayCalculationResponse delayCalculation(long projectId, LocalDate completionDate) {

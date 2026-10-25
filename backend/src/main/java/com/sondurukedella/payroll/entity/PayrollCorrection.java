@@ -8,14 +8,17 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import jakarta.persistence.Version;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 // A change to a frozen week's wages: positive or negative, with a reason. It changes only what is owed,
-// never the advance deduction, so an advance can't be recovered twice. Never edited (there is no audit
-// trail for edits yet - DATABASE.md), so every column is insert-only.
+// never the advance deduction, so an advance can't be recovered twice. Never edited: a wrong one is voided
+// with a reason and a new one recorded (V7), so the history stays. requestId makes a resend harmless.
 @Getter
 @Entity
 @Table(name = "payroll_corrections")
@@ -41,11 +44,34 @@ public class PayrollCorrection extends AuditableEntity {
     @Column(nullable = false, columnDefinition = "text", updatable = false)
     private String reason;
 
-    public PayrollCorrection(long payrollLineId, LocalDate correctionDate, BigDecimal wageDelta, Long projectId, String reason) {
+    @Column(name = "request_id", updatable = false)
+    private UUID requestId;
+
+    @Column(name = "voided_at")
+    private OffsetDateTime voidedAt;
+
+    @Column(name = "void_reason", columnDefinition = "text")
+    private String voidReason;
+
+    @Version
+    private Long version;
+
+    public PayrollCorrection(long payrollLineId, LocalDate correctionDate, BigDecimal wageDelta, Long projectId, String reason,
+            UUID requestId) {
+        this.requestId = requestId;
         this.payrollLineId = payrollLineId;
         this.correctionDate = correctionDate;
         this.wageDelta = wageDelta;
         this.projectId = projectId;
         this.reason = reason;
+    }
+
+    public boolean isVoided() {
+        return voidedAt != null;
+    }
+
+    public void markVoided(OffsetDateTime when, String reason) {
+        this.voidedAt = when;
+        this.voidReason = reason;
     }
 }

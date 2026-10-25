@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface SupplierInvoiceLineRepository extends JpaRepository<SupplierInvoiceLine, Long> {
 
     List<SupplierInvoiceLine> findByInvoiceIdOrderByLineNo(long invoiceId);
+
+    void deleteByInvoiceId(long invoiceId);
 }

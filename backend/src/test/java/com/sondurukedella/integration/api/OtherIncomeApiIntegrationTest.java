@@ -3,7 +3,9 @@ package com.sondurukedella.integration.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -70,6 +72,24 @@ class OtherIncomeApiIntegrationTest {
         // 5,000 and the voided 10,000; the resend added nothing
         mockMvc.perform(get(URL + "/" + id + "/receipts")).andExpect(jsonPath("$.length()").value(2));
         receive(999_999_999L, UUID.randomUUID(), "1").andExpect(status().isNotFound());
+    }
+
+    @Test
+    void incomeCanBeEditedButNotBelowWhatWasReceivedAndDeletedOnlyWithoutReceipts() throws Exception {
+        long id = id(create("{\"date\":\"2026-10-20\",\"description\":\"Hall rent\",\"amount\":6000}"));
+        String edit = "{\"version\":%d,\"date\":\"2026-10-21\",\"description\":\"Hall rent (Oct)\",\"amount\":%s,\"dueDate\":\"2026-11-30\"}";
+        mockMvc.perform(put(URL + "/" + id).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(edit.formatted(0, "7000")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.amount").value(7000.00)).andExpect(jsonPath("$.description").value("Hall rent (Oct)"));
+        mockMvc.perform(put(URL + "/" + id).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(edit.formatted(0, "7000")))
+                .andExpect(status().isConflict());
+        receive(id, UUID.randomUUID(), "5000").andExpect(status().isCreated());
+        mockMvc.perform(put(URL + "/" + id).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(edit.formatted(1, "4999")))
+                .andExpect(status().isUnprocessableContent());
+        mockMvc.perform(delete(URL + "/" + id).with(csrf())).andExpect(status().isUnprocessableContent());
+
+        long spare = id(create("{\"date\":\"2026-10-20\",\"description\":\"Typo\",\"amount\":10}"));
+        mockMvc.perform(delete(URL + "/" + spare).with(csrf())).andExpect(status().isNoContent());
+        mockMvc.perform(get(URL + "/" + spare)).andExpect(status().isNotFound());
     }
 
     @Test

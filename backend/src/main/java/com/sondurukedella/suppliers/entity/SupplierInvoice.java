@@ -12,12 +12,14 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// A supplier's invoice (a payable). Not edited or deleted once saved: a STOCK invoice has already put
-// its lines into stock. The attachment columns are not used yet.
+// A supplier's invoice (a payable). Never deleted. Editing is limited (SupplierInvoiceService): due date
+// and notes always; everything else only on a PROJECT invoice with no active payments. A PROJECT invoice
+// without payments can be cancelled (V7). A STOCK invoice is in the stock ledger, so it is never cancelled.
 @Getter
 @Entity
 @Table(name = "supplier_invoices")
@@ -31,20 +33,20 @@ public class SupplierInvoice extends AuditableEntity {
     @Column(name = "supplier_id", nullable = false, updatable = false)
     private Long supplierId;
 
-    @Column(name = "invoice_no", nullable = false, length = 100, updatable = false)
+    @Column(name = "invoice_no", nullable = false, length = 100)
     private String invoiceNo;
 
-    @Column(name = "invoice_date", nullable = false, updatable = false)
+    @Column(name = "invoice_date", nullable = false)
     private LocalDate invoiceDate;
 
-    @Column(name = "due_date", nullable = false, updatable = false)
+    @Column(name = "due_date", nullable = false)
     private LocalDate dueDate;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10, updatable = false)
     private InvoiceAllocation allocation;
 
-    @Column(name = "project_id", updatable = false)
+    @Column(name = "project_id")
     private Long projectId;
 
     // CONSTRUCTION for PROJECT invoices (part of the composite FK), null for STOCK
@@ -52,11 +54,27 @@ public class SupplierInvoice extends AuditableEntity {
     private String projectType;
 
     // the sum of the lines, worked out by the service
-    @Column(name = "total_amount", nullable = false, precision = 15, scale = 2, updatable = false)
+    @Column(name = "total_amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal totalAmount;
 
-    @Column(columnDefinition = "text", updatable = false)
+    @Column(columnDefinition = "text")
     private String notes;
+
+    @Column(name = "cancelled_at")
+    private OffsetDateTime cancelledAt;
+
+    @Column(name = "cancel_reason", columnDefinition = "text")
+    private String cancelReason;
+
+    // a PDF in the private document store (keys are server-generated); null when none was attached
+    @Column(name = "attachment_storage_key", length = 500)
+    private String attachmentStorageKey;
+
+    @Column(name = "attachment_filename", length = 255)
+    private String attachmentFilename;
+
+    @Column(name = "attachment_size")
+    private Long attachmentSize;
 
     @Version
     private Long version;
@@ -72,5 +90,33 @@ public class SupplierInvoice extends AuditableEntity {
         this.projectType = projectId == null ? null : "CONSTRUCTION";
         this.totalAmount = totalAmount;
         this.notes = notes;
+    }
+
+    public boolean isCancelled() {
+        return cancelledAt != null;
+    }
+
+    public void editNotes(LocalDate dueDate, String notes) {
+        this.dueDate = dueDate;
+        this.notes = notes;
+    }
+
+    public void replaceTerms(String invoiceNo, LocalDate invoiceDate, Long projectId, BigDecimal totalAmount) {
+        this.invoiceNo = invoiceNo;
+        this.invoiceDate = invoiceDate;
+        this.projectId = projectId;
+        this.projectType = projectId == null ? null : "CONSTRUCTION";
+        this.totalAmount = totalAmount;
+    }
+
+    public void cancel(OffsetDateTime when, String reason) {
+        this.cancelledAt = when;
+        this.cancelReason = reason;
+    }
+
+    public void attach(String storageKey, String filename, long size) {
+        this.attachmentStorageKey = storageKey;
+        this.attachmentFilename = filename;
+        this.attachmentSize = size;
     }
 }

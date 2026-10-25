@@ -32,6 +32,7 @@ import com.sondurukedella.settings.entity.ExpenseGroup;
 import com.sondurukedella.settings.service.ExpenseCategoryService;
 import com.sondurukedella.settings.service.MeasurementUnitService;
 import com.sondurukedella.suppliers.dto.SupplierResponse;
+import com.sondurukedella.suppliers.service.SupplierInvoiceService;
 import com.sondurukedella.suppliers.service.SupplierService;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -70,6 +71,7 @@ public class ExpenseService {
     private final ExpenseCategoryService categories;
     private final MeasurementUnitService units;
     private final SupplierService suppliers;
+    private final SupplierInvoiceService supplierInvoices;
     private final ActivityService activityService;
     private final Clock clock;
 
@@ -85,7 +87,7 @@ public class ExpenseService {
         if (request.initialPayment() != null) {
             paymentService.recordOn(expense, request.initialPayment());
         }
-        return toResponse(expense);
+        return withDuplicateWarning(toResponse(expense));
     }
 
     // A full edit, as the edit dialog allows. The row is locked so a payment can't land between the
@@ -113,7 +115,7 @@ public class ExpenseService {
             activityService.record(previousProject, ActivityKind.EXPENSE, "Expense moved off this project: "
                     + expense.getDescription() + " (" + Money.format(expense.getAmount()) + ").");
         }
-        return toResponse(expense);
+        return withDuplicateWarning(toResponse(expense));
     }
 
     @Transactional(readOnly = true)
@@ -296,6 +298,17 @@ public class ExpenseService {
             sort = sort.and(Sort.by(Sort.Order.desc("id")));
         }
         return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
+    }
+
+    // DATABASE.md: credit purchases are entered as supplier invoices; warn (don't block) when this expense
+    // names the same supplier and invoice number as a recorded one, so it isn't counted twice by mistake.
+    private ExpenseResponse withDuplicateWarning(ExpenseResponse response) {
+        if (response.supplierId() != null && response.invoiceNo() != null
+                && supplierInvoices.existsActive(response.supplierId(), response.invoiceNo())) {
+            return response.withWarning("Invoice " + response.invoiceNo() + " from " + response.supplier()
+                    + " is already recorded as a supplier invoice. Check this purchase isn't counted twice.");
+        }
+        return response;
     }
 
     private LocalDate today() {

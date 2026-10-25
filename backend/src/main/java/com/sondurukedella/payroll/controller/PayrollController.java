@@ -35,7 +35,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 // Weekly payroll. A week is addressed by its Monday. Nothing here is deleted: payments and advances are
@@ -90,11 +89,19 @@ public class PayrollController {
         return payroll.close(weekStart, employeeId);
     }
 
+    // 201 for a new correction, 200 when the same requestId was already recorded
     @PostMapping("/weeks/{weekStart}/employees/{employeeId}/corrections")
-    @ResponseStatus(HttpStatus.CREATED)
-    public PayrollCorrectionResponse correct(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate weekStart,
+    public ResponseEntity<PayrollCorrectionResponse> correct(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate weekStart,
             @PathVariable long employeeId, @Valid @RequestBody PayrollCorrectionRequest request) {
-        return payroll.correct(weekStart, employeeId, request);
+        PayrollService.CorrectionResult result = payroll.correct(weekStart, employeeId, request);
+        return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).body(result.correction());
+    }
+
+    // a wrong correction is voided (kept, with the reason) and a new one recorded
+    @PostMapping("/weeks/{weekStart}/employees/{employeeId}/corrections/{correctionId}/void")
+    public PayrollCorrectionResponse voidCorrection(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate weekStart,
+            @PathVariable long employeeId, @PathVariable long correctionId, @Valid @RequestBody VoidRequest request) {
+        return payroll.voidCorrection(weekStart, employeeId, correctionId, request);
     }
 
     // from/to are Mondays; by default the last 12 weeks

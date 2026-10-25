@@ -5,10 +5,13 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 
 // "Record correction" on a paid week: a signed change to the wages owed, with a reason, booked to a
-// project (or to none, a company cost).
+// project (or to none, a company cost). requestId is generated once per submission; resending it
+// returns the first correction instead of recording it twice.
 public record PayrollCorrectionRequest(
+        @NotNull UUID requestId,
         @NotNull(message = "Choose the date.") LocalDate correctionDate,
         @NotNull(message = "Enter the amount.") @Digits(integer = 13, fraction = 2) BigDecimal wageDelta,
         Long projectId,

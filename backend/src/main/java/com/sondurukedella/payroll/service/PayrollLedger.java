@@ -179,7 +179,7 @@ class PayrollLedger {
         List<Long> ids = frozen.stream().map(PayrollLine::getId).toList();
         Map<Long, List<PayrollLineCost>> costs = lineCosts.findByPayrollLineIdIn(ids).stream()
                 .collect(Collectors.groupingBy(PayrollLineCost::getPayrollLineId));
-        Map<Long, List<PayrollCorrection>> fixes = corrections.findByPayrollLineIdInOrderByIdAsc(ids).stream()
+        Map<Long, List<PayrollCorrection>> fixes = corrections.findByPayrollLineIdInAndVoidedAtIsNullOrderByIdAsc(ids).stream()
                 .collect(Collectors.groupingBy(PayrollCorrection::getPayrollLineId));
         Map<Long, List<PayrollPayment>> paid = payments.findByPayrollLineIdInOrderByPaymentDateAscIdAsc(ids).stream()
                 .collect(Collectors.groupingBy(PayrollPayment::getPayrollLineId));

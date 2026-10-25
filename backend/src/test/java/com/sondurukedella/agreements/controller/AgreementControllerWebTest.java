@@ -140,10 +140,16 @@ class AgreementControllerWebTest {
     }
 
     @Test
-    void thereIsNoPostOrDelete() throws Exception {
+    void thereIsNoPost() throws Exception {
         mockMvc.perform(post(URL).with(user("owner")).with(csrf())).andExpect(status().isMethodNotAllowed());
-        mockMvc.perform(delete(URL).with(user("owner")).with(csrf())).andExpect(status().isMethodNotAllowed());
         verifyNoInteractions(service);
+    }
+
+    @Test
+    void deleteRetiresTheCurrentAgreementAndNeedsCsrf() throws Exception {
+        mockMvc.perform(delete(URL).with(user("owner"))).andExpect(status().isForbidden());
+        mockMvc.perform(delete(URL).with(user("owner")).with(csrf())).andExpect(status().isNoContent());
+        org.mockito.Mockito.verify(service).remove(org.mockito.ArgumentMatchers.anyLong());
     }
 
     private static org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder upload() {

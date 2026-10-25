@@ -322,6 +322,23 @@ class ReportApiIntegrationTest {
     }
 
     @Test
+    void theClientReportSumsItsProjectsOwnReports() throws Exception {
+        buildFixture();
+        mockMvc.perform(get(REPORTS + "/clients/" + client + "/financial"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clientName").value("Report Client"))
+                .andExpect(jsonPath("$.totals.projects").value(2))
+                .andExpect(jsonPath("$.totals.contractValue").value(1500000.00))
+                .andExpect(jsonPath("$.totals.revenueRecorded").value(580000.00))
+                .andExpect(jsonPath("$.totals.received").value(250000.00))
+                .andExpect(jsonPath("$.totals.outstanding").value(230000.00))
+                .andExpect(jsonPath("$.totals.projectCosts").value(181000.00))
+                .andExpect(jsonPath("$.totals.profit").value(299000.00))
+                .andExpect(jsonPath("$.projects.length()").value(2));
+        mockMvc.perform(get(REPORTS + "/clients/999999999/financial")).andExpect(status().isNotFound());
+    }
+
+    @Test
     void readingReportsChangesNothing() throws Exception {
         buildFixture();
         entityManager.flush();

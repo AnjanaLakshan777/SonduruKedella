@@ -2,10 +2,13 @@ package com.sondurukedella.revenue.service;
 
 import com.sondurukedella.activity.entity.ActivityKind;
 import com.sondurukedella.activity.service.ActivityService;
+import com.sondurukedella.common.exception.ConflictException;
 import com.sondurukedella.common.exception.InvalidRequestException;
+import com.sondurukedella.common.exception.NotFoundException;
 import com.sondurukedella.common.money.Money;
 import com.sondurukedella.revenue.dto.WriteOffCreateRequest;
 import com.sondurukedella.revenue.dto.WriteOffResponse;
+import com.sondurukedella.revenue.dto.WriteOffReversalRequest;
 import com.sondurukedella.revenue.entity.Installment;
 import com.sondurukedella.revenue.entity.ReceivableWriteOff;
 import com.sondurukedella.revenue.mapper.RevenueMapper;
@@ -13,6 +16,7 @@ import com.sondurukedella.revenue.repository.ReceivableWriteOffRepository;
 import com.sondurukedella.revenue.service.ReceivableCalculator.Receivable;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,5 +58,22 @@ public class WriteOffService {
         activityService.record(projectId, ActivityKind.WRITEOFF, "Bad debt written off: " + reason + " ("
                 + Money.format(saved.getAmount()) + ", " + installment.getDescription() + ")");
         return mapper.toResponse(saved, projectId);
+    }
+
+    // Under the same installment lock as receipts and write-offs. Reversing only raises what is owed,
+    // so no balance check is needed.
+    @Transactional
+    public WriteOffResponse reverse(long projectId, long writeOffId, WriteOffReversalRequest request) {
+        ReceivableWriteOff writeOff = repository.findById(writeOffId).orElseThrow(() -> new NotFoundException("Write-off not found."));
+        Installment installment = ledger.lockInProject(projectId, writeOff.getInstallmentId());
+        if (writeOff.isVoided()) {
+            throw new ConflictException("This write-off was already reversed.");
+        }
+        ConflictException.requireCurrentVersion(request.version(), writeOff.getVersion());
+        writeOff.markVoided(OffsetDateTime.now(clock), request.reason().strip());
+        writeOff = repository.saveAndFlush(writeOff);
+        activityService.record(projectId, ActivityKind.WRITEOFF, "Write-off reversed: " + writeOff.getVoidReason() + " ("
+                + Money.format(writeOff.getAmount()) + ", " + installment.getDescription() + ")");
+        return mapper.toResponse(writeOff, projectId);
     }
 }

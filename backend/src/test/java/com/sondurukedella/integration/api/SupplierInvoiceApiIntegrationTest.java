@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -207,6 +208,83 @@ class SupplierInvoiceApiIntegrationTest {
         assertThat(number(after, "$.position.suppliersOutstanding") - number(before, "$.position.suppliersOutstanding")).isEqualTo(12500.0);
         // buying into stock is not material use
         assertThat(number(after, "$.materials.net") - number(before, "$.materials.net")).isZero();
+    }
+
+    @Test
+    void aProjectInvoiceWithoutPaymentsCanBeFullyEditedOtherwiseOnlyDueDateAndNotes() throws Exception {
+        long id = invoiceId(create(projectInvoice("ED-1", construction, line(null, "Concrete", "10", cube, "5000"))));
+        edit(id, 0, "ED-1b", "2026-10-21", "2026-11-30", construction, line(null, "Concrete", "8", cube, "5000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.invoice.invoiceNo").value("ED-1b"))
+                .andExpect(jsonPath("$.invoice.total").value(40000.00))
+                .andExpect(jsonPath("$.lines.length()").value(1));
+        mockMvc.perform(get("/api/v1/reports/projects/" + construction + "/financial")).andExpect(jsonPath("$.costs.supplierInvoices").value(40000.00));
+        edit(id, 0, "ED-1b", "2026-10-21", "2026-11-30", construction, line(null, "Concrete", "8", cube, "5000")).andExpect(status().isConflict());
+
+        pay(id, UUID.randomUUID(), "1000").andExpect(status().isCreated());
+        long version = jdbc.queryForObject("SELECT version FROM supplier_invoices WHERE id = ?", Long.class, id);
+        // paid: the amount can't change any more, but the due date and notes still can
+        edit(id, version, "ED-1b", "2026-10-21", "2026-11-30", construction, line(null, "Concrete", "9", cube, "5000"))
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.detail").value(containsString("payments")));
+        edit(id, version, "ED-1b", "2026-10-21", "2026-12-15", construction, line(null, "Concrete", "8", cube, "5000"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.invoice.dueDate").value("2026-12-15"));
+
+        long stock = invoiceId(create(stockInvoice("ED-2", "2026-10-20", null, line(cement, null, "5", bag, "1000"))));
+        String stockLine = line(cement, null, "6", bag, "1000");
+        mockMvc.perform(put(URL + "/" + stock).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(
+                        "{\"version\":0,\"invoiceNo\":\"ED-2\",\"invoiceDate\":\"2026-10-20\",\"dueDate\":\"2026-11-19\",\"lines\":[" + stockLine + "]}"))
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.detail").value(containsString("in stock")));
+    }
+
+    @Test
+    void onlyAnUnpaidProjectInvoiceCanBeCancelledAndItsNumberCanThenBeReused() throws Exception {
+        long id = invoiceId(create(projectInvoice("CX-1", construction, line(null, "Steel", "1", cube, "20000"))));
+        pay(id, UUID.randomUUID(), "5000").andExpect(status().isCreated());
+        cancel(id, "Wrong project", jdbc.queryForObject("SELECT version FROM supplier_invoices WHERE id = ?", Long.class, id))
+                .andExpect(status().isUnprocessableContent());
+        long payment = jdbc.queryForObject("SELECT id FROM supplier_payments WHERE invoice_id = ?", Long.class, id);
+        mockMvc.perform(post(URL + "/" + id + "/payments/" + payment + "/void").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Undo\",\"version\":0}")).andExpect(status().isOk());
+        long version = jdbc.queryForObject("SELECT version FROM supplier_invoices WHERE id = ?", Long.class, id);
+        cancel(id, " ", version).andExpect(status().isBadRequest());
+        cancel(id, "Wrong project", version).andExpect(status().isOk()).andExpect(jsonPath("$.invoice.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.invoice.outstanding").value(0));
+        cancel(id, "again", version + 1).andExpect(status().isConflict());
+        pay(id, UUID.randomUUID(), "1").andExpect(status().isUnprocessableContent());
+        mockMvc.perform(get("/api/v1/reports/projects/" + construction + "/financial")).andExpect(jsonPath("$.costs.supplierInvoices").value(0));
+        mockMvc.perform(get(URL + "/summary").param("supplierId", String.valueOf(supplier))).andExpect(jsonPath("$.count").value(0));
+        // the number is free again
+        create(projectInvoice("CX-1", construction, line(null, "Steel", "1", cube, "20000"))).andExpect(status().isCreated());
+
+        long stock = invoiceId(create(stockInvoice("CX-2", "2026-10-20", null, line(cement, null, "5", bag, "1000"))));
+        cancel(stock, "Mistake", 0).andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.detail").value(containsString("stock")));
+    }
+
+    @Test
+    void aManualExpenseForAnAlreadyRecordedSupplierInvoiceGetsAWarning() throws Exception {
+        create(projectInvoice("DUPE-9", construction, line(null, "Sand", "1", cube, "3000"))).andExpect(status().isCreated());
+        long materials = jdbc.queryForObject("SELECT id FROM expense_categories WHERE expense_group = 'CONSTRUCTION' AND name = 'Materials'", Long.class);
+        String expense = """
+                {"date":"2026-10-20","scope":"PROJECT","projectId":%d,"categoryId":%d,"description":"Sand","payee":"Mihintale Hardware",
+                 "amount":3000,"supplierId":%d,"invoiceNo":"%s"}""";
+        mockMvc.perform(post("/api/v1/expenses").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(expense.formatted(construction, materials, supplier, "DUPE-9")))
+                .andExpect(status().isCreated()) // saved anyway: a warning, not a block
+                .andExpect(jsonPath("$.warning").value(containsString("already recorded as a supplier invoice")));
+        mockMvc.perform(post("/api/v1/expenses").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(expense.formatted(construction, materials, supplier, "OTHER-1")))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.warning").doesNotExist());
+    }
+
+    private ResultActions edit(long id, long version, String no, String date, String due, long projectId, String lines) throws Exception {
+        return mockMvc.perform(put(URL + "/" + id).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(
+                "{\"version\":%d,\"invoiceNo\":\"%s\",\"invoiceDate\":\"%s\",\"dueDate\":\"%s\",\"projectId\":%d,\"lines\":[%s]}"
+                        .formatted(version, no, date, due, projectId, lines)));
+    }
+
+    private ResultActions cancel(long id, String reason, long version) throws Exception {
+        return mockMvc.perform(post(URL + "/" + id + "/cancel").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"%s\",\"version\":%d}".formatted(reason, version)));
     }
 
     private String stockInvoice(String no, String date, String due, String lines) {

@@ -47,14 +47,14 @@ Required by the owner's decisions. Unticked items are not yet made. See docs/DAT
 - [x] Settings (2026-10-24): company profile, commission policy, wage settings, expense categories, units, payment methods, and read-only revenue categories.
 - [x] Clients (2026-10-24): create, list (search, type filter, paging), get and update. Financial summaries per client are not included yet; they depend on projects and revenue.
 - [x] Projects (2026-10-24): create (with an inline client, the payment schedule and delay terms, all in one transaction), list, get, status changes, and reading the saved schedule and delay terms. The agreement PDF is handled by the Agreements module.
-- [x] Contract payment schedules and receipts (2026-10-24): schedule created with the project and readable; billing; client receipts (idempotent, voidable); write-offs (create only); delay deductions (apply and reverse); receivables per project and a company-wide summary. Not yet: editing a schedule, variations, write-off reversal (needs a migration).
+- [x] Contract payment schedules and receipts (2026-10-24): schedule created with the project and readable; billing; client receipts (idempotent, voidable); write-offs (create only); delay deductions (apply and reverse); receivables per project and a company-wide summary. Since 2026-10-26 also: revising the unbilled schedule, variations, write-off reversal (V7).
 - [x] Revenue and expenses (2026-10-26): project revenue recognised at billing, manual project and company expenses with their payments, and other income with its receipts. See the completion log, "Other income".
 - [x] Commission management (2026-10-25, backend): per-project recipient arrangements (draft, confirm with stored amount, policy warning and owner exception), voids with a reason, payments (partial, idempotent, voidable), the directory, summary, by-recipient and payment views. The frontend still runs on its local store. See the completion log, "Commissions".
 - [x] Suppliers and payables (2026-10-25): the supplier directory, the supplier link on expenses, supplier invoices (STOCK into FIFO stock, PROJECT as project material cost) and supplier payments (partial, idempotent, voidable). See the completion log, "Supplier invoices and payables".
 - [x] Inventory and stock movements (2026-10-24): the materials catalogue; receipts, issues to construction projects, returns against the original issue and adjustments, costed FIFO from persistent cost layers with issue allocations (changed from the weighted average the same day, migration V4); balances, valuation, movement history and project material usage. Receipts from supplier invoices are not built yet.
 - [x] Employee attendance, overtime, advances, and payroll (2026-10-24, backend): employees, the attendance register, overtime and approval, advances, weekly payroll worked out live, payments that freeze the week, closing a zero week, corrections, history, period summaries and project labour cost. The frontend still runs on its local store.
 - [x] Financial reports (2026-10-25, backend): dashboard, financial summary, project financials and cost breakdown, receivables aging, inventory valuation and payroll weeks, all read-only. Supplier payables wait for supplier invoices. See the completion log, "Reports and dashboard".
-- [x] Private agreement document storage (2026-10-24): upload or replace, metadata and download of one current PDF per project. Removing an agreement is not implemented.
+- [x] Private agreement document storage (2026-10-24): upload or replace, metadata and download of one current PDF per project. Removing (retiring) the current agreement since 2026-10-26.
 
 ## Completion Log
 For each completed task, record the date, files or migrations changed, verification performed, and known limitations. Do not mark a task complete solely because code was generated.
@@ -1125,3 +1125,31 @@ For each completed task, record the date, files or migrations changed, verificat
   - `ActivityApiIntegrationTest` (2).
   - `ActivityServiceTest` updated for the new constructor.
   - `EndpointAuthorizationIntegrationTest` covers the endpoint automatically.
+
+### 2026-10-26: Backend gaps closed
+- Migration `V7__reversals_corrections_and_invoice_cancel.sql` (see DATABASE.md).
+- **Revenue:**
+  - `PUT /api/v1/projects/{id}/schedule` revises the scheduled installments.
+    - Billed rows must be sent unchanged; unbilled rows may change, be removed or be added.
+    - The scheduled rows must still equal the contract value. Variations are not touched.
+    - Each row needs its version (409 if stale).
+  - `POST /api/v1/projects/{id}/variations` adds a `VARIATION` installment, billed at once (default today). The contract value never changes.
+  - `POST /api/v1/projects/{id}/write-offs/{writeOffId}/reverse` `{reason, version}` reverses a write-off: it is kept, stops counting, and the reports exclude it.
+- **Payroll corrections:**
+  - `requestId` is now required: a resend returns 200 with the first correction; the same id with different values is a 409.
+  - `POST .../corrections/{id}/void` `{reason, version}` voids a correction under the same checks as recording one of −delta.
+  - Voided corrections no longer change what is owed or the labour cost. Editing = void + new.
+- **Clients:** `GET /api/v1/reports/clients/{id}/financial` returns the client's projects (each as its project report) and their totals.
+- **Agreements:** `DELETE /api/v1/projects/{id}/agreement` (204) retires the current agreement. The row and its PDF are kept, like a replacement.
+- **Supplier invoices:**
+  - `PUT /{id}` edits the invoice. Due date and notes can always change; the number, date, project and lines can change only on a `PROJECT` invoice with no active payments.
+  - `POST /{id}/cancel` `{reason, version}` cancels a `PROJECT` invoice with no active payments. It is then no payable and no cost, and its number can be reused. `STOCK` invoices are never cancelled.
+  - `PUT /{id}/attachment` (multipart PDF) and `GET /{id}/attachment/download` handle a PDF attachment.
+    - It is stored in the same private store as agreements (`agreements.storage-dir`), with the same checks.
+    - A replaced file is deleted.
+- **Expenses:** create and update responses carry a `warning` when the supplier and invoice number match a recorded supplier invoice. The expense is still saved.
+- **Other income:** `PUT /{id}` edits it (the amount can't go below what was received). `DELETE /{id}` deletes it only when it has no receipts at all.
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-26): 76 classes, 655 tests, 0 failures, 0 errors, 0 skipped (643 before).
+  - New: `ScheduleAndWriteOffIntegrationTest` (3).
+  - Added to existing classes: payroll idempotency and void (`PayrollApiIntegrationTest`); agreement removal and supplier invoice attachment (`AgreementStorageIntegrationTest`); edit, cancel and expense warning (`SupplierInvoiceApiIntegrationTest`); other income edit and delete; the client report.
+  - Updated: `AgreementControllerWebTest` (DELETE now exists), the payroll correction helper (`requestId`), `InstallmentScheduleServiceTest` (constructor).

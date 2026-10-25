@@ -71,6 +71,11 @@ public class AgreementService {
         }
     }
 
+    public void remove(long projectId) {
+        projectService.requireExists(projectId);
+        recorder.remove(projectId);
+    }
+
     public AgreementDownload download(long projectId) {
         ProjectAgreement agreement = current(projectId);
         // metadata without its file means storage was lost or tampered with - a server problem,

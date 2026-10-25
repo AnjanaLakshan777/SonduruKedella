@@ -58,6 +58,11 @@ public class ReportQueries {
         return jdbc.query(PROJECTS + " WHERE p.id IN (:ids)", new MapSqlParameterSource("ids", ids), ReportQueries::projectRef);
     }
 
+    public List<Long> projectIdsForClient(long clientId) {
+        return jdbc.queryForList("SELECT id FROM projects WHERE client_id = :clientId ORDER BY id",
+                new MapSqlParameterSource("clientId", clientId), Long.class);
+    }
+
     public List<ProjectRef> allProjects() {
         return jdbc.query(PROJECTS + " ORDER BY p.id", new MapSqlParameterSource(), ReportQueries::projectRef);
     }
@@ -92,9 +97,9 @@ public class ReportQueries {
                 + RANGE.formatted("payment_date"), from, to);
     }
 
-    // date basis: receivable_write_offs.write_off_date (write-offs can't be reversed)
+    // date basis: receivable_write_offs.write_off_date; reversed (voided) write-offs never count
     public Total writeOffs(LocalDate from, LocalDate to) {
-        return total("SELECT count(*) AS n, coalesce(sum(amount), 0) AS total FROM receivable_write_offs WHERE TRUE"
+        return total("SELECT count(*) AS n, coalesce(sum(amount), 0) AS total FROM receivable_write_offs WHERE voided_at IS NULL"
                 + RANGE.formatted("write_off_date"), from, to);
     }
 

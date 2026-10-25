@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -39,6 +40,13 @@ public class AgreementController {
     public ResponseEntity<AgreementResponse> upload(@PathVariable long projectId, @RequestPart("file") MultipartFile file) {
         AgreementUpload upload = service.upload(projectId, file);
         return ResponseEntity.status(upload.replaced() ? HttpStatus.OK : HttpStatus.CREATED).body(upload.agreement());
+    }
+
+    // retires the current agreement (204); the PDF stays in private storage with its retired row
+    @DeleteMapping
+    public ResponseEntity<Void> remove(@PathVariable long projectId) {
+        service.remove(projectId);
+        return ResponseEntity.noContent().build();
     }
 
     // Always an attachment, never inline, so a browser doesn't render it inside our origin.

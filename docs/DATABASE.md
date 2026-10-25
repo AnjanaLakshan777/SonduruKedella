@@ -152,7 +152,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - Corrections only void (`voided_at`, `void_reason`), which is all the V1 trigger allows. Voided receipts are kept and listed, but never counted.
 - **receivable_write_offs**: `installment_id`, `write_off_date`, `amount > 0`, `reason` (not null). Allowed only on billed installments that still have a balance. A write-off is never a payment.
   - Implemented (2026-10-24): create only, under the same installment lock as receipts. The reason must be at least 10 characters after trimming (the UI rule).
-  - **Limitation:** V1 gives this table no void or reversal columns, no `version` and no guard trigger, so a write-off cannot be reversed without hard-deleting it. The code never updates or deletes write-offs. Reversal needs a new migration (for example `voided_at`, `void_reason`, `version` and a guard trigger like `sk_guard_payment_change`) once the owner wants it.
+  - Reversal (V7, 2026-10-26): `voided_at`, `void_reason` and `version`, guarded by `trg_receivable_write_offs_guard` (V1 `sk_guard_payment_change`). A reversed write-off is kept and listed but never counted. Reversing takes the installment lock and only raises what is owed.
 - **delay_deduction_terms**: one row per construction project. It holds both the agreed terms and the deduction that was applied.
   - Columns for the terms:
     - `project_id` (unique), `project_type` (check `CONSTRUCTION`, composite FK)
@@ -774,3 +774,9 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
   - Verified on a database with two live arrangements for the same recipient and role on one project: V6 stopped at `uq_commission_arrangements_recipient_role`, and nothing was applied (no new columns, old status check).
     - Before applying V6 where arrangements exist, check `SELECT project_id, lower(recipient_name), lower(role) FROM commission_arrangements GROUP BY 1, 2, 3 HAVING count(*) > 1`.
   - Not yet applied to the development database. Flyway applies it after V2 to V5 on the next backend start. Nothing has ever written commission rows there.
+- `V7__reversals_corrections_and_invoice_cancel.sql` (2026-10-26): additive.
+  - Write-off reversal: `receivable_write_offs.voided_at`, `void_reason`, `version` and the guard trigger.
+  - Payroll corrections: `request_id` (unique, nullable for old rows), `voided_at`, `void_reason`, `version` and `trg_payroll_corrections_guard`. A wrong correction is voided and a new one recorded.
+  - Supplier invoices: `cancelled_at` and `cancel_reason`. `uq_supplier_invoices_supplier_invoice_no` is now a partial unique index over non-cancelled invoices.
+  - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V7, then Hibernate validation). Also verified on a V6 database holding a write-off and a supplier invoice: both rows were kept (version 0), deleting the write-off was refused, and a second live invoice with the same number was still refused.
+  - Not yet applied to the development database.

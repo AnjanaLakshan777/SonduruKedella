@@ -6,6 +6,7 @@ import com.sondurukedella.revenue.dto.OtherIncomeReceiptResponse;
 import com.sondurukedella.revenue.dto.OtherIncomeResponse;
 import com.sondurukedella.revenue.dto.OtherIncomeResponse.Status;
 import com.sondurukedella.revenue.dto.OtherIncomeSummary;
+import com.sondurukedella.revenue.dto.OtherIncomeUpdateRequest;
 import com.sondurukedella.revenue.dto.ReceiptCreateRequest;
 import com.sondurukedella.revenue.dto.ReceiptVoidRequest;
 import com.sondurukedella.revenue.service.OtherIncomeService;
@@ -20,16 +21,19 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-// Other income and its receipts. No edit or delete; receipts are voided.
+// Other income and its receipts. Edit any time (amount not below what was received); delete only
+// while nothing was received. Receipts are voided, not deleted.
 @RestController
 @RequestMapping("/api/v1/other-income")
 @RequiredArgsConstructor
@@ -64,6 +68,18 @@ public class OtherIncomeController {
         OtherIncomeResponse created = service.create(request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(created.id()).toUri();
         return ResponseEntity.created(location).body(created);
+    }
+
+    @PutMapping("/{id}")
+    public OtherIncomeResponse update(@PathVariable long id, @Valid @RequestBody OtherIncomeUpdateRequest request) {
+        return service.update(id, request);
+    }
+
+    // only while nothing was received against it
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable long id) {
+        service.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/receipts")

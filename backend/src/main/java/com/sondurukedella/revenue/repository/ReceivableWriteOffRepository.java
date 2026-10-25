@@ -11,10 +11,10 @@ public interface ReceivableWriteOffRepository extends JpaRepository<ReceivableWr
 
     List<ReceivableWriteOff> findByInstallmentIdInOrderByWriteOffDateAscIdAsc(Collection<Long> installmentIds);
 
-    @Query("select coalesce(sum(w.amount), 0) from ReceivableWriteOff w where w.installmentId = :installmentId")
+    @Query("select coalesce(sum(w.amount), 0) from ReceivableWriteOff w where w.installmentId = :installmentId and w.voidedAt is null")
     BigDecimal sumFor(Long installmentId);
 
     @Query("select w.installmentId as installmentId, sum(w.amount) as total from ReceivableWriteOff w "
-            + "where w.installmentId in :installmentIds group by w.installmentId")
+            + "where w.voidedAt is null and w.installmentId in :installmentIds group by w.installmentId")
     List<InstallmentTotal> sumByInstallment(Collection<Long> installmentIds);
 }

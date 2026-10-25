@@ -38,5 +38,14 @@ public record ExpenseResponse(
         ExpensePaymentStatus status,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
-        long version) {
+        long version,
+        // only on create/update: set when the supplier and invoice number match a recorded supplier invoice
+        // (the same purchase may be entered twice). The expense is saved anyway.
+        String warning) {
+
+    public ExpenseResponse withWarning(String warning) {
+        return new ExpenseResponse(id, date, scope, projectId, group, categoryId, category, description, payee, supplierId, supplier,
+                amount, dueDate, invoiceNo, notes, quantity, unitId, unit, unitPrice, machineType, usageFrom, usageTo, billingPeriod, paid,
+                outstanding, status, createdAt, updatedAt, version, warning);
+    }
 }

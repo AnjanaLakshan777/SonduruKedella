@@ -1,5 +1,7 @@
 package com.sondurukedella.reports.service;
 
+import com.sondurukedella.clients.dto.ClientResponse;
+import com.sondurukedella.clients.service.ClientService;
 import com.sondurukedella.commissions.dto.CommissionResponse;
 import com.sondurukedella.commissions.dto.CommissionState;
 import com.sondurukedella.commissions.dto.CommissionSummaryResponse;
@@ -25,6 +27,7 @@ import com.sondurukedella.projects.dto.ProjectResponse;
 import com.sondurukedella.projects.entity.ProjectStatus;
 import com.sondurukedella.projects.entity.ProjectType;
 import com.sondurukedella.projects.service.ProjectService;
+import com.sondurukedella.reports.dto.ClientFinancialReport;
 import com.sondurukedella.reports.dto.DashboardReport;
 import com.sondurukedella.reports.dto.FinancialSummaryReport;
 import com.sondurukedella.reports.dto.InventoryValuationReport;
@@ -96,6 +99,7 @@ public class ReportService {
     static final List<String> NOT_BUILT = List.of();
 
     private final ProjectService projectService;
+    private final ClientService clientService;
     private final ReceivableService receivableService;
     private final ExpenseService expenseService;
     private final StockMovementService stockService;
@@ -112,6 +116,19 @@ public class ReportService {
     public ProjectFinancialReport projectFinancial(long projectId) {
         ProjectResponse project = projectService.get(projectId);
         return financial(project);
+    }
+
+    // A client's projects summed from their own project reports, so the figures always agree.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ClientFinancialReport clientFinancial(long clientId) {
+        ClientResponse client = clientService.get(clientId);
+        List<ProjectFinancialReport> projects = queries.projectIdsForClient(clientId).stream()
+                .map(id -> financial(projectService.get(id))).toList();
+        return new ClientFinancialReport(today(), client.id(), client.name(), new ClientFinancialReport.Totals(projects.size(),
+                sum(projects, ProjectFinancialReport::contractValue), sum(projects, p -> p.revenue().revenueRecorded()),
+                sum(projects, p -> p.revenue().received()), sum(projects, p -> p.revenue().writtenOff()),
+                sum(projects, p -> p.revenue().outstanding()), sum(projects, p -> p.revenue().overdue()),
+                sum(projects, p -> p.costs().total()), sum(projects, p -> p.profit().profit())), projects);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

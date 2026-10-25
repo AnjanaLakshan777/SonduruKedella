@@ -32,7 +32,7 @@ class InstallmentScheduleServiceTest {
                 installment(2L, "Handover", "2026-09-01", "600000.00", null)));
 
         List<InstallmentResponse> schedule =
-                new InstallmentScheduleService(repository, new RevenueMapper()).findSchedule(4L);
+                new InstallmentScheduleService(repository, new RevenueMapper(), null, null).findSchedule(4L);
 
         assertThat(schedule).extracting(InstallmentResponse::billed).containsExactly(true, false);
         assertThat(schedule.getFirst().billedOn()).isEqualTo(LocalDate.of(2026, 2, 3));

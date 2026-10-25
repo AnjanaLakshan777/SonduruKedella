@@ -1,5 +1,6 @@
 package com.sondurukedella.reports.controller;
 
+import com.sondurukedella.reports.dto.ClientFinancialReport;
 import com.sondurukedella.reports.dto.DashboardReport;
 import com.sondurukedella.reports.dto.FinancialSummaryReport;
 import com.sondurukedella.reports.dto.InventoryValuationReport;
@@ -46,6 +47,11 @@ public class ReportController {
     @GetMapping("/projects/{projectId}/financial")
     public ProjectFinancialReport projectFinancial(@PathVariable long projectId) {
         return service.projectFinancial(projectId);
+    }
+
+    @GetMapping("/clients/{clientId}/financial")
+    public ClientFinancialReport clientFinancial(@PathVariable long clientId) {
+        return service.clientFinancial(clientId);
     }
 
     @GetMapping("/projects/{projectId}/cost-breakdown")

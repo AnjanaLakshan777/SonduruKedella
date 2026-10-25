@@ -17,7 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 // projectId is a plain column, not a @ManyToOne: Project belongs to the projects module.
-// No setters yet - editing and billing a schedule are part of the full Revenue module.
+// Unbilled SCHEDULED rows can be revised (InstallmentScheduleService); billed ones never change.
 @Getter
 @Entity
 @Table(name = "installments")
@@ -64,6 +64,25 @@ public class Installment extends AuditableEntity {
             throw new IllegalStateException("Installment " + id + " is already billed");
         }
         this.billedOn = on;
+    }
+
+    // only while unbilled; the schedule service checks that
+    public void revise(String description, LocalDate dueDate, BigDecimal amount) {
+        this.description = description;
+        this.dueDate = dueDate;
+        this.amount = amount;
+    }
+
+    // Additional work: a VARIATION installment, billed at once. The contract value never changes.
+    public static Installment variation(long projectId, String description, LocalDate dueDate, BigDecimal amount, LocalDate billedOn) {
+        Installment installment = new Installment();
+        installment.projectId = projectId;
+        installment.description = description;
+        installment.dueDate = dueDate;
+        installment.amount = amount;
+        installment.kind = InstallmentKind.VARIATION;
+        installment.billedOn = billedOn;
+        return installment;
     }
 
     public static Installment scheduled(long projectId, String description, LocalDate dueDate, BigDecimal amount) {

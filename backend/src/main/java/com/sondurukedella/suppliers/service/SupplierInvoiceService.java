@@ -2,6 +2,12 @@ package com.sondurukedella.suppliers.service;
 
 import com.sondurukedella.activity.entity.ActivityKind;
 import com.sondurukedella.activity.service.ActivityService;
+import com.sondurukedella.agreements.storage.AgreementFileStore;
+import com.sondurukedella.agreements.storage.AgreementStorageProperties;
+import com.sondurukedella.agreements.storage.StoredFile;
+import com.sondurukedella.agreements.validation.AgreementFiles;
+import com.sondurukedella.common.exception.BusinessRuleException;
+import com.sondurukedella.common.exception.StorageException;
 import com.sondurukedella.common.exception.ConflictException;
 import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.common.exception.NotFoundException;
@@ -16,12 +22,14 @@ import com.sondurukedella.projects.entity.ProjectType;
 import com.sondurukedella.projects.service.ProjectService;
 import com.sondurukedella.settings.service.MeasurementUnitService;
 import com.sondurukedella.settings.service.PaymentMethodService;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceCancelRequest;
 import com.sondurukedella.suppliers.dto.SupplierInvoiceCreateRequest;
 import com.sondurukedella.suppliers.dto.SupplierInvoiceDetail;
 import com.sondurukedella.suppliers.dto.SupplierInvoiceFilter;
 import com.sondurukedella.suppliers.dto.SupplierInvoiceResponse;
 import com.sondurukedella.suppliers.dto.SupplierInvoiceResponse.InvoiceStatus;
 import com.sondurukedella.suppliers.dto.SupplierInvoiceSummary;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceUpdateRequest;
 import com.sondurukedella.suppliers.dto.SupplierPaymentRequest;
 import com.sondurukedella.suppliers.dto.SupplierPaymentResponse;
 import com.sondurukedella.suppliers.dto.SupplierPaymentVoidRequest;
@@ -35,6 +43,8 @@ import com.sondurukedella.suppliers.repository.SupplierInvoiceRepository;
 import com.sondurukedella.suppliers.repository.SupplierPaymentRepository;
 import com.sondurukedella.suppliers.validation.SupplierText;
 import jakarta.persistence.criteria.Predicate;
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -51,6 +61,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 // Supplier invoices (payables) and their payments.
 // - STOCK: each line goes into stock as its own FIFO receipt (StockMovementService.receiveInvoiceLine),
@@ -76,6 +88,9 @@ public class SupplierInvoiceService {
     private final MeasurementUnitService units;
     private final PaymentMethodService paymentMethods;
     private final ActivityService activityService;
+    private final AgreementFileStore fileStore;
+    private final AgreementStorageProperties storageProperties;
+    private final TransactionTemplate transactions;
     private final Clock clock;
 
     @Transactional
@@ -86,7 +101,7 @@ public class SupplierInvoiceService {
             throw new InvalidRequestException(supplier.name() + " is inactive and can't take new invoices.");
         }
         String invoiceNo = request.invoiceNo().strip();
-        if (invoices.existsBySupplierIdAndInvoiceNo(supplier.id(), invoiceNo)) {
+        if (invoices.existsBySupplierIdAndInvoiceNoAndCancelledAtIsNull(supplier.id(), invoiceNo)) {
             throw new ConflictException("Invoice " + invoiceNo + " from " + supplier.name() + " is already recorded.");
         }
         Long projectId = project(request);
@@ -124,6 +139,142 @@ public class SupplierInvoiceService {
         return detail(invoices.findById(id).orElseThrow(SupplierInvoiceService::notFound));
     }
 
+    // Due date and notes can always change. The rest (number, date, project, lines and so the total) only
+    // on a PROJECT invoice with no active payments: a STOCK invoice is already in the stock ledger, and a
+    // paid one has money against its total. Locked like a payment, so the two can't cross.
+    @Transactional
+    public SupplierInvoiceDetail update(long id, SupplierInvoiceUpdateRequest request) {
+        SupplierInvoice invoice = invoices.findByIdForUpdate(id).orElseThrow(SupplierInvoiceService::notFound);
+        if (invoice.isCancelled()) {
+            throw new BusinessRuleException("A cancelled invoice can't be edited.");
+        }
+        ConflictException.requireCurrentVersion(request.version(), invoice.getVersion());
+        if (request.dueDate().isBefore(request.invoiceDate())) {
+            throw new InvalidRequestException("The due date can't be before the invoice date.");
+        }
+        String invoiceNo = request.invoiceNo().strip();
+        boolean termsLocked = invoice.getAllocation() == InvoiceAllocation.STOCK || payments.sumActive(id).signum() > 0;
+        List<PlannedLine> planned = new ArrayList<>();
+        for (SupplierInvoiceCreateRequest.Line line : request.lines()) {
+            planned.add(plan(invoice.getAllocation(), line, planned.size() + 1));
+        }
+        if (termsLocked) {
+            if (!sameTerms(invoice, invoiceNo, request.invoiceDate(), request.projectId(), planned)) {
+                throw new BusinessRuleException(invoice.getAllocation() == InvoiceAllocation.STOCK
+                        ? "This invoice is already in stock: only the due date and notes can change."
+                        : "This invoice has payments: only the due date and notes can change. Void the payments first.");
+            }
+        } else {
+            if (invoices.existsBySupplierIdAndInvoiceNoAndCancelledAtIsNullAndIdNot(invoice.getSupplierId(), invoiceNo, id)) {
+                throw new ConflictException("Invoice " + invoiceNo + " from this supplier is already recorded.");
+            }
+            Long projectId = project(new SupplierInvoiceCreateRequest(invoice.getSupplierId(), invoiceNo, request.invoiceDate(), null,
+                    InvoiceAllocation.PROJECT, request.projectId(), null, request.lines(), null));
+            BigDecimal total = Money.amount(planned.stream().map(PlannedLine::amount).reduce(BigDecimal.ZERO, BigDecimal::add));
+            lines.deleteByInvoiceId(id);
+            lines.flush();
+            for (PlannedLine p : planned) {
+                lines.save(new SupplierInvoiceLine(id, invoice.getAllocation(), p.lineNo(), p.materialId(), p.description(), p.quantity(),
+                        p.unitId(), p.unitPrice(), p.amount()));
+            }
+            invoice.replaceTerms(invoiceNo, request.invoiceDate(), projectId, total);
+        }
+        invoice.editNotes(request.dueDate(), SupplierText.trimToNull(request.notes()));
+        invoice = invoices.saveAndFlush(invoice);
+        activityService.record(invoice.getProjectId(), ActivityKind.EXPENSE, "Supplier invoice " + invoice.getInvoiceNo() + " edited.");
+        return detail(invoice);
+    }
+
+    // Only a PROJECT invoice with no active payments: it stops being a payable and the project's cost.
+    // The row stays, with the reason; its number can then be entered again.
+    @Transactional
+    public SupplierInvoiceDetail cancel(long id, SupplierInvoiceCancelRequest request) {
+        SupplierInvoice invoice = invoices.findByIdForUpdate(id).orElseThrow(SupplierInvoiceService::notFound);
+        if (invoice.isCancelled()) {
+            throw new ConflictException("This invoice was already cancelled.");
+        }
+        if (invoice.getAllocation() == InvoiceAllocation.STOCK) {
+            throw new BusinessRuleException("A stock invoice is already in the stock ledger and can't be cancelled; correct the stock with an adjustment.");
+        }
+        ConflictException.requireCurrentVersion(request.version(), invoice.getVersion());
+        if (payments.sumActive(id).signum() > 0) {
+            throw new BusinessRuleException("Void the invoice's payments first.");
+        }
+        invoice.cancel(OffsetDateTime.now(clock), request.reason().strip());
+        invoice = invoices.saveAndFlush(invoice);
+        activityService.record(invoice.getProjectId(), ActivityKind.EXPENSE, "Supplier invoice " + invoice.getInvoiceNo() + " cancelled: "
+                + invoice.getCancelReason());
+        return detail(invoice);
+    }
+
+    // The scanned invoice, as a PDF in the same private document store as agreements (same checks: PDF
+    // signature, size limit, server-made key). Like agreements, the file is written first and the row
+    // updated after; a replaced file is deleted once the new one is saved.
+    public SupplierInvoiceDetail attach(long id, MultipartFile file) {
+        if (!invoices.existsById(id)) {
+            throw notFound();
+        }
+        long maxBytes = storageProperties.maxSize().toBytes();
+        String fileName = AgreementFiles.safeFileName(file.getOriginalFilename());
+        AgreementFiles.validateUpload(fileName, file.getContentType(), file.getSize(), maxBytes);
+        StoredFile stored;
+        try (InputStream in = file.getInputStream()) {
+            stored = fileStore.store(in, maxBytes);
+        } catch (IOException ex) {
+            throw new StorageException("Could not read the uploaded file", ex);
+        }
+        String replaced;
+        try {
+            replaced = transactions.execute(status -> {
+                SupplierInvoice invoice = invoices.findByIdForUpdate(id).orElseThrow(SupplierInvoiceService::notFound);
+                String old = invoice.getAttachmentStorageKey();
+                invoice.attach(stored.key(), fileName, stored.size());
+                invoices.saveAndFlush(invoice);
+                return old;
+            });
+        } catch (RuntimeException ex) {
+            fileStore.deleteQuietly(stored.key());
+            throw ex;
+        }
+        if (replaced != null) {
+            fileStore.deleteQuietly(replaced);
+        }
+        return get(id);
+    }
+
+    @Transactional(readOnly = true)
+    public AttachmentDownload attachment(long id) {
+        SupplierInvoice invoice = invoices.findById(id).orElseThrow(SupplierInvoiceService::notFound);
+        if (invoice.getAttachmentStorageKey() == null) {
+            throw new NotFoundException("No PDF is attached to this invoice.");
+        }
+        if (!fileStore.exists(invoice.getAttachmentStorageKey())) {
+            throw new StorageException("Supplier invoice " + id + " has attachment metadata but no stored file", null);
+        }
+        return new AttachmentDownload(invoice.getAttachmentFilename(), invoice.getAttachmentSize(), fileStore.open(invoice.getAttachmentStorageKey()));
+    }
+
+    // the caller must close content (Spring does when it writes the response)
+    public record AttachmentDownload(String fileName, long size, InputStream content) {
+    }
+
+    private boolean sameTerms(SupplierInvoice invoice, String invoiceNo, LocalDate invoiceDate, Long projectId, List<PlannedLine> planned) {
+        List<SupplierInvoiceLine> current = lines.findByInvoiceIdOrderByLineNo(invoice.getId());
+        if (!invoice.getInvoiceNo().equals(invoiceNo) || !invoice.getInvoiceDate().equals(invoiceDate)
+                || !java.util.Objects.equals(invoice.getProjectId(), projectId) || current.size() != planned.size()) {
+            return false;
+        }
+        for (int i = 0; i < current.size(); i++) {
+            SupplierInvoiceLine c = current.get(i);
+            PlannedLine p = planned.get(i);
+            if (!java.util.Objects.equals(c.getMaterialId(), p.materialId()) || !c.getDescription().equals(p.description())
+                    || c.getQuantity().compareTo(p.quantity()) != 0 || c.getUnitId() != p.unitId() || c.getUnitPrice().compareTo(p.unitPrice()) != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // Newest invoice first. The status needs the payment totals, so it is filtered after loading the
     // rows that match the stored fields (a company's invoices are counted in hundreds or thousands).
     @Transactional(readOnly = true)
@@ -143,7 +294,8 @@ public class SupplierInvoiceService {
 
     @Transactional(readOnly = true)
     public SupplierInvoiceSummary summary(SupplierInvoiceFilter filter) {
-        List<SupplierInvoiceResponse> rows = rows(filter);
+        // cancelled invoices are neither payables nor costs
+        List<SupplierInvoiceResponse> rows = rows(filter).stream().filter(r -> r.status() != InvoiceStatus.CANCELLED).toList();
         return new SupplierInvoiceSummary(rows.size(), sum(rows, SupplierInvoiceResponse::total),
                 sum(rows.stream().filter(r -> r.allocation() == InvoiceAllocation.STOCK).toList(), SupplierInvoiceResponse::total),
                 sum(rows.stream().filter(r -> r.allocation() == InvoiceAllocation.PROJECT).toList(), SupplierInvoiceResponse::total),
@@ -151,10 +303,17 @@ public class SupplierInvoiceService {
                 sum(rows.stream().filter(r -> r.status() == InvoiceStatus.OVERDUE).toList(), SupplierInvoiceResponse::outstanding));
     }
 
+    // For the expenses module's duplicate warning: is this supplier's invoice number recorded (not cancelled)?
+    @Transactional(readOnly = true)
+    public boolean existsActive(long supplierId, String invoiceNo) {
+        return invoices.existsBySupplierIdAndInvoiceNoAndCancelledAtIsNull(supplierId, invoiceNo.strip());
+    }
+
     // The contract the reports use: a project's PROJECT invoices (its direct material cost).
     @Transactional(readOnly = true)
     public List<SupplierInvoiceResponse> forProject(long projectId) {
-        return rows(new SupplierInvoiceFilter(null, projectId, InvoiceAllocation.PROJECT, null, null, null));
+        return rows(new SupplierInvoiceFilter(null, projectId, InvoiceAllocation.PROJECT, null, null, null)).stream()
+                .filter(r -> r.status() != InvoiceStatus.CANCELLED).toList();
     }
 
     // Locks the invoice first: concurrent payments queue and can't overpay, and a resent request
@@ -199,6 +358,9 @@ public class SupplierInvoiceService {
                 throw new ConflictException("This request id was already used for a different payment.");
             }
             return new PaymentResult(toResponse(p, methodName(p.getPaymentMethodId())), false);
+        }
+        if (invoice.isCancelled()) {
+            throw new BusinessRuleException("This invoice was cancelled and can't be paid.");
         }
         if (!paymentMethods.isActive(request.paymentMethodId())) {
             throw new InvalidRequestException("Choose a payment method from the Settings list.");
@@ -328,12 +490,16 @@ public class SupplierInvoiceService {
     private static SupplierInvoiceResponse toResponse(SupplierInvoice i, String supplierName, BigDecimal paidAmount, LocalDate today) {
         BigDecimal paid = Money.amount(paidAmount);
         BigDecimal outstanding = Money.amount(i.getTotalAmount().subtract(paid).max(BigDecimal.ZERO));
-        InvoiceStatus status = outstanding.signum() == 0 ? InvoiceStatus.PAID
+        if (i.isCancelled()) {
+            outstanding = Money.amount(BigDecimal.ZERO);
+        }
+        InvoiceStatus status = i.isCancelled() ? InvoiceStatus.CANCELLED
+                : outstanding.signum() == 0 ? InvoiceStatus.PAID
                 : i.getDueDate().isBefore(today) ? InvoiceStatus.OVERDUE
                 : paid.signum() > 0 ? InvoiceStatus.PARTIALLY_PAID : InvoiceStatus.UNPAID;
         return new SupplierInvoiceResponse(i.getId(), i.getSupplierId(), supplierName, i.getInvoiceNo(), i.getInvoiceDate(), i.getDueDate(),
                 i.getAllocation(), i.getProjectId(), Money.amount(i.getTotalAmount()), paid, outstanding, status, i.getNotes(),
-                i.getCreatedAt(), i.getVersion());
+                i.getCancelledAt(), i.getCancelReason(), i.getAttachmentFilename(), i.getAttachmentSize(), i.getCreatedAt(), i.getVersion());
     }
 
     private static SupplierPaymentResponse toResponse(SupplierPayment p, String method) {

@@ -142,7 +142,7 @@ public class PayrollService {
         List<PayrollLineCost> frozenCosts = lineCosts.findByProjectId(projectId);
         Map<Long, PayrollLine> frozenLines = lines.findByIdIn(frozenCosts.stream().map(PayrollLineCost::getPayrollLineId).toList())
                 .stream().collect(Collectors.toMap(PayrollLine::getId, Function.identity()));
-        List<PayrollCorrection> fixes = corrections.findByProjectId(projectId);
+        List<PayrollCorrection> fixes = corrections.findByProjectIdAndVoidedAtIsNull(projectId);
         frozenLines.putAll(lines.findByIdIn(fixes.stream().map(PayrollCorrection::getPayrollLineId).toList()).stream()
                 .collect(Collectors.toMap(PayrollLine::getId, Function.identity())));
         Map<Long, EmployeeResponse> people = new HashMap<>(employees.findAll(
@@ -263,10 +263,24 @@ public class PayrollService {
         return detail(ledger.workerWeek(weekStart, employeeId));
     }
 
+    // created is false when an earlier correction with the same requestId was returned instead
+    public record CorrectionResult(PayrollCorrectionResponse correction, boolean created) {
+    }
+
     @Transactional
-    public PayrollCorrectionResponse correct(LocalDate weekStart, long employeeId, PayrollCorrectionRequest request) {
+    public CorrectionResult correct(LocalDate weekStart, long employeeId, PayrollCorrectionRequest request) {
         PayrollLedger.requireMonday(weekStart);
         lock(employeeId);
+        // checked after the worker lock, so concurrent resends find the first correction
+        Optional<PayrollCorrection> previous = corrections.findByRequestId(request.requestId());
+        if (previous.isPresent()) {
+            PayrollCorrection p = previous.get();
+            if (p.getWageDelta().compareTo(request.wageDelta()) != 0 || !p.getCorrectionDate().equals(request.correctionDate())
+                    || !Objects.equals(p.getProjectId(), request.projectId())) {
+                throw new ConflictException("This request id was already used for a different correction.");
+            }
+            return new CorrectionResult(mapper.toResponse(p, employeeId, weekStart), false);
+        }
         if (request.wageDelta().signum() == 0) {
             throw new InvalidRequestException("A correction must add or take away something.");
         }
@@ -286,20 +300,44 @@ public class PayrollService {
             }
         }
         BigDecimal delta = Money.amount(request.wageDelta());
+        requireAllowedChange(week, request.projectId(), delta);
+        PayrollCorrection saved = corrections.saveAndFlush(new PayrollCorrection(week.frozen().getId(), request.correctionDate(), delta,
+                request.projectId(), request.reason().strip(), request.requestId()));
+        return new CorrectionResult(mapper.toResponse(saved, employeeId, weekStart), true);
+    }
+
+    // The way to change a correction: void it (with a reason, kept in the history) and record a new one.
+    // Voiding takes the delta back out, so it must pass the same checks as a correction of −delta.
+    @Transactional
+    public PayrollCorrectionResponse voidCorrection(LocalDate weekStart, long employeeId, long correctionId, VoidRequest request) {
+        PayrollLedger.requireMonday(weekStart);
+        lock(employeeId);
+        WorkerWeek week = ledger.workerWeek(weekStart, employeeId);
+        PayrollCorrection correction = corrections.findById(correctionId)
+                .filter(c -> week.frozen() != null && c.getPayrollLineId().equals(week.frozen().getId()))
+                .orElseThrow(() -> new NotFoundException("Correction not found."));
+        if (correction.isVoided()) {
+            throw new ConflictException("This correction was already voided.");
+        }
+        ConflictException.requireCurrentVersion(request.version(), correction.getVersion());
+        requireAllowedChange(week, correction.getProjectId(), correction.getWageDelta().negate());
+        correction.markVoided(OffsetDateTime.now(clock), request.reason().strip());
+        return mapper.toResponse(corrections.saveAndFlush(correction), employeeId, weekStart);
+    }
+
+    // A change can't make the week owe less than nothing, and a reduction can't take a project (or the
+    // company share) below zero labour for the week.
+    private static void requireAllowedChange(WorkerWeek week, Long projectId, BigDecimal delta) {
         if (week.owed().add(delta).signum() < 0) {
             throw new InvalidRequestException("That would make the week owe less than nothing (" + Money.format(week.owed()) + " owed now).");
         }
-        // a negative correction can't take a project (or the company share) below zero labour for the week
-        BigDecimal share = week.costs().stream().filter(c -> c.isFor(request.projectId())).map(Cost::amount).reduce(BigDecimal.ZERO, BigDecimal::add)
-                .add(week.corrections().stream().filter(c -> Objects.equals(c.getProjectId(), request.projectId()))
+        BigDecimal share = week.costs().stream().filter(c -> c.isFor(projectId)).map(Cost::amount).reduce(BigDecimal.ZERO, BigDecimal::add)
+                .add(week.corrections().stream().filter(c -> Objects.equals(c.getProjectId(), projectId))
                         .map(PayrollCorrection::getWageDelta).reduce(BigDecimal.ZERO, BigDecimal::add));
         if (delta.signum() < 0 && share.add(delta).signum() < 0) {
             throw new InvalidRequestException("Only " + Money.format(share) + " of this week's labour is booked "
-                    + (request.projectId() == null ? "to no project" : "to that project") + ".");
+                    + (projectId == null ? "to no project" : "to that project") + ".");
         }
-        PayrollCorrection saved = corrections.saveAndFlush(new PayrollCorrection(week.frozen().getId(), request.correctionDate(), delta,
-                request.projectId(), request.reason().strip()));
-        return mapper.toResponse(saved, employeeId, weekStart);
     }
 
     private PayrollLine freezeForPayment(WorkerWeek week) {
