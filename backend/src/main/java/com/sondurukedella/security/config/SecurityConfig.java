@@ -43,7 +43,10 @@ import org.springframework.security.web.savedrequest.NullRequestCache;
 //   SUPER_ADMIN     /api/v1/users/** (user administration) and the rest of /actuator
 //   SUPER_ADMIN or ADMIN  every other /api/v1 endpoint (all business modules, /auth/me, logout)
 //   anything else   denied
-// The rules match paths only, never methods, so GET/POST/PUT/PATCH/DELETE are all covered alike.
+// One exception to "both roles": changing the commission policy (/api/v1/settings/commission-policy,
+// any method but GET) is SUPER_ADMIN only.
+// Apart from that GET, the rules match paths only, never methods, so GET/POST/PUT/PATCH/DELETE are
+// all covered alike.
 //
 // Sign-in is a server-side session (JSESSIONID cookie, HttpOnly, SameSite=Lax). CSRF protection stays
 // on for every state-changing request, login and logout included, using the SPA cookie pattern:
@@ -56,6 +59,7 @@ public class SecurityConfig {
     public static final String LOGOUT_URL = "/api/v1/auth/logout";
     public static final String CSRF_URL = "/api/v1/auth/csrf";
     public static final String SESSION_COOKIE = "JSESSIONID";
+    public static final String COMMISSION_POLICY_URL = "/api/v1/settings/commission-policy";
 
     private static final String SUPER_ADMIN = UserRole.SUPER_ADMIN.name();
     private static final String ADMIN = UserRole.ADMIN.name();
@@ -74,6 +78,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers("/actuator/**").hasRole(SUPER_ADMIN)
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole(SUPER_ADMIN)
+                        // company-wide commission policy: both roles read it, only a Super Admin changes it
+                        // (any method other than GET, so nothing slips through)
+                        .requestMatchers(HttpMethod.GET, COMMISSION_POLICY_URL).hasAnyRole(SUPER_ADMIN, ADMIN)
+                        .requestMatchers(COMMISSION_POLICY_URL, COMMISSION_POLICY_URL + "/**").hasRole(SUPER_ADMIN)
                         .requestMatchers("/api/v1/**").hasAnyRole(SUPER_ADMIN, ADMIN)
                         .anyRequest().denyAll())
                 // spa() first, then our repository, so the login code rotates the same token store

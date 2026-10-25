@@ -49,7 +49,7 @@ Required by the owner's decisions. Unticked items are not yet made. See docs/DAT
 - [x] Projects (2026-10-24): create (with an inline client, the payment schedule and delay terms, all in one transaction), list, get, status changes, and reading the saved schedule and delay terms. The agreement PDF is handled by the Agreements module.
 - [x] Contract payment schedules and receipts (2026-10-24): schedule created with the project and readable; billing; client receipts (idempotent, voidable); write-offs (create only); delay deductions (apply and reverse); receivables per project and a company-wide summary. Not yet: editing a schedule, variations, write-off reversal (needs a migration).
 - [ ] Revenue and expenses. Partial (2026-10-24): project revenue is recognised at billing, and manual project and company expenses with their payments are implemented. Other income is not implemented.
-- [ ] Commission management.
+- [x] Commission management (2026-10-25, backend): per-project recipient arrangements (draft, confirm with stored amount, policy warning and owner exception), voids with a reason, payments (partial, idempotent, voidable), the directory, summary, by-recipient and payment views. The frontend still runs on its local store. See the completion log, "Commissions".
 - [ ] Suppliers and payables. Partial (2026-10-24): the supplier directory (create, list or search, get, edit, activate or deactivate) and the optional supplier link on expenses. Supplier invoices, supplier payments and payables are not implemented.
 - [x] Inventory and stock movements (2026-10-24): the materials catalogue; receipts, issues to construction projects, returns against the original issue and adjustments, costed FIFO from persistent cost layers with issue allocations (changed from the weighted average the same day, migration V4); balances, valuation, movement history and project material usage. Receipts from supplier invoices are not built yet.
 - [x] Employee attendance, overtime, advances, and payroll (2026-10-24, backend): employees, the attendance register, overtime and approval, advances, weekly payroll worked out live, payments that freeze the week, closing a zero week, corrections, history, period summaries and project labour cost. The frontend still runs on its local store.
@@ -926,3 +926,70 @@ For each completed task, record the date, files or migrations changed, verificat
   - Lost the only Super Admin password: another Super Admin can reset it; otherwise a deliberate database-level action is needed. The bootstrap never runs twice.
   - The frontend is not connected yet. It needs a login screen, `credentials: 'include'` on every call, the `X-XSRF-TOKEN` header on writes, and handling of 401 (sign in again) and 403. Hiding Super Admin screens in the UI is cosmetic; the backend enforces the rules.
   - Tests read the repository-root `.env` like the application does. If it contains `BOOTSTRAP_SUPER_ADMIN_*`, the test context creates that Super Admin in the throwaway test database (harmless, but expected).
+
+### 2026-10-25: Commissions
+- What existed: V1 already had `commission_arrangements`, `commission_payments` (with the payment guard trigger) and the single-row `commission_policy` (design pool 20%, optional construction level), plus the documented rules. There was no Java code. Nothing new was invented on top: the module implements those tables and rules.
+- Business rules (from DATABASE.md and the existing UI; nothing new decided):
+  - Base: the agreed contract value, not the billed or collected amount. Each arrangement: `amount = round(contract value × rate / 100, 2, HALF_UP)`, stored at confirmation with `confirmed_on`. Later settings changes never move it.
+  - Design 80/20: pool = `commission_policy.design_commission_pool_pct` (20), company share = 100 − pool. The pool amount is rounded half-up; company = contract value − pool. They add up exactly, and the residual cent goes to the company.
+  - Rates above the pool (design) or the optional construction level are a warning. Confirming anyway needs `acceptPolicyException: true` and marks the rows `policyException`. A draft may be saved over the limit, with the warning shown.
+  - Construction: each recipient's agreed rate on the contract value. No rate is assumed; the design 20% never applies.
+  - Consultation projects: no commission (422, and the V1 composite key).
+  - Recipients: free-text names per arrangement, as in the UI. There is one live arrangement per project, recipient and role (V6 unique index).
+- Lifecycle:
+  - `PENDING` drafts are edited or removed by saving the project's set; they are not a cost.
+  - "Confirm" confirms every draft in the set.
+  - `CONFIRMED` rows are frozen (service + V6 trigger). They show as `CONFIRMED`, `PARTIALLY_PAID` or `PAID` from their payments.
+  - `VOIDED` needs a reason and no active payments. A correction is void + add again; both stay visible with the reason, plus `COMMISSION` activity entries.
+- Payments:
+  - partial or full, never above what is still owed, and not on drafts or voided rows;
+  - no future date; an active payment method;
+  - `requestId` idempotency (resend → 200 with the first payment, a different body → 409);
+  - void with a reason;
+  - the arrangement row is locked for each payment and void.
+- Revenue, Expenses and Payroll integration:
+  - No changes to those modules.
+  - Commission cost = confirmed arrangements, recognised at confirmation (the documented "Project costs" rule). Payments only settle it.
+  - No expense row is ever written for commission, and the Commission expense category stays system-generated, so it can't be entered by hand. Only construction has one; design has no Commission category at all.
+  - Revenue recognition (at billing) is untouched.
+  - A project profitability report doesn't exist yet. `GET /api/v1/projects/{id}/commissions` returns the project's committed, paid, outstanding and draft totals for it to use.
+- Endpoints (both roles unless noted; every write needs CSRF):
+
+  | Method and path | Purpose |
+  | --- | --- |
+  | GET `/api/v1/projects/{projectId}/commissions` | the project's arrangements, policy check, design split, totals |
+  | PUT `/api/v1/projects/{projectId}/commissions` | save the set: `{confirm, acceptPolicyException?, arrangements:[{id?, version?, recipient, role?, ratePct}]}` |
+  | GET `/api/v1/commissions` | directory: `recipient`, `q`, `projectId`, `type`, `status` (`PENDING`/`CONFIRMED`/`PARTIALLY_PAID`/`PAID`/`VOIDED`), `from`/`to` (confirmed date), paging; sort `recipient`/`project`/`amount`/`outstanding`/`confirmedOn`/`id` (default most outstanding first) |
+  | GET `/api/v1/commissions/summary` | committed, paid, outstanding, counts (`type` optional) |
+  | GET `/api/v1/commissions/recipients` | by recipient (confirmed only) |
+  | GET `/api/v1/commissions/payments` | payments, newest first (`projectId`, `commissionId`, `from`, `to`, `includeVoided`) |
+  | GET `/api/v1/commissions/{id}` | one arrangement with its payments |
+  | POST `/api/v1/commissions/{id}/void` | `{reason, version}` |
+  | GET/POST `/api/v1/commissions/{id}/payments` | list / record (`{requestId, paymentDate, amount, paymentMethodId, reference?, notes?}`; 201 new, 200 resend) |
+  | POST `/api/v1/commissions/{id}/payments/{paymentId}/void` | `{reason, version}` |
+
+- Authorization: changing the commission policy (`/api/v1/settings/commission-policy`, any method but GET) is now `SUPER_ADMIN` only. Reading it, and all commission work, is open to both roles. No new roles.
+- Migration: `V6__commission_voids_and_guards.sql` (see DATABASE.md, "Current Schema Status"). Verified fresh, on a V5 database with data, and on duplicate data (it stopped and applied nothing). Not applied to the development database.
+- Files:
+  - New: `commissions/entity/*`, `repository/*`, `dto/*`, `mapper/CommissionMapper`, `service/CommissionCalculator`, `CommissionService`, `CommissionPaymentService`, `validation/CommissionRules`, `controller/CommissionController`, `ProjectCommissionController`.
+  - Changed: `SecurityConfig` (the commission-policy rule).
+  - The empty placeholder `package-info.java` files of the commissions package were removed.
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-25): 69 classes, 616 tests, 0 failures, 0 errors, 0 skipped (570 before). 45 are new commission tests: calculator 7, API 19, schema 10, concurrency 4, controller slice 5. 1 new settings test.
+  - New:
+    - `CommissionCalculatorTest`: the documented example, half-up rounding, split adds up exactly with the residual to the company, policy checks, statuses.
+    - `CommissionApiIntegrationTest`: drafts, confirmation, the residual cent, the pool exception, construction, consultation, validation, resend without duplicates, frozen confirmed rows, history after a settings change, payments, overpayment and future dates, idempotency, drafts and voids not payable, voiding payments, correction by void, directory, summary and recipients, no expense double count.
+    - `CommissionSchemaIntegrationTest`: the V6 trigger, checks, unique index, consultation FK.
+    - `CommissionConcurrencyIntegrationTest` (committed): six concurrent payments where only four fit, a duplicate request sent at once, a payment racing a void, two saves creating the same recipient.
+    - `CommissionControllerWebTest`.
+  - Changed:
+    - `SettingsApiIntegrationTest`: the policy update now runs as Super Admin, plus a test that an Admin gets 403 and nothing changes.
+    - `EndpointAuthorizationIntegrationTest`: expects 403 for an Admin on the policy update and checks the new endpoints exist.
+- Known limitations and owner decisions:
+  - **Recipients table not built.** The task asked for recipients with contact details and activate/deactivate. The approved schema (2026-10-24) deliberately removed a separate recipients table because the UI types a name per project, so the module keeps the name on each arrangement. A recipients table would need an owner decision, a migration and UI changes. As a result:
+    - there is no recipient activation or deactivation;
+    - the same person spelled differently is grouped only when the spelling differs just in case or spacing.
+  - Confirmed rows can't be revised in place. The UI's "Revise" currently lets a confirmed rate be edited; the backend answers 422 ("void it and add the corrected one"). The frontend needs that flow when it is wired up.
+  - Policy exceptions can be confirmed by both roles (the task restricted only the company-wide policy). The owner may want exceptions to be Super Admin only.
+  - The cost is recognised at confirmation, with no further accrual basis. Commission doesn't follow billing or collection, by the documented rule, so a project billed in parts carries its full confirmed commission from the start.
+  - The directory, summary and recipient views compute paid and outstanding in memory over the matching arrangements. That's fine for a company's hundreds of commissions; it would need SQL aggregation at much larger volumes.
+  - No report module yet. Project profitability will read the project totals from this module when the reports are built.

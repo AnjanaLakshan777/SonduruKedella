@@ -46,7 +46,7 @@ Never run destructive database resets against a database containing data that mu
 
 # Proposed Schema (v2, owner decisions applied 2026-10-24)
 
-Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses`, `expense_payments`, `suppliers`, `materials`, `stock_movements`, `stock_cost_layers` and `stock_cost_allocations` (the last two added by V4), and the payroll tables (`employees`, `attendance`, `overtime_entries`, `salary_advances`, `payroll_adjustments`, `payroll_lines`, `payroll_line_costs`, `advance_recoveries`, `payroll_corrections`, `payroll_payments`). The other tables have no entities yet.
+Status: implemented by `V1__initial_schema.sql`. JPA entities exist for the Settings tables (`company_profile`, `commission_policy`, `wage_settings`, `expense_categories`, `units`, `payment_methods`), `clients`, `projects`, `installments`, `delay_deduction_terms`, `activity_log`, `project_agreements`, `client_payments`, `receivable_write_offs`, `expenses`, `expense_payments`, `suppliers`, `materials`, `stock_movements`, `stock_cost_layers` and `stock_cost_allocations` (the last two added by V4), and the payroll tables (`employees`, `attendance`, `overtime_entries`, `salary_advances`, `payroll_adjustments`, `payroll_lines`, `payroll_line_costs`, `advance_recoveries`, `payroll_corrections`, `payroll_payments`), the commission tables (`commission_arrangements`, `commission_payments`) and, from V5, `app_users` and `security_events`. The other tables have no entities yet.
 
 Scope: the schema supports what the existing frontend does (`frontend/src/data/types.ts`, `store/store.ts`, the forms and `lib/finance.ts`), the inventory return action the owner has approved, and the business rules the owner has agreed. Anything else the UI does not offer is left out. The frontend changes these decisions need are listed under [Frontend alignment](#frontend-alignment).
 
@@ -182,7 +182,38 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - Amount = `round(contract_value × rate_pct / 100)`.
   - On confirmation, the amount is stored in `commission_amount`, which is required for `CONFIRMED` rows. This preserves confirmed commission history.
   - If the total of a project's rates goes above the design pool or the construction warning level, the service returns a warning and changes nothing. The owner may still confirm, and `policy_exception = true` records that.
+  - V6 added `VOIDED` to the status, with `voided_at` and `void_reason` (both set together, only on a once-confirmed row).
+  - The trigger `trg_commission_arrangements_guard` refuses any change to a `CONFIRMED` row except voiding it, any change to a `VOIDED` row, and deleting anything but a `PENDING` draft.
+  - The partial unique index `uq_commission_arrangements_recipient_role` allows one live (non-voided) arrangement per project, recipient and role, ignoring case.
 - **commission_payments**: `arrangement_id` plus the common payment columns.
+
+**Commission rules as implemented (2026-10-25)**
+- Recipient: a name on the arrangement (stored trimmed, inner spaces collapsed), as in the UI. There is no recipients table: it was removed from the schema by owner decision (see "Frontend alignment"). So there is no recipient activation or deactivation; the "by recipient" view groups confirmed arrangements by name, ignoring case.
+- Base and amount:
+  - The base is the project's agreed `contract_value`. It is never the billed or collected amount (financial integrity rule 4, the Commissions tab).
+  - `amount = round(contract_value × rate_pct / 100, 2, HALF_UP)`, worked out per arrangement.
+  - On confirmation the amount is stored in `commission_amount`, with `confirmed_on` (Colombo date) and `policy_exception`.
+  - The contract value can't change after a project is created, so the stored amount stays reproducible. Later policy changes never touch it.
+- Design split (the approved 80/20):
+  - `commission_policy.design_commission_pool_pct` is the commission share (seeded 20); the company share is 100 − pool.
+  - The pool amount is `round(contract_value × pool / 100, 2, HALF_UP)`, and the company share amount is `contract_value − pool amount`. So the two add up to the contract value to the cent, and the residual cent always goes to the company.
+  - The pool is shared by the project's recipients. If their rates add up to more, it is a warning, not a cap.
+- Construction:
+  - Each arrangement's rate is agreed per recipient. No rate is assumed, and the design pool never applies.
+  - The only check is the optional `commission_policy.construction_warning_pct`, a warning like the design pool.
+- Lifecycle:
+  - `PENDING` (a draft: editable and removable; not a cost).
+  - `CONFIRMED`: the cost is recognised and the row is frozen.
+  - Then `CONFIRMED` with payments shows as partly paid or paid, or the row becomes `VOIDED`. A void needs a reason, and all its payments must be voided first.
+  - A wrong confirmed row is corrected by voiding it and adding the right one; both stay in the history and the activity log.
+- Payments:
+  - only on `CONFIRMED` rows, and never more than `commission_amount − Σ active payments`;
+  - no future payment date;
+  - an active payment method;
+  - a unique `request_id`: a resent request returns the first payment, and the same id with different details is a 409;
+  - voidable with a reason (V1 trigger).
+
+  The arrangement row is locked for every payment and void.
 
 ## Expenses
 
@@ -556,7 +587,7 @@ The last of a pool therefore always takes exactly what is left. An emptied layer
 | --- | --- |
 | Materials | `PROJECT` supplier invoices + `ISSUED` minus `RETURNED` movements + manual `Materials` expenses |
 | Labour | attendance (`daily_wage` per present day, half for a half day) and approved overtime (`hours × hourly_rate`) on the project. Frozen weeks use `payroll_line_costs` plus `payroll_corrections`. |
-| Commission | confirmed arrangements × contract value |
+| Commission | confirmed (not voided) arrangements: the stored `commission_amount` (= contract value × rate), recognised at confirmation. Payments settle it and are not a cost. |
 | Other | manual project expenses in every other category, including machinery rental |
 
 **Profitability**
@@ -567,7 +598,7 @@ The last of a pool therefore always takes exactly what is left. An emptied layer
 **Payables**
 - Supplier invoice outstanding = `total − Σ payments`.
 - Expense outstanding = `amount − Σ payments`.
-- Commission outstanding = `amount − Σ payments`.
+- Commission outstanding = `commission_amount − Σ active payments`, for confirmed arrangements only (drafts and voids owe nothing).
 - An invoice or expense is overdue when something is still outstanding and `due_date < today`.
 
 **Weekly payroll**
@@ -733,3 +764,13 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
   - Verified on a database whose `app_users` held usernames that differ only in case (`Kamal` and `kamal`): V5 stopped at `uq_app_users_username_lower`, and nothing was applied (no `role` column, no `security_events`).
     - Before applying V5 anywhere with real users, check that `SELECT lower(username) FROM app_users GROUP BY 1 HAVING count(*) > 1` returns no rows.
   - Not yet applied to the development database. Flyway applies it, after V2 to V4, on the next backend start.
+- `V6__commission_voids_and_guards.sql` (2026-10-25): commission voids and guards.
+  - It widens `ck_commission_arrangements_status` to add `VOIDED`, and adds `voided_at` and `void_reason` with the checks `ck_commission_arrangements_void` and `ck_commission_arrangements_voided_confirmed`.
+  - It adds the partial unique index `uq_commission_arrangements_recipient_role`, the index `ix_commission_arrangements_status`, and the trigger `trg_commission_arrangements_guard` (function `sk_guard_commission_arrangement`).
+
+  It is additive only: no row is changed.
+  - Verified on a fresh PostgreSQL 17 database (V1 to V6 in order), and by the full test suite on its own fresh database (Flyway, then Hibernate validation).
+  - Verified on a V5 database holding a project, a draft arrangement, a confirmed arrangement and a payment: after V6 every pre-existing arrangement and payment column was identical, and the statuses were unchanged.
+  - Verified on a database with two live arrangements for the same recipient and role on one project: V6 stopped at `uq_commission_arrangements_recipient_role`, and nothing was applied (no new columns, old status check).
+    - Before applying V6 where arrangements exist, check `SELECT project_id, lower(recipient_name), lower(role) FROM commission_arrangements GROUP BY 1, 2, 3 HAVING count(*) > 1`.
+  - Not yet applied to the development database. Flyway applies it after V2 to V5 on the next backend start. Nothing has ever written commission rows there.

@@ -42,6 +42,8 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 class EndpointAuthorizationIntegrationTest {
 
     private static final Set<String> PUBLIC = Set.of("POST /api/v1/auth/login", "GET /api/v1/auth/csrf");
+    // Super Admin only although outside /api/v1/users
+    private static final Set<String> SUPER_ADMIN_ONLY = Set.of("PUT /api/v1/settings/commission-policy");
 
     @Autowired
     private MockMvc mockMvc;
@@ -71,7 +73,8 @@ class EndpointAuthorizationIntegrationTest {
         // sanity check that the scan really found the modules
         assertThat(endpoints).hasSizeGreaterThan(100);
         assertThat(endpoints).extracting(e -> e[1]).contains("/api/v1/payroll/weeks/{weekStart}/employees/{employeeId}/payments",
-                "/api/v1/inventory/issues", "/api/v1/users/{id}/role", "/api/v1/settings/units/{id}");
+                "/api/v1/inventory/issues", "/api/v1/users/{id}/role", "/api/v1/settings/units/{id}",
+                "/api/v1/commissions/{id}/payments", "/api/v1/projects/{projectId}/commissions");
 
         List<String> problems = new ArrayList<>();
         for (String[] endpoint : endpoints) {
@@ -79,14 +82,14 @@ class EndpointAuthorizationIntegrationTest {
             String pattern = endpoint[1];
             String path = concrete(pattern);
             String key = method + " " + pattern;
-            boolean userAdministration = pattern.startsWith("/api/v1/users");
+            boolean superAdminOnly = pattern.startsWith("/api/v1/users") || SUPER_ADMIN_ONLY.contains(key);
 
             int anonymous = statusOf(method, path, null);
             if (PUBLIC.contains(key) ? isAuthFailure(anonymous) : anonymous != 401) {
                 problems.add(key + " anonymous -> " + anonymous);
             }
             int asAdmin = statusOf(method, path, adminSession);
-            if (userAdministration ? asAdmin != 403 : isAuthFailure(asAdmin)) {
+            if (superAdminOnly ? asAdmin != 403 : isAuthFailure(asAdmin)) {
                 problems.add(key + " ADMIN -> " + asAdmin);
             }
             int asSuperAdmin = statusOf(method, path, superSession);

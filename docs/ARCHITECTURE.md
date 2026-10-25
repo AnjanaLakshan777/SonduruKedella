@@ -51,7 +51,7 @@ Tables are listed in `docs/DATABASE.md`.
 | `projects` | Projects, contract value, dates and status. The contract value and project type are fixed after the project is created. | `projects` |
 | `agreements` | Uploading agreement PDFs, storing their metadata and controlling download access. The PDFs are kept in private storage. | `project_agreements` |
 | `revenue` | Installment schedules, billing and variations, client payments, bad-debt write-offs, delay deductions (applied and reversed), and other income with its receipts. | `installments`, `client_payments`, `receivable_write_offs`, `delay_deduction_terms`, `other_income`, `other_income_receipts` |
-| `commissions` | Commission arrangements based on the contract value, policy warnings, confirmation (with the stored amount) and payments. | `commission_arrangements`, `commission_payments` |
+| `commissions` | Commission arrangements based on the contract value, policy warnings, confirmation (with the stored amount), voids, payments and the company-wide commission views. | `commission_arrangements`, `commission_payments` |
 | `expenses` | Manual project and company expenses, including machinery rental as an expense category, and their payments. | `expenses`, `expense_payments` |
 | `suppliers` | Suppliers, supplier invoices with their lines, and supplier payments (payables). | `suppliers`, `supplier_invoices`, `supplier_invoice_lines`, `supplier_payments` |
 | `inventory` | Materials and the stock movement ledger: receipts, issues, returns to stock and adjustments, costed FIFO from persistent cost layers. | `materials`, `stock_movements`, `stock_cost_layers`, `stock_cost_allocations` |
@@ -94,6 +94,17 @@ Shared packages:
   - Issuing stock or entering overtime: `inventory` and `employees` check with `projects` that the project is a construction project.
   - Editing attendance or overtime (implemented): the V1 freeze trigger refuses a change to a paid employee-week, and `employees` turns that refusal into a 409. `employees` does not ask `payroll`: `payroll` reads attendance and overtime from `employees`, so asking back would make the two modules depend on each other. Both modules take the same `employees` row lock before writing, so a day saved while that week is being paid can't slip past the freeze.
   - Calculating commission: `commissions` reads the contract value from `projects`.
+  - Commissions (implemented 2026-10-25): `/api/v1/projects/{projectId}/commissions` (the project's set) and `/api/v1/commissions` (directory, summaries, voids, payments).
+    - Both controllers live in `commissions`, because `projects` must not depend on it (the same pattern as the agreement endpoints).
+    - It reads projects only through `ProjectService.get`, the policy through `settings.CommissionPolicyService`, and payment methods through `PaymentMethodService`. It records `COMMISSION` entries through `ActivityService`. Nothing imports `commissions`.
+    - Saving a project's set is one transaction. It locks the project's live arrangements (`SELECT … FOR UPDATE`, id order), validates the whole set, checks the policy, deletes the drafts that were left out, then saves and confirms. Any failure rolls back everything.
+    - A payment or a void locks the arrangement row first. Concurrent payments therefore queue and can't overpay, a resent `requestId` finds the first payment, and a payment and a void of the same commission can't cross.
+    - Cost boundary:
+      - the commission cost is the confirmed arrangements' stored amounts, recognised on the date of confirmation;
+      - payments only settle that liability; they are never a second cost;
+      - drafts and voided arrangements are not costs;
+      - the Commission expense category is system-generated, so a manual expense can't count it again (the V1 check refuses it too).
+    - The 80/20 design split is the commission policy's pool (default 20%) against the company share (100 − pool). It is a view and a warning level, not a ledger entry; the company share is simply what is left of the contract value.
   - Delay deductions and schedules: `projects` passes the project type (as the plain code `revenue` stores in `project_type`) and the contract value into the `revenue` service operations. `revenue` never imports `projects` or queries its repositories, because `projects` already depends on `revenue`.
   - Recording an event: any module calls the `activity` service.
   - Creating a project (implemented): `projects` checks or creates the client through `ClientService` (`exists`, `create`, `findNames`, `findIdsByName`), creates the schedule and delay terms through `revenue` (`InstallmentScheduleService`, `DelayTermsService`), and records the status event through `ActivityService`. All of this runs in one transaction. The revenue and activity methods use `MANDATORY` propagation, so they cannot commit on their own.
@@ -148,7 +159,7 @@ Implemented 2026-10-25. Spring Security, server-side sessions, two roles. No JWT
 | Role | May use |
 | --- | --- |
 | `SUPER_ADMIN` | Everything an Admin can, plus user administration (`/api/v1/users/**`: list, view, create, edit, change role, activate or deactivate, reset password) and the actuator endpoints other than health. Only a Super Admin can make someone a Super Admin. |
-| `ADMIN` | All business modules under `/api/v1` (settings, clients, projects, agreements, revenue, receipts, expenses, suppliers, inventory, employees, attendance, overtime, payroll), plus their own profile, password change and sign-out. No user administration. |
+| `ADMIN` | All business modules under `/api/v1` (settings, clients, projects, agreements, revenue, receipts, expenses, suppliers, inventory, employees, attendance, overtime, payroll, commissions), plus their own profile, password change and sign-out. No user administration, and no change to the commission policy. |
 
 Roles are the `app_users.role` column (`UserRole` enum, authorities `ROLE_SUPER_ADMIN` / `ROLE_ADMIN`). Every rule is in one place, `security.config.SecurityConfig`. Controllers carry no role checks. The user-administration service checks again against locked rows, because the actor's own role may have just changed.
 
@@ -157,13 +168,15 @@ Roles are the `app_users.role` column (`UserRole` enum, authorities `ROLE_SUPER_
 | `POST /api/v1/auth/login`, `GET /api/v1/auth/csrf` | anyone |
 | `GET /actuator/health` | anyone (shows UP/DOWN only, no details), for container and load-balancer probes |
 | `/api/v1/users`, `/api/v1/users/**` | `SUPER_ADMIN` |
+| `/api/v1/settings/commission-policy`: GET | `SUPER_ADMIN` or `ADMIN` |
+| `/api/v1/settings/commission-policy`: any other method (the update is PUT) | `SUPER_ADMIN` (since 2026-10-25) |
 | `/actuator/**` (other than health) | `SUPER_ADMIN` |
 | every other `/api/v1/**` | `SUPER_ADMIN` or `ADMIN` |
 | anything else | denied |
 
-The rules match paths only, never HTTP methods, so GET, POST, PUT, PATCH and DELETE are covered alike. `EndpointAuthorizationIntegrationTest` reads every mapped endpoint from Spring MVC and checks it as an anonymous caller, an Admin and a Super Admin, so a new endpoint is checked automatically.
+Apart from the single GET exception on the commission policy, the rules match paths only, never HTTP methods, so GET, POST, PUT, PATCH and DELETE are covered alike. `EndpointAuthorizationIntegrationTest` reads every mapped endpoint from Spring MVC and checks it as an anonymous caller, an Admin and a Super Admin, so a new endpoint is checked automatically.
 
-Settings (company profile, commission policy, wages and the lists) are open to both roles. Nothing in the requirements reserves them for Super Admin; the owner can change that with one rule in `SecurityConfig`.
+Changing the company-wide commission policy (design pool and construction level) is Super Admin only. This was requested for the Commissions module on 2026-10-25. The rest of Settings (company profile, wages and the lists) is open to both roles. Nothing in the requirements reserves those for Super Admin; the owner can change that with one rule in `SecurityConfig`. Everyday commission work (drafts, confirming, policy exceptions on a project, voids, payments) is open to both roles, like the other business modules.
 
 ### Sign-in flow (React app)
 1. `GET /api/v1/auth/csrf` sets the `XSRF-TOKEN` cookie (readable by JavaScript). Returns 204.

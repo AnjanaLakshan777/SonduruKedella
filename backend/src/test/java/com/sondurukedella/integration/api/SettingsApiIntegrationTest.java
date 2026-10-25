@@ -1,5 +1,6 @@
 package com.sondurukedella.integration.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
@@ -18,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
@@ -38,6 +40,9 @@ class SettingsApiIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void overviewReturnsAllSectionsWithTheFixedRevenueCategories() throws Exception {
@@ -75,6 +80,19 @@ class SettingsApiIntegrationTest {
     }
 
     @Test
+    void anAdminCanReadButNotChangeTheCommissionPolicy() throws Exception {
+        long policyVersion = readLong(get(SETTINGS + "/commission-policy"), "$.version");
+        String pool = jdbc.queryForObject("SELECT design_commission_pool_pct::text FROM commission_policy WHERE id = 1", String.class);
+        mockMvc.perform(put(SETTINGS + "/commission-policy").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"designCommissionPool\":35,\"version\":" + policyVersion + "}"))
+                .andExpect(status().isForbidden());
+        assertThat(jdbc.queryForObject("SELECT design_commission_pool_pct::text FROM commission_policy WHERE id = 1", String.class))
+                .isEqualTo(pool);
+    }
+
+    @Test
+    @WithMockUser(roles = "SUPER_ADMIN")
     void commissionPolicyAndWagesCanBeSaved() throws Exception {
         long policyVersion = readLong(get(SETTINGS + "/commission-policy"), "$.version");
         mockMvc.perform(put(SETTINGS + "/commission-policy").with(csrf())
