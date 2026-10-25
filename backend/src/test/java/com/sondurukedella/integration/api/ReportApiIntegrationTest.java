@@ -101,7 +101,7 @@ class ReportApiIntegrationTest {
                 .andExpect(jsonPath("$.profit.profit").value(399000.00))
                 .andExpect(jsonPath("$.profit.marginPct").value(68.79))
                 .andExpect(jsonPath("$.profit.basis").value("ESTIMATED"))
-                .andExpect(jsonPath("$.notIncluded.length()").value(2));
+                .andExpect(jsonPath("$.notIncluded.length()").value(1));
 
         // design project: commission only, nothing billed, so no margin
         mockMvc.perform(get(REPORTS + "/projects/" + p2 + "/financial"))
@@ -133,18 +133,18 @@ class ReportApiIntegrationTest {
                 .andExpect(jsonPath("$.categories[0].lines[0].count").value(1))
                 .andExpect(jsonPath("$.categories[1].category").value("MATERIALS"))
                 .andExpect(jsonPath("$.categories[1].amount").value(25000.00))
-                .andExpect(jsonPath("$.categories[2].category").value("LABOUR"))
-                .andExpect(jsonPath("$.categories[2].lines[2].amount").value(6000.00))
-                .andExpect(jsonPath("$.categories[3].category").value("COMMISSION"))
-                .andExpect(jsonPath("$.categories[3].lines.length()").value(1)) // Kamal (void) and Sunil (draft) are not costs
-                .andExpect(jsonPath("$.categories[3].lines[0].label").value("Nimal (Commission, 2%)"))
+                .andExpect(jsonPath("$.categories[3].category").value("LABOUR"))
+                .andExpect(jsonPath("$.categories[3].lines[2].amount").value(6000.00))
+                .andExpect(jsonPath("$.categories[4].category").value("COMMISSION"))
+                .andExpect(jsonPath("$.categories[4].lines.length()").value(1)) // Kamal (void) and Sunil (draft) are not costs
+                .andExpect(jsonPath("$.categories[4].lines[0].label").value("Nimal (Commission, 2%)"))
                 .andExpect(jsonPath("$.total").value(81000.00))
                 .andReturn().getResponse().getContentAsString();
 
         List<Number> categories = JsonPath.read(json, "$.categories[*].amount");
         BigDecimal sum = categories.stream().map(n -> new BigDecimal(n.toString())).reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(sum).isEqualByComparingTo(new BigDecimal(JsonPath.read(json, "$.total").toString()));
-        for (int c = 0; c < 4; c++) {
+        for (int c = 0; c < 5; c++) {
             List<Number> lines = JsonPath.read(json, "$.categories[" + c + "].lines[*].amount");
             BigDecimal lineSum = lines.stream().map(n -> new BigDecimal(n.toString())).reduce(BigDecimal.ZERO, BigDecimal::add);
             assertThat(lineSum).isEqualByComparingTo(new BigDecimal(JsonPath.read(json, "$.categories[" + c + "].amount").toString()));
@@ -165,7 +165,7 @@ class ReportApiIntegrationTest {
                 .andExpect(jsonPath("$.profit.marginPct").doesNotExist());
         mockMvc.perform(get(REPORTS + "/projects/" + empty + "/cost-breakdown"))
                 .andExpect(jsonPath("$.total").value(0))
-                .andExpect(jsonPath("$.categories.length()").value(4))
+                .andExpect(jsonPath("$.categories.length()").value(5))
                 .andExpect(jsonPath("$.categories[0].lines.length()").value(0));
         mockMvc.perform(get(REPORTS + "/projects/999999999/financial")).andExpect(status().isNotFound());
         mockMvc.perform(get(REPORTS + "/projects/999999999/cost-breakdown")).andExpect(status().isNotFound());

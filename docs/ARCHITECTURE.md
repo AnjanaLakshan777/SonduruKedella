@@ -130,8 +130,16 @@ Shared packages:
       The movement, layers, allocations, project cost and activity entry therefore change together or not at all. The arithmetic lives in the pure `FifoCosting` class.
     - Concurrency: the material row lock serialises every posting for one material. Two issues can never draw the same layer quantity, receipts queue as layers in posting (`id`) order, and concurrent returns are checked against the remaining quantity one at a time. The database backs this up: the V1 return trigger, and the V4 reversal trigger, which locks the draw being reversed. A resent `requestId` returns the first movement and writes no new allocations.
     - Cost boundary: buying into stock (`RECEIVED`) is stock value (a layer), not a project cost and not an expense. Issuing (`ISSUED`) is what makes material a project cost, at the FIFO cost fixed on the movement and its allocations; later purchase prices never change it. Returning (`RETURNED`) reverses it at that same cost. Manual `Materials` expenses and `PROJECT` supplier invoices are separate sources, so no purchase is counted twice. Movements posted before FIFO (`costing_method = WAC`) keep the average cost they were posted at.
-    - Receipts create no supplier payable; credit purchases are meant for supplier invoices, which are not built yet.
-  - Suppliers (implemented): the supplier directory (`/api/v1/suppliers`). It reads only the default credit period from `settings.CompanyProfileService`, and nothing it does reaches into other modules. `expenses` depends on it, never the reverse: a supplier's expenses are listed with `GET /api/v1/expenses?supplierId=`. Suppliers are deactivated, never deleted. Supplier invoices, supplier payments and payables are not implemented yet.
+    - A manual receipt creates no supplier payable; credit purchases go through supplier invoices, whose STOCK lines post their receipts through `receiveInvoiceLine`.
+  - Suppliers (implemented): the supplier directory (`/api/v1/suppliers`). It reads only the default credit period from `settings.CompanyProfileService`, and nothing it does reaches into other modules. `expenses` depends on it, never the reverse: a supplier's expenses are listed with `GET /api/v1/expenses?supplierId=`. Suppliers are deactivated, never deleted.
+  - Supplier invoices and payables (implemented 2026-10-25, `/api/v1/supplier-invoices`, `SupplierInvoiceService`):
+    - Saving an invoice is one transaction: invoice, lines and the optional first payment.
+    - A `STOCK` invoice also posts each line as a FIFO receipt through `StockMovementService.receiveInvoiceLine` (`MANDATORY`). Each receipt is linked to its line by the V1 key. The line must name the material and use the material's unit, and the price becomes the layer's unit cost.
+    - A `PROJECT` invoice (construction projects only) is that project's material cost and posts no stock.
+    - `inventory` already reads the supplier directory (`SupplierService`), so the invoice service is a separate bean and there is no bean cycle.
+    - Payments lock the invoice row (no overpayment under concurrency), use `request_id` idempotency, and are voided, never deleted.
+    - Invoices are not edited or deleted. A resent invoice hits the unique (supplier, invoice no) key and gets a 409.
+    - Cost boundary: `STOCK` invoices are stock value, never cost; `PROJECT` invoices are cost; payments only settle the payable.
   - Expenses (implemented): `expenses` checks a project through `ProjectService.get`, categories through `ExpenseCategoryService.findById`, units through `MeasurementUnitService`, payment methods through `PaymentMethodService` and suppliers through `SupplierService.find` and `findNames`, never their repositories. Nothing imports `expenses`. Creating an expense (with an optional first payment), editing one, and recording or voiding a payment each run in one transaction, together with the `EXPENSE` activity entry, with the expense row locked for payments and edits. It stores only manual costs; labour, commission, supplier invoices and stock issues stay in their own modules, so nothing is counted twice.
   - Billing, receipts, write-offs and delay deductions (implemented):
     - Endpoints that need a project live in `projects` (`ProjectRevenueController`, `ProjectRevenueService`). They check the project exists, so an unknown one is a 404. For deductions they pass a `revenue.dto.ProjectFacts` (id, type code, contract value, actual completion) into `revenue`. `revenue` never imports `projects`.
@@ -157,6 +165,7 @@ Rule-heavy figures always come from the owning module's service. `reports.reposi
 | Receivables outstanding, overdue, aging | `ReceivableService` (`summary`, `forProject`, `billedReceivables`) | as of today (Colombo) |
 | Manual expenses | `ExpenseService.summary` (expenses are never voided; payments don't change cost) | `expense_date` |
 | Materials (per project) | `StockMovementService.projectUsage`: issued − returned at the FIFO cost fixed on each movement | movement date |
+| Supplier invoices | `SupplierInvoiceService` (`forProject`, `summary`): PROJECT invoices are project material cost; STOCK invoices are stock purchases (not cost) | `invoice_date` |
 | Materials (company, by period) | `ReportQueries.materialUse`: the same movement costs | `movement_date` |
 | Labour (per project) | `PayrollService.projectLabour`: frozen split + corrections + open weeks priced live | payroll week |
 | Labour (company, by period) | `PayrollService.weeks`: labour cost = gross pay + corrections | weeks whose Monday falls in the range |
@@ -166,7 +175,7 @@ Rule-heavy figures always come from the owning module's service. `reports.reposi
 | Inventory value | `MaterialService.valuation` and `search`: Σ remaining value of open FIFO layers | as of today |
 
 ### Project figures
-- Project costs = manual project expenses + materials (issued − returned) + labour + confirmed commission.
+- Project costs = manual project expenses + materials (issued − returned) + PROJECT supplier invoices + labour + confirmed commission.
 - Profit = revenue recorded − written off − project costs. This is the rule in DATABASE.md "Profitability" and the frontend's `finance.ts`.
 - The basis is `RECORDED` when the project is `COMPLETED`, otherwise `ESTIMATED`.
 - Margin = profit ÷ revenue recorded × 100, rounded half-up to 2 places. It is null when nothing has been billed.
@@ -192,8 +201,11 @@ Rule-heavy figures always come from the owning module's service. `reports.reposi
 - Ranges (`financial-summary`, `payroll`) need both dates and are at most 366 days.
 
 ### Not available yet (and not shown as zero)
-- Supplier invoices (`PROJECT` invoices as material cost, supplier payables) and other income are in the schema but not built.
-- Each report lists them in `notIncluded` / `excluded` rather than returning a misleading 0.
+- Other income is in the schema but not built. Each report lists it in `notIncluded` rather than returning a misleading 0.
+- Supplier invoices are counted since 2026-10-25:
+  - `PROJECT` invoices are a project cost category (`supplierInvoices`, cost-breakdown `SUPPLIER_INVOICES`).
+  - Outstanding supplier invoices appear in the dashboard payables and in the summary's position.
+  - The summary shows stock purchases and project invoices separately (date basis `invoice_date`).
 
 ## Financial Integrity
 - Use BigDecimal for Java monetary calculations.

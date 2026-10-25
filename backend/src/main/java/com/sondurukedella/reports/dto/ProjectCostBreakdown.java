@@ -21,5 +21,5 @@ public record ProjectCostBreakdown(
     public record Line(String label, BigDecimal amount, Long count) {
     }
 
-    public enum CostCategory { MANUAL_EXPENSES, MATERIALS, LABOUR, COMMISSION }
+    public enum CostCategory { MANUAL_EXPENSES, MATERIALS, SUPPLIER_INVOICES, LABOUR, COMMISSION }
 }

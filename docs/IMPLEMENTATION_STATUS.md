@@ -50,7 +50,7 @@ Required by the owner's decisions. Unticked items are not yet made. See docs/DAT
 - [x] Contract payment schedules and receipts (2026-10-24): schedule created with the project and readable; billing; client receipts (idempotent, voidable); write-offs (create only); delay deductions (apply and reverse); receivables per project and a company-wide summary. Not yet: editing a schedule, variations, write-off reversal (needs a migration).
 - [ ] Revenue and expenses. Partial (2026-10-24): project revenue is recognised at billing, and manual project and company expenses with their payments are implemented. Other income is not implemented.
 - [x] Commission management (2026-10-25, backend): per-project recipient arrangements (draft, confirm with stored amount, policy warning and owner exception), voids with a reason, payments (partial, idempotent, voidable), the directory, summary, by-recipient and payment views. The frontend still runs on its local store. See the completion log, "Commissions".
-- [ ] Suppliers and payables. Partial (2026-10-24): the supplier directory (create, list or search, get, edit, activate or deactivate) and the optional supplier link on expenses. Supplier invoices, supplier payments and payables are not implemented.
+- [x] Suppliers and payables (2026-10-25): the supplier directory, the supplier link on expenses, supplier invoices (STOCK into FIFO stock, PROJECT as project material cost) and supplier payments (partial, idempotent, voidable). See the completion log, "Supplier invoices and payables".
 - [x] Inventory and stock movements (2026-10-24): the materials catalogue; receipts, issues to construction projects, returns against the original issue and adjustments, costed FIFO from persistent cost layers with issue allocations (changed from the weighted average the same day, migration V4); balances, valuation, movement history and project material usage. Receipts from supplier invoices are not built yet.
 - [x] Employee attendance, overtime, advances, and payroll (2026-10-24, backend): employees, the attendance register, overtime and approval, advances, weekly payroll worked out live, payments that freeze the week, closing a zero week, corrections, history, period summaries and project labour cost. The frontend still runs on its local store.
 - [x] Financial reports (2026-10-25, backend): dashboard, financial summary, project financials and cost breakdown, receivables aging, inventory valuation and payroll weeks, all read-only. Supplier payables wait for supplier invoices. See the completion log, "Reports and dashboard".
@@ -1036,3 +1036,49 @@ For each completed task, record the date, files or migrations changed, verificat
   - **No combined period profit:** revenue is recognised at billing while costs carry their own dates, so the summary keeps them apart. Project profit is per project, to date.
   - **Scale:** receivables, the dashboard's project totals and payroll weeks are computed in memory (see ARCHITECTURE.md). That is fine at this company's volume.
   - **Frontend:** not connected yet. The UI's dashboard "Expenses" series also included stock, payroll and commission lines; the API's monthly series is manual expenses only, and named so.
+
+### 2026-10-25: Supplier invoices and payables
+- No migration: `supplier_invoices`, `supplier_invoice_lines` and `supplier_payments` already existed in V1.
+- Rules (from DATABASE.md):
+  - The total is the sum of the lines; each line = round(quantity × unit price, 2).
+  - The due date defaults to invoice date + the supplier's credit days.
+  - (supplier, invoice no) is unique: a resent invoice gets a 409.
+  - The supplier must be active.
+  - **`STOCK`:**
+    - every line names a material in that material's own unit;
+    - each line is posted as a FIFO receipt (its own layer at the line price), linked to the line;
+    - it is stock value, not a cost.
+  - **`PROJECT`:**
+    - construction projects only;
+    - the total is that project's material cost;
+    - no stock movement.
+  - **Payments:**
+    - partial or full, never above what is owed;
+    - `requestId` idempotency (resend → 200, a different body → 409);
+    - voidable with a reason;
+    - the invoice row is locked, so concurrent payments can't overpay.
+  - Invoices are not edited or deleted.
+- Endpoints (both roles; CSRF on writes):
+
+  | Method and path | Purpose |
+  | --- | --- |
+  | POST `/api/v1/supplier-invoices` | create (optional `initialPayment`), 201 |
+  | GET `/api/v1/supplier-invoices` | list (`supplierId`, `projectId`, `allocation`, `status`, `from`/`to` on invoice date), newest first |
+  | GET `/api/v1/supplier-invoices/summary` | count, total, stock total, project total, paid, outstanding, overdue |
+  | GET `/api/v1/supplier-invoices/{id}` | invoice, lines and payments |
+  | GET/POST `/api/v1/supplier-invoices/{id}/payments` | list / record (201 new, 200 resend) |
+  | POST `/api/v1/supplier-invoices/{id}/payments/{paymentId}/void` | void |
+
+- Reports:
+  - `PROJECT` invoices are now a project cost (`costs.supplierInvoices`, cost-breakdown category `SUPPLIER_INVOICES`).
+  - The dashboard payables have a `suppliers` field.
+  - The financial summary has a `supplierInvoices` block (stock purchases vs project invoices, `invoice_date`) and `position.suppliersOutstanding`.
+  - "Supplier invoices" was removed from `notIncluded`.
+- Changes outside `suppliers`:
+  - `inventory`: `Posting` carries an invoice line id; `StockMovement` now writes `supplier_invoice_line_id` / `invoice_allocation`; new `StockMovementService.receiveInvoiceLine` and the `InvoiceLineReceipt` record.
+  - `reports`: the fields above.
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-25): 73 classes, 637 tests, 0 failures, 0 errors, 0 skipped (629 before).
+  - `SupplierInvoiceApiIntegrationTest` (7): stock receipts and valuation, project cost, validation, duplicates, payments, idempotency and voids, initial payment and overdue, summary separation.
+  - `SupplierPaymentConcurrencyIntegrationTest` (1, committed): five concurrent payments, only two fit.
+  - `ReportApiIntegrationTest` updated for the new category.
+- Not built: invoice attachments (the V1 columns stay empty), editing or cancelling an invoice, and the warning when a manual expense matches a supplier invoice number.

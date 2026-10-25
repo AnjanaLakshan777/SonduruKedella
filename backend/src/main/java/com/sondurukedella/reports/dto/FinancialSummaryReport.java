@@ -12,6 +12,7 @@ public record FinancialSummaryReport(
         Revenue revenue,
         Expenses expenses,
         Materials materials,
+        SupplierInvoices supplierInvoices,
         Labour labour,
         Commission commission,
         Position position) {
@@ -32,6 +33,11 @@ public record FinancialSummaryReport(
     public record Materials(BigDecimal issued, BigDecimal returned, BigDecimal net) {
     }
 
+    // invoice_date. stockPurchases go into stock (stock value, not a cost); projectInvoices are goods
+    // delivered to projects (project material cost). total = both, i.e. what suppliers billed.
+    public record SupplierInvoices(long count, BigDecimal stockPurchases, BigDecimal projectInvoices, BigDecimal total) {
+    }
+
     // Payroll weeks whose Monday falls in the range (PayrollService.weeks). labourCost = gross pay +
     // corrections; advances and payments are never cost. remainingPayable is still owed for weeks whose
     // payday has passed; remainingNotYetDue is for weeks not yet payable. firstWeek/lastWeek are null
@@ -47,6 +53,6 @@ public record FinancialSummaryReport(
 
     // As of asOf (today): balances, not period figures.
     public record Position(LocalDate asOf, BigDecimal receivablesOutstanding, BigDecimal receivablesOverdue,
-            BigDecimal expensesOutstanding, BigDecimal commissionOutstanding, BigDecimal inventoryValue) {
+            BigDecimal expensesOutstanding, BigDecimal suppliersOutstanding, BigDecimal commissionOutstanding, BigDecimal inventoryValue) {
     }
 }

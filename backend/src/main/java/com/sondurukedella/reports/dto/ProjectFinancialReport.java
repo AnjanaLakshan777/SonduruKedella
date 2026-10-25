@@ -34,16 +34,18 @@ public record ProjectFinancialReport(
     // Project costs, each from its own module, counted once:
     //   manualExpenses  Expenses module, PROJECT scope (no labour or commission category can be used)
     //   materials       Inventory: issued − returned to this project at the FIFO cost fixed on each movement
+    //   supplierInvoices  Suppliers: PROJECT invoices (goods delivered straight to the site)
     //   labour          Payroll: frozen weeks' split + corrections + open weeks priced live (labourOpenWeeks)
     //   commission      Commissions: confirmed arrangements' stored amounts (drafts and voids excluded)
     // Purchases into stock, payroll advances and payments, and commission payments are never costs.
     public record Costs(
             BigDecimal manualExpenses,
             BigDecimal materials,
+            BigDecimal supplierInvoices,
             BigDecimal labour,
             BigDecimal labourOpenWeeks,     // the part of labour from unpaid weeks, which can still change
             BigDecimal commission,
-            BigDecimal total) {             // the sum of the four above, to the cent
+            BigDecimal total) {             // the sum of the five above, to the cent
     }
 
     public record Commission(BigDecimal committed, BigDecimal paid, BigDecimal outstanding, BigDecimal draftAmount) {

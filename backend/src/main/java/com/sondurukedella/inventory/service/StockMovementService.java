@@ -7,6 +7,7 @@ import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.common.exception.NotFoundException;
 import com.sondurukedella.common.money.Money;
 import com.sondurukedella.common.web.PageResponse;
+import com.sondurukedella.inventory.dto.InvoiceLineReceipt;
 import com.sondurukedella.inventory.dto.CostAllocationResponse;
 import com.sondurukedella.inventory.dto.CostLayerResponse;
 import com.sondurukedella.inventory.dto.MovementFilter;
@@ -59,6 +60,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 // Receipts, issues, returns and adjustments, costed FIFO. Each one: lock the material row, check the
@@ -111,8 +113,26 @@ public class StockMovementService {
         StockMovement saved = ledger.addLayer(material, new Posting(material.getId(), request.date(), MovementType.RECEIVED,
                 request.quantity(), unitCost, FifoCosting.receiptCost(request.quantity(), unitCost), null, null,
                 InventoryRules.trimToNull(request.notes()), InventoryRules.trimToNull(request.reference()),
-                request.supplierId(), request.requestId()), CostLayerOrigin.RECEIPT);
+                request.supplierId(), request.requestId(), null), CostLayerOrigin.RECEIPT);
         return new MovementResult(toResponse(saved), true);
+    }
+
+    // A STOCK supplier invoice line becomes one receipt: its own FIFO layer at the line's price, linked
+    // to the line (the V1 key allows one receipt per line, and only for STOCK lines of that material).
+    // Stock value, not a project cost. MANDATORY: only as part of saving the invoice.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public StockMovementResponse receiveInvoiceLine(InvoiceLineReceipt line) {
+        Material material = lock(line.materialId());
+        requireActive(material);
+        if (material.getUnitId() != line.unitId()) {
+            throw new InvalidRequestException(material.getName() + " is kept in " + units.findNames(List.of(material.getUnitId()))
+                    .get(material.getUnitId()) + "; enter the line in that unit.");
+        }
+        BigDecimal unitCost = line.unitPrice().setScale(FifoCosting.UNIT_COST_SCALE);
+        StockMovement saved = ledger.addLayer(material, new Posting(material.getId(), line.date(), MovementType.RECEIVED,
+                line.quantity(), unitCost, FifoCosting.receiptCost(line.quantity(), unitCost), null, null, null,
+                line.invoiceNo(), line.supplierId(), null, line.invoiceLineId()), CostLayerOrigin.RECEIPT);
+        return toResponse(saved);
     }
 
     @Transactional
@@ -143,7 +163,7 @@ public class StockMovementService {
         StockMovement saved = ledger.drawFifo(material, new Posting(material.getId(), request.date(), MovementType.ISSUED,
                 request.quantity().negate(), null, null, project.id(), null,
                 InventoryRules.trimToNull(request.notes()), InventoryRules.trimToNull(request.reference()), null,
-                request.requestId()));
+                request.requestId(), null));
         activityService.record(project.id(), ActivityKind.EXPENSE, "Materials issued: " + InventoryRules.quantity(request.quantity())
                 + " " + unitName(material) + " " + material.getName() + " (" + Money.format(saved.getTotalCost().negate()) + ").");
         return new MovementResult(toResponse(saved), true);
@@ -179,7 +199,7 @@ public class StockMovementService {
         }
         Posting posting = new Posting(material.getId(), request.date(), MovementType.RETURNED, request.quantity(), null, null,
                 issue.getProjectId(), issue.getId(), InventoryRules.trimToNull(request.notes()),
-                InventoryRules.trimToNull(request.reference()), null, request.requestId());
+                InventoryRules.trimToNull(request.reference()), null, request.requestId(), null);
         StockMovement saved;
         if (issue.getCostingMethod() == CostingMethod.FIFO) {
             saved = ledger.returnToLayers(material, issue, posting);
@@ -209,7 +229,7 @@ public class StockMovementService {
         requireActive(material);
 
         Posting posting = new Posting(material.getId(), request.date(), MovementType.ADJUSTMENT, request.quantityChange(),
-                null, null, null, null, reason, InventoryRules.trimToNull(request.reference()), null, request.requestId());
+                null, null, null, null, reason, InventoryRules.trimToNull(request.reference()), null, request.requestId(), null);
         StockMovement saved;
         if (request.quantityChange().signum() < 0) {
             if (request.unitCost() != null) {

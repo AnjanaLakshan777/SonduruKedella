@@ -45,6 +45,10 @@ import com.sondurukedella.revenue.dto.ReceivableTotals;
 import com.sondurukedella.revenue.dto.ReceivablesSummaryResponse;
 import com.sondurukedella.revenue.service.ReceivableService;
 import com.sondurukedella.settings.service.CompanyProfileService;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceFilter;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceResponse;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceSummary;
+import com.sondurukedella.suppliers.service.SupplierInvoiceService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -85,10 +89,8 @@ public class ReportService {
     public static final int MAX_PAGE_SIZE = 100;
     public static final Set<String> RECEIVABLE_SORTS = Set.of("daysOverdue", "dueDate", "outstanding", "billedOn", "project");
 
-    // supplier invoices and other income are in the schema but not built, so they can't be counted yet
-    static final List<String> NOT_BUILT = List.of(
-            "Supplier invoices (PROJECT invoices as material cost, payables) are not implemented yet.",
-            "Other income is not implemented yet, so it is not in revenue.");
+    // other income is in the schema but not built, so it can't be counted yet
+    static final List<String> NOT_BUILT = List.of("Other income is not implemented yet, so it is not in revenue.");
 
     private final ProjectService projectService;
     private final ReceivableService receivableService;
@@ -97,6 +99,7 @@ public class ReportService {
     private final MaterialService materialService;
     private final PayrollService payrollService;
     private final CommissionService commissionService;
+    private final SupplierInvoiceService supplierInvoiceService;
     private final CompanyProfileService companyProfile;
     private final ReportQueries queries;
     private final Clock clock;
@@ -120,6 +123,9 @@ public class ReportService {
         categories.add(category(CostCategory.MATERIALS, usage.materials().stream()
                 .map(m -> new Line(m.name() + " (" + m.sku() + ")", m.netCost(), null)).toList()));
 
+        categories.add(category(CostCategory.SUPPLIER_INVOICES, supplierInvoiceService.forProject(projectId).stream()
+                .map(i -> new Line(i.invoiceNo() + " (" + i.supplierName() + ")", i.total(), 1L)).toList()));
+
         ProjectLabourResponse labour = payrollService.projectLabour(projectId);
         List<Line> labourLines = new ArrayList<>();
         labourLines.add(new Line("Paid weeks (frozen split)", Money.amount(labour.paidWeeks()), null));
@@ -136,11 +142,11 @@ public class ReportService {
         BigDecimal total = Money.amount(categories.stream().map(Category::amount).reduce(BigDecimal.ZERO, BigDecimal::add));
         List<String> excluded = new ArrayList<>(List.of(
                 "Company-level expenses (not a project cost).",
-                "Stock purchases (stock value until issued; only issues less returns are project cost).",
+                "Stock purchases, including STOCK supplier invoices (stock value until issued; only issues less returns are project cost).",
+                "Supplier payments (they settle invoices; the PROJECT invoice is the cost).",
                 "Payroll advances and payroll payments (cash, not cost; labour is gross wages).",
                 "Commission payments, drafts and voided arrangements (only confirmed arrangements are cost).",
                 "Stock adjustments (they change stock value, not a project's cost)."));
-        excluded.addAll(NOT_BUILT.subList(0, 1));
         return new ProjectCostBreakdown(today(), ref(project), categories, total, excluded);
     }
 
@@ -196,7 +202,8 @@ public class ReportService {
                 new DashboardReport.Receivables(receivables.outstanding(), receivables.overdue(), receivables.openInstallments(),
                         receivables.overdueInstallments()),
                 new DashboardReport.ProjectResults(Money.amount(projectCosts), Money.amount(projectProfit), expenses.companyTotal()),
-                new DashboardReport.Payables(expenses.outstanding(), commissions.outstanding()),
+                new DashboardReport.Payables(expenses.outstanding(), supplierInvoiceService.summary(allInvoices(null, null)).outstanding(),
+                        commissions.outstanding()),
                 materialService.valuation().stockValue(),
                 fyStart, months, NOT_BUILT);
     }
@@ -214,16 +221,19 @@ public class ReportService {
         ExpenseSummaryResponse allTime = expenseService.summary(allExpenses(null, null));
         CommissionSummaryResponse commissions = commissionService.summary(null);
         InventoryValuationResponse stock = materialService.valuation();
+        SupplierInvoiceSummary invoices = supplierInvoiceService.summary(allInvoices(from, to));
+        SupplierInvoiceSummary allInvoices = supplierInvoiceService.summary(allInvoices(null, null));
 
         return new FinancialSummaryReport(from, to,
                 new FinancialSummaryReport.Revenue(billing.installments(), billing.billed(), billing.deductions(), billing.net(),
                         receipts.count(), receipts.amount(), queries.writeOffs(from, to).amount()),
                 new FinancialSummaryReport.Expenses(expenses.count(), expenses.projectTotal(), expenses.companyTotal(), expenses.total()),
                 new FinancialSummaryReport.Materials(materials.issued(), materials.returned(), materials.net()),
+                new FinancialSummaryReport.SupplierInvoices(invoices.count(), invoices.stockTotal(), invoices.projectTotal(), invoices.total()),
                 labour(payrollWeeks(from, to)),
                 new FinancialSummaryReport.Commission(confirmed.count(), confirmed.amount(), queries.commissionPaid(from, to).amount()),
                 new FinancialSummaryReport.Position(today(), receivables.outstanding(), receivables.overdue(), allTime.outstanding(),
-                        commissions.outstanding(), stock.stockValue()));
+                        allInvoices.outstanding(), commissions.outstanding(), stock.stockValue()));
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -290,12 +300,14 @@ public class ReportService {
         BigDecimal manual = expenseService.summary(new ExpenseFilter(null, ExpenseScope.PROJECT, id, null, null, null, null, null, null))
                 .projectTotal();
         BigDecimal materials = stockService.projectUsage(id).netCost();
+        BigDecimal invoiced = Money.amount(supplierInvoiceService.forProject(id).stream().map(SupplierInvoiceResponse::total)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
         ProjectLabourResponse labour = payrollService.projectLabour(id);
         ProjectCommissionsResponse commissions = commissionService.forProject(id);
         CommissionTotals commission = commissions.totals();
 
         BigDecimal labourTotal = Money.amount(labour.total());
-        BigDecimal total = Money.amount(manual.add(materials).add(labourTotal).add(commission.committed()));
+        BigDecimal total = Money.amount(manual.add(materials).add(invoiced).add(labourTotal).add(commission.committed()));
         BigDecimal profit = Money.amount(revenue.revenueRecognised().subtract(revenue.writtenOff()).subtract(total));
         BigDecimal margin = revenue.revenueRecognised().signum() > 0
                 ? profit.multiply(BigDecimal.valueOf(100)).divide(revenue.revenueRecognised(), 2, RoundingMode.HALF_UP)
@@ -305,7 +317,7 @@ public class ReportService {
         return new ProjectFinancialReport(today(), ref(project), project.contractValue(),
                 new ProjectFinancialReport.Revenue(revenue.billed(), revenue.deductions(), revenue.revenueRecognised(), revenue.received(),
                         revenue.writtenOff(), revenue.outstanding(), revenue.overdue(), revenue.unbilled()),
-                new ProjectFinancialReport.Costs(Money.amount(manual), Money.amount(materials), labourTotal,
+                new ProjectFinancialReport.Costs(Money.amount(manual), Money.amount(materials), invoiced, labourTotal,
                         Money.amount(labour.openWeeks()), commission.committed(), total),
                 new ProjectFinancialReport.Commission(commission.committed(), commission.paid(), commission.outstanding(), commission.pendingAmount()),
                 new ProjectFinancialReport.Profit(profit, margin, basis),
@@ -395,6 +407,10 @@ public class ReportService {
         int month = companyProfile.get().financialYearStartMonth();
         LocalDate start = today.withMonth(month).withDayOfMonth(1);
         return start.isAfter(today) ? start.minusYears(1) : start;
+    }
+
+    private static SupplierInvoiceFilter allInvoices(LocalDate from, LocalDate to) {
+        return new SupplierInvoiceFilter(null, null, null, null, from, to);
     }
 
     private static ExpenseFilter allExpenses(LocalDate from, LocalDate to) {

@@ -62,11 +62,11 @@ public class StockMovement {
     @Column(name = "project_id", updatable = false)
     private Long projectId;
 
-    // receipts posted from a STOCK supplier invoice line; that module isn't built yet, so these stay null
-    @Column(name = "supplier_invoice_line_id", insertable = false, updatable = false)
+    // receipts posted from a STOCK supplier invoice line (null for every other movement)
+    @Column(name = "supplier_invoice_line_id", updatable = false)
     private Long supplierInvoiceLineId;
 
-    @Column(name = "invoice_allocation", length = 10, insertable = false, updatable = false)
+    @Column(name = "invoice_allocation", length = 10, updatable = false)
     private String invoiceAllocation;
 
     @Column(name = "returned_from_movement_id", updatable = false)
@@ -120,6 +120,10 @@ public class StockMovement {
         m.reference = posting.reference();
         m.supplierId = posting.supplierId();
         m.requestId = posting.requestId();
+        if (posting.invoiceLineId() != null) {
+            m.supplierInvoiceLineId = posting.invoiceLineId();
+            m.invoiceAllocation = "STOCK";
+        }
         m.costingMethod = CostingMethod.FIFO;
         return m;
     }
@@ -136,12 +140,14 @@ public class StockMovement {
             String reason,
             String reference,
             Long supplierId,
-            UUID requestId) {
+            UUID requestId,
+            // set only for a receipt posted from a STOCK supplier invoice line
+            Long invoiceLineId) {
 
         // issues, returns and negative adjustments are priced from the layers once the posting exists
         public Posting priced(BigDecimal unitCost, BigDecimal totalCost) {
             return new Posting(materialId, date, type, quantityChange, unitCost, totalCost, projectId,
-                    returnedFromMovementId, reason, reference, supplierId, requestId);
+                    returnedFromMovementId, reason, reference, supplierId, requestId, invoiceLineId);
         }
     }
 }

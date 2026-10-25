@@ -39,9 +39,9 @@ public record DashboardReport(
     public record ProjectResults(BigDecimal projectCosts, BigDecimal projectProfit, BigDecimal companyExpenses) {
     }
 
-    // Still owed by the company now: manual expenses and confirmed commission. Payroll is per week,
+    // Still owed by the company now: manual expenses, supplier invoices and confirmed commission. Payroll is per week,
     // see GET /api/v1/reports/payroll.
-    public record Payables(BigDecimal expenses, BigDecimal commission) {
+    public record Payables(BigDecimal expenses, BigDecimal suppliers, BigDecimal commission) {
     }
 
     // revenueRecorded by billed_on, paymentsReceived by payment_date, manualExpenses by expense_date

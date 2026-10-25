@@ -1,0 +1,364 @@
+package com.sondurukedella.suppliers.service;
+
+import com.sondurukedella.activity.entity.ActivityKind;
+import com.sondurukedella.activity.service.ActivityService;
+import com.sondurukedella.common.exception.ConflictException;
+import com.sondurukedella.common.exception.InvalidRequestException;
+import com.sondurukedella.common.exception.NotFoundException;
+import com.sondurukedella.common.money.Money;
+import com.sondurukedella.common.web.PageResponse;
+import com.sondurukedella.inventory.dto.InvoiceLineReceipt;
+import com.sondurukedella.inventory.dto.MaterialResponse;
+import com.sondurukedella.inventory.service.MaterialService;
+import com.sondurukedella.inventory.service.StockMovementService;
+import com.sondurukedella.projects.dto.ProjectResponse;
+import com.sondurukedella.projects.entity.ProjectType;
+import com.sondurukedella.projects.service.ProjectService;
+import com.sondurukedella.settings.service.MeasurementUnitService;
+import com.sondurukedella.settings.service.PaymentMethodService;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceCreateRequest;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceDetail;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceFilter;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceResponse;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceResponse.InvoiceStatus;
+import com.sondurukedella.suppliers.dto.SupplierInvoiceSummary;
+import com.sondurukedella.suppliers.dto.SupplierPaymentRequest;
+import com.sondurukedella.suppliers.dto.SupplierPaymentResponse;
+import com.sondurukedella.suppliers.dto.SupplierPaymentVoidRequest;
+import com.sondurukedella.suppliers.dto.SupplierResponse;
+import com.sondurukedella.suppliers.entity.InvoiceAllocation;
+import com.sondurukedella.suppliers.entity.SupplierInvoice;
+import com.sondurukedella.suppliers.entity.SupplierInvoiceLine;
+import com.sondurukedella.suppliers.entity.SupplierPayment;
+import com.sondurukedella.suppliers.repository.SupplierInvoiceLineRepository;
+import com.sondurukedella.suppliers.repository.SupplierInvoiceRepository;
+import com.sondurukedella.suppliers.repository.SupplierPaymentRepository;
+import com.sondurukedella.suppliers.validation.SupplierText;
+import jakarta.persistence.criteria.Predicate;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+// Supplier invoices (payables) and their payments.
+// - STOCK: each line goes into stock as its own FIFO receipt (StockMovementService.receiveInvoiceLine),
+//   in the same transaction. Stock value, not a cost: cost happens when stock is issued to a project.
+// - PROJECT: goods delivered straight to a construction project. The invoice total is that project's
+//   material cost; no stock movement.
+// - Payments settle the payable, never a cost. Lock the invoice row, request_id idempotency, void only.
+// Invoices are not edited or deleted (a STOCK invoice is already in the ledger); the unique
+// (supplier, invoice no) key makes a resent invoice a 409 instead of a second payable.
+@Service
+@RequiredArgsConstructor
+public class SupplierInvoiceService {
+
+    public static final int MAX_PAGE_SIZE = 100;
+
+    private final SupplierInvoiceRepository invoices;
+    private final SupplierInvoiceLineRepository lines;
+    private final SupplierPaymentRepository payments;
+    private final SupplierService supplierService;
+    private final ProjectService projectService;
+    private final MaterialService materialService;
+    private final StockMovementService stockService;
+    private final MeasurementUnitService units;
+    private final PaymentMethodService paymentMethods;
+    private final ActivityService activityService;
+    private final Clock clock;
+
+    @Transactional
+    public SupplierInvoiceDetail create(SupplierInvoiceCreateRequest request) {
+        SupplierResponse supplier = supplierService.find(request.supplierId())
+                .orElseThrow(() -> new InvalidRequestException("The selected supplier does not exist."));
+        if (!supplier.active()) {
+            throw new InvalidRequestException(supplier.name() + " is inactive and can't take new invoices.");
+        }
+        String invoiceNo = request.invoiceNo().strip();
+        if (invoices.existsBySupplierIdAndInvoiceNo(supplier.id(), invoiceNo)) {
+            throw new ConflictException("Invoice " + invoiceNo + " from " + supplier.name() + " is already recorded.");
+        }
+        Long projectId = project(request);
+        LocalDate dueDate = request.dueDate() != null ? request.dueDate() : request.invoiceDate().plusDays(supplier.creditDays());
+        if (dueDate.isBefore(request.invoiceDate())) {
+            throw new InvalidRequestException("The due date can't be before the invoice date.");
+        }
+
+        List<PlannedLine> planned = new ArrayList<>();
+        for (SupplierInvoiceCreateRequest.Line line : request.lines()) {
+            planned.add(plan(request.allocation(), line, planned.size() + 1));
+        }
+        BigDecimal total = Money.amount(planned.stream().map(PlannedLine::amount).reduce(BigDecimal.ZERO, BigDecimal::add));
+
+        SupplierInvoice invoice = invoices.saveAndFlush(new SupplierInvoice(supplier.id(), invoiceNo, request.invoiceDate(), dueDate,
+                request.allocation(), projectId, total, SupplierText.trimToNull(request.notes())));
+        for (PlannedLine p : planned) {
+            SupplierInvoiceLine saved = lines.saveAndFlush(new SupplierInvoiceLine(invoice.getId(), invoice.getAllocation(), p.lineNo(),
+                    p.materialId(), p.description(), p.quantity(), p.unitId(), p.unitPrice(), p.amount()));
+            if (invoice.getAllocation() == InvoiceAllocation.STOCK) {
+                stockService.receiveInvoiceLine(new InvoiceLineReceipt(saved.getId(), p.materialId(), p.unitId(), invoice.getInvoiceDate(),
+                        p.quantity(), p.unitPrice(), supplier.id(), invoiceNo));
+            }
+        }
+        activityService.record(projectId, ActivityKind.EXPENSE, "Supplier invoice " + invoiceNo + " from " + supplier.name() + ": "
+                + Money.format(total) + (projectId == null ? " (into stock)." : " (delivered to the project)."));
+        if (request.initialPayment() != null) {
+            recordOn(invoice, request.initialPayment());
+        }
+        return detail(invoice);
+    }
+
+    @Transactional(readOnly = true)
+    public SupplierInvoiceDetail get(long id) {
+        return detail(invoices.findById(id).orElseThrow(SupplierInvoiceService::notFound));
+    }
+
+    // Newest invoice first. The status needs the payment totals, so it is filtered after loading the
+    // rows that match the stored fields (a company's invoices are counted in hundreds or thousands).
+    @Transactional(readOnly = true)
+    public PageResponse<SupplierInvoiceResponse> search(SupplierInvoiceFilter filter, Pageable pageable) {
+        if (pageable.getPageSize() > MAX_PAGE_SIZE) {
+            throw new InvalidRequestException("The page size can be at most " + MAX_PAGE_SIZE + ".");
+        }
+        if (pageable.getSort().isSorted()) {
+            throw new InvalidRequestException("Supplier invoices are always listed newest first.");
+        }
+        List<SupplierInvoiceResponse> rows = rows(filter);
+        int size = pageable.getPageSize();
+        int from = (int) Math.min((long) pageable.getPageNumber() * size, rows.size());
+        int to = Math.min(from + size, rows.size());
+        return new PageResponse<>(rows.subList(from, to), pageable.getPageNumber(), size, rows.size(), (rows.size() + size - 1) / size);
+    }
+
+    @Transactional(readOnly = true)
+    public SupplierInvoiceSummary summary(SupplierInvoiceFilter filter) {
+        List<SupplierInvoiceResponse> rows = rows(filter);
+        return new SupplierInvoiceSummary(rows.size(), sum(rows, SupplierInvoiceResponse::total),
+                sum(rows.stream().filter(r -> r.allocation() == InvoiceAllocation.STOCK).toList(), SupplierInvoiceResponse::total),
+                sum(rows.stream().filter(r -> r.allocation() == InvoiceAllocation.PROJECT).toList(), SupplierInvoiceResponse::total),
+                sum(rows, SupplierInvoiceResponse::paid), sum(rows, SupplierInvoiceResponse::outstanding),
+                sum(rows.stream().filter(r -> r.status() == InvoiceStatus.OVERDUE).toList(), SupplierInvoiceResponse::outstanding));
+    }
+
+    // The contract the reports use: a project's PROJECT invoices (its direct material cost).
+    @Transactional(readOnly = true)
+    public List<SupplierInvoiceResponse> forProject(long projectId) {
+        return rows(new SupplierInvoiceFilter(null, projectId, InvoiceAllocation.PROJECT, null, null, null));
+    }
+
+    // Locks the invoice first: concurrent payments queue and can't overpay, and a resent request
+    // finds the payment the first one saved.
+    @Transactional
+    public PaymentResult recordPayment(long invoiceId, SupplierPaymentRequest request) {
+        return recordOn(invoices.findByIdForUpdate(invoiceId).orElseThrow(SupplierInvoiceService::notFound), request);
+    }
+
+    // The only correction a payment allows. The row stays and stops counting.
+    @Transactional
+    public SupplierPaymentResponse voidPayment(long invoiceId, long paymentId, SupplierPaymentVoidRequest request) {
+        SupplierInvoice invoice = invoices.findByIdForUpdate(invoiceId).orElseThrow(SupplierInvoiceService::notFound);
+        SupplierPayment payment = payments.findById(paymentId).filter(p -> p.getInvoiceId() == invoiceId)
+                .orElseThrow(() -> new NotFoundException("Payment not found."));
+        if (payment.isVoided()) {
+            throw new ConflictException("This payment was already voided.");
+        }
+        ConflictException.requireCurrentVersion(request.version(), payment.getVersion());
+        payment.markVoided(OffsetDateTime.now(clock), request.reason().strip());
+        payment = payments.saveAndFlush(payment);
+        activityService.record(invoice.getProjectId(), ActivityKind.EXPENSE, "Supplier payment of " + Money.format(payment.getAmount())
+                + " on invoice " + invoice.getInvoiceNo() + " voided: " + payment.getVoidReason());
+        return toResponse(payment, methodName(payment.getPaymentMethodId()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<SupplierPaymentResponse> listPayments(long invoiceId) {
+        if (!invoices.existsById(invoiceId)) {
+            throw notFound();
+        }
+        return paymentViews(invoiceId);
+    }
+
+    private PaymentResult recordOn(SupplierInvoice invoice, SupplierPaymentRequest request) {
+        Optional<SupplierPayment> previous = payments.findByRequestId(request.requestId());
+        if (previous.isPresent()) {
+            SupplierPayment p = previous.get();
+            boolean same = p.getInvoiceId().equals(invoice.getId()) && p.getAmount().compareTo(request.amount()) == 0
+                    && p.getPaymentDate().equals(request.paymentDate()) && p.getPaymentMethodId().equals(request.paymentMethodId());
+            if (!same) {
+                throw new ConflictException("This request id was already used for a different payment.");
+            }
+            return new PaymentResult(toResponse(p, methodName(p.getPaymentMethodId())), false);
+        }
+        if (!paymentMethods.isActive(request.paymentMethodId())) {
+            throw new InvalidRequestException("Choose a payment method from the Settings list.");
+        }
+        BigDecimal outstanding = invoice.getTotalAmount().subtract(payments.sumActive(invoice.getId())).max(BigDecimal.ZERO);
+        if (request.amount().compareTo(outstanding) > 0) {
+            throw new InvalidRequestException("More than the " + Money.format(outstanding) + " still owed on this invoice.");
+        }
+        SupplierPayment saved = payments.saveAndFlush(new SupplierPayment(invoice.getId(), request.paymentDate(), Money.amount(request.amount()),
+                request.paymentMethodId(), SupplierText.trimToNull(request.reference()), SupplierText.trimToNull(request.notes()),
+                request.requestId()));
+        activityService.record(invoice.getProjectId(), ActivityKind.EXPENSE, "Supplier payment: " + Money.format(saved.getAmount())
+                + " on invoice " + invoice.getInvoiceNo() + ".");
+        return new PaymentResult(toResponse(saved, methodName(saved.getPaymentMethodId())), true);
+    }
+
+    private Long project(SupplierInvoiceCreateRequest request) {
+        if (request.allocation() == InvoiceAllocation.STOCK) {
+            if (request.projectId() != null) {
+                throw new InvalidRequestException("A stock invoice has no project; choose \"Project\" for goods delivered to a site.");
+            }
+            return null;
+        }
+        if (request.projectId() == null) {
+            throw new InvalidRequestException("Choose the project the goods were delivered to.");
+        }
+        ProjectResponse project;
+        try {
+            project = projectService.get(request.projectId());
+        } catch (NotFoundException ex) {
+            throw new InvalidRequestException("The selected project does not exist.");
+        }
+        if (project.type() != ProjectType.CONSTRUCTION) {
+            throw new InvalidRequestException("Supplier invoices can only be delivered to construction projects.");
+        }
+        return project.id();
+    }
+
+    private PlannedLine plan(InvoiceAllocation allocation, SupplierInvoiceCreateRequest.Line line, int lineNo) {
+        String description = SupplierText.trimToNull(line.description());
+        if (line.materialId() != null) {
+            MaterialResponse material;
+            try {
+                material = materialService.get(line.materialId());
+            } catch (NotFoundException ex) {
+                throw new InvalidRequestException("Line " + lineNo + ": the selected material does not exist.");
+            }
+            if (allocation == InvoiceAllocation.STOCK) {
+                if (!material.active()) {
+                    throw new InvalidRequestException("Line " + lineNo + ": " + material.name() + " is inactive.");
+                }
+                if (material.unitId() != line.unitId()) {
+                    throw new InvalidRequestException("Line " + lineNo + ": " + material.name() + " is kept in " + material.unit()
+                            + "; enter the line in that unit.");
+                }
+            }
+            description = description != null ? description : material.name();
+        } else if (allocation == InvoiceAllocation.STOCK) {
+            throw new InvalidRequestException("Line " + lineNo + ": choose the material for a stock invoice.");
+        }
+        if (description == null) {
+            throw new InvalidRequestException("Line " + lineNo + ": enter a description.");
+        }
+        if (!units.isActive(line.unitId())) {
+            throw new InvalidRequestException("Line " + lineNo + ": choose a unit from the Settings list.");
+        }
+        return new PlannedLine(lineNo, line.materialId(), description, line.quantity(), line.unitId(), line.unitPrice(),
+                Money.amount(line.quantity().multiply(line.unitPrice())));
+    }
+
+    private List<SupplierInvoiceResponse> rows(SupplierInvoiceFilter filter) {
+        if (filter.from() != null && filter.to() != null && filter.from().isAfter(filter.to())) {
+            throw new InvalidRequestException("The start date must be on or before the end date.");
+        }
+        List<SupplierInvoice> list = invoices.findAll(matching(filter), Sort.by(Sort.Order.desc("invoiceDate"), Sort.Order.desc("id")));
+        if (list.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, BigDecimal> paid = payments.sumActiveByInvoice(list.stream().map(SupplierInvoice::getId).toList()).stream()
+                .collect(Collectors.toMap(SupplierPaymentRepository.InvoiceTotal::getInvoiceId, SupplierPaymentRepository.InvoiceTotal::getTotal));
+        Map<Long, String> names = supplierService.findNames(list.stream().map(SupplierInvoice::getSupplierId).collect(Collectors.toSet()));
+        LocalDate today = LocalDate.now(clock);
+        return list.stream().map(i -> toResponse(i, names.get(i.getSupplierId()), paid.getOrDefault(i.getId(), BigDecimal.ZERO), today))
+                .filter(r -> filter.status() == null || r.status() == filter.status())
+                .toList();
+    }
+
+    private static Specification<SupplierInvoice> matching(SupplierInvoiceFilter filter) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (filter.supplierId() != null) {
+                predicates.add(cb.equal(root.get("supplierId"), filter.supplierId()));
+            }
+            if (filter.projectId() != null) {
+                predicates.add(cb.equal(root.get("projectId"), filter.projectId()));
+            }
+            if (filter.allocation() != null) {
+                predicates.add(cb.equal(root.get("allocation"), filter.allocation()));
+            }
+            if (filter.from() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("invoiceDate"), filter.from()));
+            }
+            if (filter.to() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("invoiceDate"), filter.to()));
+            }
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private SupplierInvoiceDetail detail(SupplierInvoice invoice) {
+        SupplierInvoiceResponse response = toResponse(invoice, supplierService.findNames(List.of(invoice.getSupplierId())).get(invoice.getSupplierId()),
+                payments.sumActive(invoice.getId()), LocalDate.now(clock));
+        List<SupplierInvoiceLine> rows = lines.findByInvoiceIdOrderByLineNo(invoice.getId());
+        Map<Long, String> unitNames = units.findNames(rows.stream().map(SupplierInvoiceLine::getUnitId).collect(Collectors.toSet()));
+        List<SupplierInvoiceDetail.Line> lineViews = rows.stream().map(l -> new SupplierInvoiceDetail.Line(l.getId(), l.getLineNo(),
+                l.getMaterialId(), l.getDescription(), l.getQuantity(), l.getUnitId(), unitNames.get(l.getUnitId()), l.getUnitPrice(),
+                l.getLineAmount())).toList();
+        return new SupplierInvoiceDetail(response, lineViews, paymentViews(invoice.getId()));
+    }
+
+    private List<SupplierPaymentResponse> paymentViews(long invoiceId) {
+        List<SupplierPayment> list = payments.findByInvoiceIdOrderByPaymentDateAscIdAsc(invoiceId);
+        Map<Long, String> names = paymentMethods.findNames(list.stream().map(SupplierPayment::getPaymentMethodId).collect(Collectors.toSet()));
+        return list.stream().map(p -> toResponse(p, names.get(p.getPaymentMethodId()))).toList();
+    }
+
+    private static SupplierInvoiceResponse toResponse(SupplierInvoice i, String supplierName, BigDecimal paidAmount, LocalDate today) {
+        BigDecimal paid = Money.amount(paidAmount);
+        BigDecimal outstanding = Money.amount(i.getTotalAmount().subtract(paid).max(BigDecimal.ZERO));
+        InvoiceStatus status = outstanding.signum() == 0 ? InvoiceStatus.PAID
+                : i.getDueDate().isBefore(today) ? InvoiceStatus.OVERDUE
+                : paid.signum() > 0 ? InvoiceStatus.PARTIALLY_PAID : InvoiceStatus.UNPAID;
+        return new SupplierInvoiceResponse(i.getId(), i.getSupplierId(), supplierName, i.getInvoiceNo(), i.getInvoiceDate(), i.getDueDate(),
+                i.getAllocation(), i.getProjectId(), Money.amount(i.getTotalAmount()), paid, outstanding, status, i.getNotes(),
+                i.getCreatedAt(), i.getVersion());
+    }
+
+    private static SupplierPaymentResponse toResponse(SupplierPayment p, String method) {
+        return new SupplierPaymentResponse(p.getId(), p.getInvoiceId(), p.getPaymentDate(), p.getAmount(), p.getPaymentMethodId(), method,
+                p.getReference(), p.getNotes(), p.getRequestId(), p.isVoided(), p.getVoidedAt(), p.getVoidReason(), p.getCreatedAt(),
+                p.getVersion());
+    }
+
+    private String methodName(long id) {
+        return paymentMethods.findNames(List.of(id)).get(id);
+    }
+
+    private static <T> BigDecimal sum(List<T> rows, Function<T, BigDecimal> field) {
+        return Money.amount(rows.stream().map(field).reduce(BigDecimal.ZERO, BigDecimal::add));
+    }
+
+    static NotFoundException notFound() {
+        return new NotFoundException("Supplier invoice not found.");
+    }
+
+    private record PlannedLine(int lineNo, Long materialId, String description, BigDecimal quantity, long unitId, BigDecimal unitPrice,
+            BigDecimal amount) {
+    }
+
+    // created is false when an earlier payment with the same requestId was returned instead
+    public record PaymentResult(SupplierPaymentResponse payment, boolean created) {
+    }
+}
