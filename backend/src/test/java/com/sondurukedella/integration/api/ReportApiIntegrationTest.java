@@ -101,7 +101,7 @@ class ReportApiIntegrationTest {
                 .andExpect(jsonPath("$.profit.profit").value(399000.00))
                 .andExpect(jsonPath("$.profit.marginPct").value(68.79))
                 .andExpect(jsonPath("$.profit.basis").value("ESTIMATED"))
-                .andExpect(jsonPath("$.notIncluded.length()").value(1));
+                .andExpect(jsonPath("$.notIncluded.length()").value(0));
 
         // design project: commission only, nothing billed, so no margin
         mockMvc.perform(get(REPORTS + "/projects/" + p2 + "/financial"))

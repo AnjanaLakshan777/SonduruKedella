@@ -19,9 +19,9 @@ public record FinancialSummaryReport(
 
     // billed_on: installments billed in the range, net of applied delay deductions.
     // received: payment_date, active receipts (they may settle billing from earlier periods).
-    // writtenOff: write_off_date.
+    // writtenOff: write_off_date. otherIncome: income_date; otherIncomeReceived: its receipts by payment_date.
     public record Revenue(long installmentsBilled, BigDecimal billedAmount, BigDecimal deductions, BigDecimal revenueRecorded,
-            long receipts, BigDecimal received, BigDecimal writtenOff) {
+            long receipts, BigDecimal received, BigDecimal writtenOff, BigDecimal otherIncome, BigDecimal otherIncomeReceived) {
     }
 
     // expense_date, manual expenses only (ExpenseService.summary)
@@ -52,7 +52,7 @@ public record FinancialSummaryReport(
     }
 
     // As of asOf (today): balances, not period figures.
-    public record Position(LocalDate asOf, BigDecimal receivablesOutstanding, BigDecimal receivablesOverdue,
+    public record Position(LocalDate asOf, BigDecimal receivablesOutstanding, BigDecimal receivablesOverdue, BigDecimal otherIncomeOutstanding,
             BigDecimal expensesOutstanding, BigDecimal suppliersOutstanding, BigDecimal commissionOutstanding, BigDecimal inventoryValue) {
     }
 }

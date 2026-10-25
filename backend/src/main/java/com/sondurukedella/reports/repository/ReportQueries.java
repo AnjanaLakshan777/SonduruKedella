@@ -86,6 +86,12 @@ public class ReportQueries {
                 + RANGE.formatted("payment_date"), from, to);
     }
 
+    // date basis: other_income_receipts.payment_date; voided receipts never count
+    public Total otherIncomeReceipts(LocalDate from, LocalDate to) {
+        return total("SELECT count(*) AS n, coalesce(sum(amount), 0) AS total FROM other_income_receipts WHERE voided_at IS NULL"
+                + RANGE.formatted("payment_date"), from, to);
+    }
+
     // date basis: receivable_write_offs.write_off_date (write-offs can't be reversed)
     public Total writeOffs(LocalDate from, LocalDate to) {
         return total("SELECT count(*) AS n, coalesce(sum(amount), 0) AS total FROM receivable_write_offs WHERE TRUE"

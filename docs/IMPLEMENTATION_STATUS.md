@@ -48,7 +48,7 @@ Required by the owner's decisions. Unticked items are not yet made. See docs/DAT
 - [x] Clients (2026-10-24): create, list (search, type filter, paging), get and update. Financial summaries per client are not included yet; they depend on projects and revenue.
 - [x] Projects (2026-10-24): create (with an inline client, the payment schedule and delay terms, all in one transaction), list, get, status changes, and reading the saved schedule and delay terms. The agreement PDF is handled by the Agreements module.
 - [x] Contract payment schedules and receipts (2026-10-24): schedule created with the project and readable; billing; client receipts (idempotent, voidable); write-offs (create only); delay deductions (apply and reverse); receivables per project and a company-wide summary. Not yet: editing a schedule, variations, write-off reversal (needs a migration).
-- [ ] Revenue and expenses. Partial (2026-10-24): project revenue is recognised at billing, and manual project and company expenses with their payments are implemented. Other income is not implemented.
+- [x] Revenue and expenses (2026-10-26): project revenue recognised at billing, manual project and company expenses with their payments, and other income with its receipts. See the completion log, "Other income".
 - [x] Commission management (2026-10-25, backend): per-project recipient arrangements (draft, confirm with stored amount, policy warning and owner exception), voids with a reason, payments (partial, idempotent, voidable), the directory, summary, by-recipient and payment views. The frontend still runs on its local store. See the completion log, "Commissions".
 - [x] Suppliers and payables (2026-10-25): the supplier directory, the supplier link on expenses, supplier invoices (STOCK into FIFO stock, PROJECT as project material cost) and supplier payments (partial, idempotent, voidable). See the completion log, "Supplier invoices and payables".
 - [x] Inventory and stock movements (2026-10-24): the materials catalogue; receipts, issues to construction projects, returns against the original issue and adjustments, costed FIFO from persistent cost layers with issue allocations (changed from the weighted average the same day, migration V4); balances, valuation, movement history and project material usage. Receipts from supplier invoices are not built yet.
@@ -1082,3 +1082,35 @@ For each completed task, record the date, files or migrations changed, verificat
   - `SupplierPaymentConcurrencyIntegrationTest` (1, committed): five concurrent payments, only two fit.
   - `ReportApiIntegrationTest` updated for the new category.
 - Not built: invoice attachments (the V1 columns stay empty), editing or cancelling an invoice, and the warning when a manual expense matches a supplier invoice number.
+
+### 2026-10-26: Other income
+- No migration: `other_income` and `other_income_receipts` already existed in V1.
+- Lives in the `revenue` module (`OtherIncomeService`, `OtherIncomeController`), which owns those tables.
+- Rules (from DATABASE.md and the frontend's `finance.ts`):
+  - Income is recognised on `income_date`, as the Other Income category, separate from project revenue.
+  - Receipts settle it, never more than is owed.
+  - outstanding = amount − active receipts.
+  - Status: `PAID`, `OVERDUE` (outstanding and past an optional due date), `PARTIALLY_PAID` or `DUE`.
+  - The due date can't be before the income date.
+  - Receipts use `requestId` idempotency (resend → 200, a different body → 409), are voidable with a reason, and lock the income row.
+  - Income is not edited or deleted.
+- Endpoints (both roles; CSRF on writes):
+
+  | Method and path | Purpose |
+  | --- | --- |
+  | POST `/api/v1/other-income` | create, 201 |
+  | GET `/api/v1/other-income` | list (`status`, `from`/`to` on the income date), newest first |
+  | GET `/api/v1/other-income/summary` | count, amount, received, outstanding, overdue |
+  | GET `/api/v1/other-income/{id}` | one record |
+  | GET/POST `/api/v1/other-income/{id}/receipts` | list / record (201 new, 200 resend) |
+  | POST `/api/v1/other-income/{id}/receipts/{receiptId}/void` | void |
+
+- Reports:
+  - New fields:
+    - dashboard: `revenue.otherIncome`, `revenue.otherIncomeReceived`, `receivables.otherIncomeOutstanding`, `receivables.otherIncomeOverdue`;
+    - financial summary: `revenue.otherIncome` (income date), `revenue.otherIncomeReceived` (receipt date), `position.otherIncomeOutstanding`.
+  - Project revenue figures are unchanged. `notIncluded` is now empty.
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-26): 74 classes, 641 tests, 0 failures, 0 errors, 0 skipped (637 before).
+  - `OtherIncomeApiIntegrationTest` (4): receipts with idempotency and voids, validation, overdue and summary, report figures.
+  - `ReportApiIntegrationTest` updated.
+- Not built: editing or deleting an income record.

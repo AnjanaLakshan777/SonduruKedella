@@ -502,7 +502,7 @@ These follow `lib/finance.ts` unless noted.
   The UI counts only payments toward "Partially Paid"; the API also counts write-offs.
 
 **Revenue and received are separate figures**
-- Revenue recognised = `Σ net of billed installments` (dated `billed_on`). Billing is an explicit action and the only thing that recognises revenue. Other income will be added when it is implemented.
+- Revenue recognised = `Σ net of billed installments` (dated `billed_on`). Billing is an explicit action and the only thing that recognises project revenue. Other income (implemented 2026-10-26) is recognised on its `income_date`, reported separately as the Other Income category; its receipts settle it and never add income.
 - Received = `Σ` non-voided client payments. A payment never creates revenue, and a write-off is never money received.
 - "Scheduled, not billed" (`unbilled`) = the amount of unbilled installments. It is expected revenue, not revenue.
 - Company-wide summary (`/api/v1/receivables/summary`): outstanding and overdue over billed installments. "Partially paid" is the outstanding on billed installments with some settlement, overdue ones included, as the Receivables KPI counts it.

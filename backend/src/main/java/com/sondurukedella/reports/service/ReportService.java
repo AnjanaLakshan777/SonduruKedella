@@ -43,6 +43,8 @@ import com.sondurukedella.revenue.dto.InstallmentReceivableResponse;
 import com.sondurukedella.revenue.dto.ReceivableStatus;
 import com.sondurukedella.revenue.dto.ReceivableTotals;
 import com.sondurukedella.revenue.dto.ReceivablesSummaryResponse;
+import com.sondurukedella.revenue.dto.OtherIncomeSummary;
+import com.sondurukedella.revenue.service.OtherIncomeService;
 import com.sondurukedella.revenue.service.ReceivableService;
 import com.sondurukedella.settings.service.CompanyProfileService;
 import com.sondurukedella.suppliers.dto.SupplierInvoiceFilter;
@@ -90,7 +92,8 @@ public class ReportService {
     public static final Set<String> RECEIVABLE_SORTS = Set.of("daysOverdue", "dueDate", "outstanding", "billedOn", "project");
 
     // other income is in the schema but not built, so it can't be counted yet
-    static final List<String> NOT_BUILT = List.of("Other income is not implemented yet, so it is not in revenue.");
+    // every source in the schema is now counted; kept so the field stays in the responses
+    static final List<String> NOT_BUILT = List.of();
 
     private final ProjectService projectService;
     private final ReceivableService receivableService;
@@ -100,6 +103,7 @@ public class ReportService {
     private final PayrollService payrollService;
     private final CommissionService commissionService;
     private final SupplierInvoiceService supplierInvoiceService;
+    private final OtherIncomeService otherIncomeService;
     private final CompanyProfileService companyProfile;
     private final ReportQueries queries;
     private final Clock clock;
@@ -186,6 +190,7 @@ public class ReportService {
         ExpenseSummaryResponse expenses = expenseService.summary(allExpenses(null, null));
         CommissionSummaryResponse commissions = commissionService.summary(null);
 
+        OtherIncomeSummary other = otherIncomeService.summary(null, null, null);
         LocalDate fyStart = financialYearStart(today);
         Map<LocalDate, BigDecimal> revenue = byMonth(queries.revenueByMonth(fyStart, today));
         Map<LocalDate, BigDecimal> received = byMonth(queries.receiptsByMonth(fyStart, today));
@@ -198,9 +203,10 @@ public class ReportService {
 
         return new DashboardReport(today,
                 new DashboardReport.Projects(active, activeByType, byStatus, Money.amount(activeContract)),
-                new DashboardReport.Revenue(billing.net(), queries.receipts(null, null).amount(), queries.writeOffs(null, null).amount()),
+                new DashboardReport.Revenue(billing.net(), queries.receipts(null, null).amount(), queries.writeOffs(null, null).amount(),
+                        other.amount(), other.received()),
                 new DashboardReport.Receivables(receivables.outstanding(), receivables.overdue(), receivables.openInstallments(),
-                        receivables.overdueInstallments()),
+                        receivables.overdueInstallments(), other.outstanding(), other.overdue()),
                 new DashboardReport.ProjectResults(Money.amount(projectCosts), Money.amount(projectProfit), expenses.companyTotal()),
                 new DashboardReport.Payables(expenses.outstanding(), supplierInvoiceService.summary(allInvoices(null, null)).outstanding(),
                         commissions.outstanding()),
@@ -226,13 +232,15 @@ public class ReportService {
 
         return new FinancialSummaryReport(from, to,
                 new FinancialSummaryReport.Revenue(billing.installments(), billing.billed(), billing.deductions(), billing.net(),
-                        receipts.count(), receipts.amount(), queries.writeOffs(from, to).amount()),
+                        receipts.count(), receipts.amount(), queries.writeOffs(from, to).amount(),
+                        otherIncomeService.summary(null, from, to).amount(), queries.otherIncomeReceipts(from, to).amount()),
                 new FinancialSummaryReport.Expenses(expenses.count(), expenses.projectTotal(), expenses.companyTotal(), expenses.total()),
                 new FinancialSummaryReport.Materials(materials.issued(), materials.returned(), materials.net()),
                 new FinancialSummaryReport.SupplierInvoices(invoices.count(), invoices.stockTotal(), invoices.projectTotal(), invoices.total()),
                 labour(payrollWeeks(from, to)),
                 new FinancialSummaryReport.Commission(confirmed.count(), confirmed.amount(), queries.commissionPaid(from, to).amount()),
-                new FinancialSummaryReport.Position(today(), receivables.outstanding(), receivables.overdue(), allTime.outstanding(),
+                new FinancialSummaryReport.Position(today(), receivables.outstanding(), receivables.overdue(),
+                        otherIncomeService.summary(null, null, null).outstanding(), allTime.outstanding(),
                         allInvoices.outstanding(), commissions.outstanding(), stock.stockValue()));
     }
 

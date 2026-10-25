@@ -39,7 +39,7 @@ com.sondurukedella
 └── security      config user auth audit
 ```
 
-Tests in `src/test/java` mirror these packages: `controller`, `service` and `repository` for each business module and `reports`; `service` and `repository` for `activity`; plus `validation` where a module has its own validators (currently `clients`, `projects`, `revenue` and `agreements`), `agreements/storage`, `common`, `security`, `integration/database`, `integration/api` and `support` (shared fixtures).
+Test packages mirror the main packages they test, and exist only where there are tests (no placeholder `package-info.java` files on the test side). Shared test code lives in `support` and `integration/api/ApiFixtures`; database-backed tests are in `integration/database` and `integration/api`.
 
 ## Module Responsibilities
 Tables are listed in `docs/DATABASE.md`.
@@ -201,7 +201,7 @@ Rule-heavy figures always come from the owning module's service. `reports.reposi
 - Ranges (`financial-summary`, `payroll`) need both dates and are at most 366 days.
 
 ### Not available yet (and not shown as zero)
-- Other income is in the schema but not built. Each report lists it in `notIncluded` rather than returning a misleading 0.
+- Other income (since 2026-10-26) is reported apart from project revenue: dashboard `revenue.otherIncome` / `otherIncomeReceived` and `receivables.otherIncomeOutstanding` / `otherIncomeOverdue`; summary `revenue.otherIncome` (`income_date`), `otherIncomeReceived` (receipt `payment_date`) and `position.otherIncomeOutstanding`. `notIncluded` is now empty.
 - Supplier invoices are counted since 2026-10-25:
   - `PROJECT` invoices are a project cost category (`supplierInvoices`, cost-breakdown `SUPPLIER_INVOICES`).
   - Outstanding supplier invoices appear in the dashboard payables and in the summary's position.

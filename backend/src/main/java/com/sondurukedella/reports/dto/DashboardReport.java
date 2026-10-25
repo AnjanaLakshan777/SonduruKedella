@@ -27,11 +27,15 @@ public record DashboardReport(
 
     // All time. revenueRecorded = billed installments net of applied delay deductions (date basis:
     // billed_on). paymentsReceived = active client receipts (payment_date); a write-off is not a payment.
-    public record Revenue(BigDecimal revenueRecorded, BigDecimal paymentsReceived, BigDecimal writtenOff) {
+    // otherIncome (income_date) and otherIncomeReceived (receipt payment_date) are the Other Income category,
+    // kept apart from project revenue.
+    public record Revenue(BigDecimal revenueRecorded, BigDecimal paymentsReceived, BigDecimal writtenOff, BigDecimal otherIncome,
+            BigDecimal otherIncomeReceived) {
     }
 
     // Now, from ReceivableService: billed installments only.
-    public record Receivables(BigDecimal outstanding, BigDecimal overdue, long openInstallments, long overdueInstallments) {
+    public record Receivables(BigDecimal outstanding, BigDecimal overdue, long openInstallments, long overdueInstallments,
+            BigDecimal otherIncomeOutstanding, BigDecimal otherIncomeOverdue) {
     }
 
     // Sum of every project's ProjectFinancialReport: project costs and profit = revenue recorded −
