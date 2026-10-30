@@ -17,6 +17,7 @@ import { Money } from '@/components/app/money'
 import { useStore } from '@/store/store'
 import { addDays, TODAY } from '@/lib/dates'
 import { formatBytes, formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 
 interface Line { key: string; materialId: string; description: string; qty: number | ''; unit: string; unitPrice: number | '' }
 let n = 0
@@ -39,8 +40,10 @@ export default function SupplierInvoiceForm() {
   const [method, setMethod] = useState('Bank Transfer')
   const [reference, setReference] = useState('')
   const [notes, setNotes] = useState('')
-  const [file, setFile] = useState<{ fileName: string; size: number } | undefined>()
+  const [file, setFile] = useState<File | undefined>()
   const [tried, setTried] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [requestId] = useState(() => crypto.randomUUID())
   const fileRef = useRef<HTMLInputElement>(null)
   const supplier = suppliers.find((s) => s.id === supplierId)
   useEffect(() => { if (!dueTouched) setDue(addDays(date, supplier?.creditDays ?? settings.supplierCreditDays)) }, [date, supplier, dueTouched, settings.supplierCreditDays])
@@ -60,15 +63,27 @@ export default function SupplierInvoiceForm() {
   const errs = Object.values(err).filter(Boolean) as string[]
   const set = (key: string, patch: Partial<Line>) => setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
 
-  function save() {
+  async function save() {
     setTried(true)
     if (errs.length) { toast.error('Check the invoice', { description: errs[0] }); return }
-    addSupplierInvoice({
-      supplierId, invoiceNo: invoiceNo.trim(), date, dueDate: due, projectId: alloc === 'project' ? projectId : undefined, notes: notes || undefined, attachment: file,
-      lines: lines.map((l, i) => ({ id: `l${i + 1}`, description: l.description.trim(), materialId: l.materialId || undefined, qty: Number(l.qty), unit: l.unit, unitPrice: Number(l.unitPrice) })),
-    }, paidAmt > 0 ? { amount: paidAmt, method, date, reference: reference || undefined } : undefined)
-    toast.success('Invoice recorded', { description: `${invoiceNo} · ${formatLKR(total)} · ${paidAmt >= total ? 'paid' : `${formatLKR(total - paidAmt)} payable by ${due}`}` })
-    navigate(`/suppliers/${supplierId}`)
+    setBusy(true)
+    let saved = false
+    try {
+      await addSupplierInvoice({
+        supplierId, invoiceNo: invoiceNo.trim(), date, dueDate: due, projectId: alloc === 'project' ? projectId : undefined, notes: notes || undefined,
+        lines: lines.map((l, i) => ({ id: `l${i + 1}`, description: l.description.trim(), materialId: l.materialId || undefined, qty: Number(l.qty), unit: l.unit, unitPrice: Number(l.unitPrice) })),
+      }, paidAmt > 0 ? { requestId, amount: paidAmt, method, date, reference: reference || undefined } : undefined, file, () => { saved = true })
+      toast.success('Invoice recorded', { description: `${invoiceNo} · ${formatLKR(total)} · ${paidAmt >= total ? 'paid' : `${formatLKR(total - paidAmt)} payable by ${due}`}` })
+      navigate(`/suppliers/${supplierId}`)
+    } catch (e) {
+      if (saved) {
+        // the invoice is in; only the file didn't make it
+        toast.warning('Invoice recorded, attachment not uploaded', { description: errorMessage(e) })
+        navigate(`/suppliers/${supplierId}`)
+      } else toast.error('Invoice not recorded', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -125,8 +140,8 @@ export default function SupplierInvoiceForm() {
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <Field label="Notes" optional className="sm:col-span-2"><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
               <Field label="Invoice copy" optional hint="PDF or photo of the invoice, kept privately with the record.">
-                <input ref={fileRef} type="file" hidden accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ fileName: f.name, size: f.size }); e.target.value = '' }} />
-                {file ? <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm"><Paperclip className="text-muted-foreground size-4" /><span className="flex-1 truncate">{file.fileName}</span><span className="text-muted-foreground text-xs">{formatBytes(file.size)}</span><button type="button" aria-label="Remove" onClick={() => setFile(undefined)}><X className="size-4" /></button></div>
+                <input ref={fileRef} type="file" hidden accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); e.target.value = '' }} />
+                {file ? <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm"><Paperclip className="text-muted-foreground size-4" /><span className="flex-1 truncate">{file.name}</span><span className="text-muted-foreground text-xs">{formatBytes(file.size)}</span><button type="button" aria-label="Remove" onClick={() => setFile(undefined)}><X className="size-4" /></button></div>
                   : <Button variant="outline" className="justify-self-start" onClick={() => fileRef.current?.click()}><Paperclip />Attach invoice</Button>}
               </Field>
             </CardContent>
@@ -141,7 +156,7 @@ export default function SupplierInvoiceForm() {
               <FigureList rows={[{ label: 'Total amount', value: total }, { kind: 'less', label: 'Amount paid', value: paidAmt }, { kind: 'highlight', label: 'Outstanding payable', value: Math.max(0, total - paidAmt) }]} />
             </CardContent>
           </Card>
-          <div className="flex gap-2"><Button variant="outline" asChild className="flex-1"><Link to="/suppliers">Cancel</Link></Button><Button className="flex-1" onClick={save}>Save invoice</Button></div>
+          <div className="flex gap-2"><Button variant="outline" asChild className="flex-1"><Link to="/suppliers">Cancel</Link></Button><Button className="flex-1" onClick={save} disabled={busy}>Save invoice</Button></div>
         </aside>
       </div>
     </>

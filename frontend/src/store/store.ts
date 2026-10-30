@@ -2,17 +2,17 @@ import { create } from 'zustand'
 import { useMemo } from 'react'
 import { createSeed } from '@/data/seed'
 import {
-  categoryId, code, emptyState, loadActivity, loadAll, loadClients, loadExpenses, loadOtherIncome, loadProject, mapClient, methodId, unitId, versionOf,
+  categoryId, code, emptyState, loadActivity, loadAll, loadClients, loadExpenses, loadInventory, loadOtherIncome, loadProject, loadSupplierInvoices,
+  loadSuppliers, mapClient, methodId, unitId, versionOf,
 } from '@/data/api-load'
 import type { PaymentInput } from '@/components/app/payment-dialog'
 import { api, apiPost, apiPut } from '@/lib/api'
 import type {
   Advance, Attendance, Client, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
   ExpenseGroup, ExpenseScope, Material, OtherIncome, Overtime, PayrollAdjustment, PayrollPayment, ProjectStatus, ProjectType,
-  Settings, StockMovement, Supplier, SupplierInvoice, SupplierPayment, WriteOff, ActivityEntry,
+  Settings, StockMovement, Supplier, SupplierInvoice, WriteOff, ActivityEntry,
 } from '@/data/types'
 import { derive } from '@/lib/finance'
-import { movementError, replayFifo, type CostedMovement } from '@/lib/fifo'
 import { TODAY } from '@/lib/dates'
 
 let n = 1000
@@ -41,12 +41,14 @@ interface Actions {
   addExpense: (e: ExpenseInput, payment?: PaymentInput) => Promise<{ id: string; warning?: string }>
   updateExpense: (id: string, e: ExpenseInput) => Promise<{ warning?: string }>
   recordExpensePayment: (p: PaymentInput & { expenseId: string }) => Promise<void>
-  addSupplier: (x: New<Supplier>) => string
-  addSupplierInvoice: (inv: New<SupplierInvoice>, payment?: { amount: number; method: string; date: string; reference?: string }) => string
-  recordSupplierPayment: (p: New<SupplierPayment>) => void
-  addMaterial: (m: New<Material>) => void
-  /** Posts to the stock ledger and returns its FIFO cost; throws, saving nothing, if the movement isn't allowed. */
-  addStockMovement: (m: New<StockMovement>) => CostedMovement
+  addSupplier: (x: New<Supplier>) => Promise<string>
+  // the attachment is uploaded after the invoice is saved; if only the upload fails, the invoice stays
+  addSupplierInvoice: (inv: New<SupplierInvoice>, payment?: PaymentInput, file?: File, onSaved?: () => void) => Promise<string>
+  recordSupplierPayment: (p: PaymentInput & { invoiceId: string }) => Promise<void>
+  addMaterial: (m: New<Material>) => Promise<void>
+  // The server costs it FIFO and refuses what isn't allowed (more than in stock, a return beyond the issue...).
+  // requestId: one per dialog opening, so a retry doesn't post twice. qty is signed, as in the ledger.
+  addStockMovement: (m: New<StockMovement> & { requestId: string; notes?: string }) => Promise<{ totalCost: number; projectId?: string }>
   addEmployee: (e: New<Employee>) => void
   updateEmployee: (id: string, patch: Partial<Employee>) => void
   saveAttendance: (date: string, rows: Attendance[]) => void
@@ -156,6 +158,8 @@ export const useStore = create<Store>()((set, get) => {
   const refreshClients = async () => set({ clients: await loadClients() })
   const refreshOtherIncome = async () => set(await loadOtherIncome())
   const refreshExpenses = async () => set(await loadExpenses())
+  const refreshInvoices = async () => set(await loadSupplierInvoices())
+  const refreshInventory = async () => set(await loadInventory())
   const projectOf = (installmentId: string) => {
     const inst = get().installments.find((i) => i.id === installmentId)
     if (!inst) throw new Error('That installment is no longer there. Reload the data.')
@@ -262,37 +266,52 @@ export const useStore = create<Store>()((set, get) => {
       await apiPost(`/expenses/${p.expenseId}/payments`, paymentBody(p))
       await Promise.all([refreshExpenses(), refreshActivity()])
     },
-    addSupplier: (x) => {
-      const id = uid('s')
-      set((s) => ({ suppliers: [...s.suppliers, { ...x, id }] }))
-      return id
+    addSupplier: async (x) => {
+      const saved = await apiPost<{ id: number }>('/suppliers', x)
+      set({ suppliers: await loadSuppliers() })
+      return String(saved.id)
     },
-    addSupplierInvoice: (inv, payment) => {
-      const id = uid('si')
-      set((s) => {
-        // each stock line is a receipt, so a new FIFO layer at its price; the material's default cost is left alone
-        const moves: StockMovement[] = inv.projectId
-          ? []
-          : inv.lines.filter((l) => l.materialId).map((l) => ({ id: uid('sm'), materialId: l.materialId!, date: inv.date, type: 'Received', qty: l.qty, unitCost: l.unitPrice, invoiceId: id, reference: inv.invoiceNo }))
-        return {
-          supplierInvoices: [...s.supplierInvoices, { ...inv, id }],
-          stockMovements: [...s.stockMovements, ...moves],
-          supplierPayments: payment && payment.amount > 0 ? [...s.supplierPayments, { id: uid('sp'), invoiceId: id, ...payment }] : s.supplierPayments,
-        }
+    addSupplierInvoice: async (inv, payment, file, onSaved) => {
+      const saved = await apiPost<{ invoice: { id: number } }>('/supplier-invoices', {
+        supplierId: inv.supplierId, invoiceNo: inv.invoiceNo, invoiceDate: inv.date, dueDate: inv.dueDate,
+        allocation: inv.projectId ? 'PROJECT' : 'STOCK', projectId: inv.projectId, notes: inv.notes,
+        lines: inv.lines.map((l) => ({
+          materialId: inv.projectId ? undefined : l.materialId, description: l.description, quantity: l.qty, unitId: unitId(l.unit), unitPrice: l.unitPrice,
+        })),
+        initialPayment: payment && payment.amount > 0 ? paymentBody(payment) : undefined,
       })
+      const id = String(saved.invoice.id)
+      onSaved?.()
+      try {
+        if (file) {
+          const form = new FormData()
+          form.append('file', file)
+          await api('PUT', `/supplier-invoices/${id}/attachment`, form)
+        }
+      } finally {
+        // a stock invoice also brings stock in, so the ledger changes too
+        await Promise.all([refreshInvoices(), refreshInventory(), refreshActivity()])
+      }
       return id
     },
-    recordSupplierPayment: (p) => set((s) => ({ supplierPayments: [...s.supplierPayments, { ...p, id: uid('sp') }] })),
-    addMaterial: (m) => set((s) => ({ materials: [...s.materials, { ...m, id: uid('m') }] })),
-    addStockMovement: (m) => {
-      const s = get()
-      const mat = s.materials.find((x) => x.id === m.materialId)
-      const problem = movementError(s.stockMovements, m, mat?.unit, mat?.name)
-      if (problem) throw new Error(problem)
-      const posted = { ...m, id: uid('sm') }
-      const stockMovements = [...s.stockMovements, posted]
-      set({ stockMovements })
-      return replayFifo(stockMovements).costed.get(posted.id)!
+    recordSupplierPayment: async (p) => {
+      await apiPost(`/supplier-invoices/${p.invoiceId}/payments`, paymentBody(p))
+      await Promise.all([refreshInvoices(), refreshActivity()])
+    },
+    addMaterial: async (m) => {
+      await apiPost('/inventory/materials', { sku: m.sku, name: m.name, category: m.category, unitId: unitId(m.unit), defaultUnitCost: m.unitCost })
+      await refreshInventory()
+    },
+    addStockMovement: async (m) => {
+      const base = { requestId: m.requestId, date: m.date, reference: m.reference, notes: m.notes }
+      const posted = await apiPost<{ totalCost: number; projectId?: number }>(...(
+        m.type === 'Received' ? ['/inventory/receipts', { ...base, materialId: m.materialId, quantity: m.qty, unitCost: m.unitCost }]
+        : m.type === 'Issued' ? ['/inventory/issues', { ...base, materialId: m.materialId, projectId: m.projectId, quantity: -m.qty }]
+        : m.type === 'Returned' ? ['/inventory/returns', { ...base, issueId: m.returnedFromId, quantity: m.qty }]
+        : ['/inventory/adjustments', { ...base, materialId: m.materialId, quantityChange: m.qty, reason: m.reason, unitCost: m.qty > 0 ? m.unitCost : undefined }]
+      ) as [string, unknown])
+      await Promise.all([refreshInventory(), refreshActivity()])
+      return { totalCost: posted.totalCost, projectId: posted.projectId == null ? undefined : String(posted.projectId) }
     },
     addEmployee: (e) => set((s) => ({ employees: [...s.employees, { ...e, id: uid('w') }] })),
     updateEmployee: (id, patch) => set((s) => ({ employees: s.employees.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),

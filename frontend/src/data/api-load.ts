@@ -135,6 +135,49 @@ export async function loadExpenses(): Promise<{ expenses: Expense[]; expensePaym
   return { expenses: rows.map(mapExpense), expensePayments: payments.filter((p: Row) => !p.voided).map(mapExpensePayment) }
 }
 
+const mapSupplier = (s: Row): Supplier => ({
+  id: String(s.id), name: s.name, contactPerson: s.contactPerson ?? '', phone: s.phone, email: opt(s.email), address: s.address ?? '',
+  supplies: s.supplies ?? '', creditDays: s.creditDays,
+})
+const mapInvoice = ({ invoice: i, lines }: Row): SupplierInvoice => ({
+  id: String(i.id), supplierId: String(i.supplierId), invoiceNo: i.invoiceNo, date: i.invoiceDate, dueDate: i.dueDate,
+  projectId: id(i.projectId), notes: opt(i.notes),
+  attachment: i.attachmentFilename ? { fileName: i.attachmentFilename, size: i.attachmentSize } : undefined,
+  lines: lines.map((l: Row) => ({ id: String(l.id), description: l.description, materialId: id(l.materialId), qty: l.quantity, unit: l.unit, unitPrice: l.unitPrice })),
+})
+const mapInvoicePayments = ({ payments }: Row): SupplierPayment[] => payments.filter((p: Row) => !p.voided).map((p: Row) => ({
+  id: String(p.id), invoiceId: String(p.invoiceId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
+}))
+const mapMaterial = (m: Row): Material => ({
+  id: String(m.id), sku: m.sku, name: m.name, category: m.category, unit: m.unit, unitCost: m.defaultUnitCost,
+  // the owner dropped reorder levels; 0 keeps the old low-stock maths quiet until that UI is removed
+  reorderLevel: 0,
+})
+// FIFO runs in posting order (id), not by date - a backdated issue still takes the oldest layers left
+const mapMovements = (rows: Row[]): StockMovement[] => rows
+  .sort((a: Row, b: Row) => a.id - b.id)
+  .map((m: Row) => {
+    const incoming = m.type === 'RECEIVED' || (m.type === 'ADJUSTMENT' && m.quantityChange > 0)
+    return {
+      id: String(m.id), materialId: String(m.materialId), date: m.date, type: label(m.type) as StockMovement['type'], qty: m.quantityChange,
+      unitCost: incoming ? m.unitCost : undefined, projectId: id(m.projectId), returnedFromId: id(m.returnedFromMovementId),
+      reason: m.type === 'ADJUSTMENT' ? opt(m.notes) : undefined, reference: opt(m.reference),
+    }
+  })
+
+export async function loadSuppliers(): Promise<Supplier[]> {
+  return (await apiGetAll<Row>('/suppliers')).map(mapSupplier)
+}
+export async function loadSupplierInvoices(): Promise<{ supplierInvoices: SupplierInvoice[]; supplierPayments: SupplierPayment[] }> {
+  const live = (await apiGetAll<Row>('/supplier-invoices')).filter((i: Row) => i.status !== 'CANCELLED')
+  const details = await Promise.all(live.map((i: Row) => apiGet<Row>(`/supplier-invoices/${i.id}`)))
+  return { supplierInvoices: details.map(mapInvoice), supplierPayments: details.flatMap(mapInvoicePayments) }
+}
+export async function loadInventory(): Promise<{ materials: Material[]; stockMovements: StockMovement[] }> {
+  const [materials, movements] = await Promise.all([apiGetAll<Row>('/inventory/materials'), apiGetAll<Row>('/inventory/movements')])
+  return { materials: materials.map(mapMaterial), stockMovements: mapMovements(movements) }
+}
+
 // the UI picks categories and units by name; the API wants ids
 const categoryIds = new Map<string, number>()
 const unitIds = new Map<string, number>()
@@ -253,35 +296,11 @@ export async function loadAll(): Promise<DataState> {
   const otherIncomeReceipts: OtherIncomeReceipt[] = incomeReceipts.flat().filter((r: Row) => !r.voided).map(mapIncomeReceipt)
   const expenses: Expense[] = expenseRows.map(mapExpense)
   const expensePayments: ExpensePayment[] = expensePaymentRows.filter((p: Row) => !p.voided).map(mapExpensePayment)
-  const suppliers: Supplier[] = supplierRows.map((s: Row) => ({
-    id: String(s.id), name: s.name, contactPerson: s.contactPerson ?? '', phone: s.phone, email: opt(s.email), address: s.address ?? '',
-    supplies: s.supplies ?? '', creditDays: s.creditDays,
-  }))
-  const supplierInvoices: SupplierInvoice[] = invoiceDetails.map(({ invoice: i, lines }: Row) => ({
-    id: String(i.id), supplierId: String(i.supplierId), invoiceNo: i.invoiceNo, date: i.invoiceDate, dueDate: i.dueDate,
-    projectId: id(i.projectId), notes: opt(i.notes),
-    attachment: i.attachmentFilename ? { fileName: i.attachmentFilename, size: i.attachmentSize } : undefined,
-    lines: lines.map((l: Row) => ({ id: String(l.id), description: l.description, materialId: id(l.materialId), qty: l.quantity, unit: l.unit, unitPrice: l.unitPrice })),
-  }))
-  const supplierPayments: SupplierPayment[] = invoiceDetails.flatMap(({ payments }: Row) => payments.filter((p: Row) => !p.voided).map((p: Row) => ({
-    id: String(p.id), invoiceId: String(p.invoiceId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
-  })))
-  const materials: Material[] = materialRows.map((m: Row) => ({
-    id: String(m.id), sku: m.sku, name: m.name, category: m.category, unit: m.unit, unitCost: m.defaultUnitCost,
-    // the owner dropped reorder levels; 0 keeps the old low-stock maths quiet until that UI is removed
-    reorderLevel: 0,
-  }))
-  // FIFO runs in posting order (id), not by date - a backdated issue still takes the oldest layers left
-  const stockMovements: StockMovement[] = movementRows
-    .sort((a: Row, b: Row) => a.id - b.id)
-    .map((m: Row) => {
-      const incoming = m.type === 'RECEIVED' || (m.type === 'ADJUSTMENT' && m.quantityChange > 0)
-      return {
-        id: String(m.id), materialId: String(m.materialId), date: m.date, type: label(m.type) as StockMovement['type'], qty: m.quantityChange,
-        unitCost: incoming ? m.unitCost : undefined, projectId: id(m.projectId), returnedFromId: id(m.returnedFromMovementId),
-        reason: m.type === 'ADJUSTMENT' ? opt(m.notes) : undefined, reference: opt(m.reference),
-      }
-    })
+  const suppliers: Supplier[] = supplierRows.map(mapSupplier)
+  const supplierInvoices: SupplierInvoice[] = invoiceDetails.map(mapInvoice)
+  const supplierPayments: SupplierPayment[] = invoiceDetails.flatMap(mapInvoicePayments)
+  const materials: Material[] = materialRows.map(mapMaterial)
+  const stockMovements: StockMovement[] = mapMovements(movementRows)
   const employees: Employee[] = employeeRows.map((e: Row) => ({
     id: String(e.id), name: e.name, role: e.role, phone: e.phone ?? '', dailyRate: e.dailyWage, overtimeRate: e.overtimeRate,
     status: label(e.status) as Employee['status'], joinedOn: e.joinedOn, address: opt(e.address),

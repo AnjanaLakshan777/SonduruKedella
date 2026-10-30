@@ -90,7 +90,7 @@ export function InvoiceTable({ rows, showSupplier = true, pageSize = 12 }: { row
         title={`Pay ${payFor?.supplier.name ?? ''}`} description={payFor ? `Invoice ${payFor.invoice.invoiceNo} · due ${formatDate(payFor.invoice.dueDate)}` : undefined}
         context={payFor ? [{ label: 'Invoice total', value: payFor.total }, { kind: 'less', label: 'Already paid', value: payFor.paid }, { kind: 'total', label: 'Outstanding payable', value: payFor.remaining }] : undefined}
         outstanding={payFor?.remaining ?? 0}
-        onSubmit={(p) => payFor && recordSupplierPayment({ invoiceId: payFor.invoice.id, date: p.date, amount: p.amount, method: p.method, reference: p.reference })}
+        onSubmit={(p) => (payFor ? recordSupplierPayment({ invoiceId: payFor.invoice.id, ...p }) : undefined)}
       />
     </>
   )

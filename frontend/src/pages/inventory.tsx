@@ -27,6 +27,7 @@ import { sum, type MaterialView } from '@/lib/finance'
 import { describeAllocations } from '@/lib/fifo'
 import { formatDate, TODAY } from '@/lib/dates'
 import { formatLKR, formatQty } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 import type { MovementType, StockMovement } from '@/data/types'
 import { cn } from '@/lib/utils'
 
@@ -227,7 +228,9 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
   const [reason, setReason] = useState('')
   const [reference, setReference] = useState('')
   const [tried, setTried] = useState(false)
-  useEffect(() => { if (state.open) { setType(state.type ?? 'Issued'); setMaterialId(state.materialId ?? ''); setDate(TODAY); setQty(''); setDirection('remove'); setProjectId(''); setIssueId(''); setReason(''); setReference(''); setTried(false) } }, [state])
+  const [busy, setBusy] = useState(false)
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  useEffect(() => { if (state.open) { setRequestId(crypto.randomUUID()); setType(state.type ?? 'Issued'); setMaterialId(state.materialId ?? ''); setDate(TODAY); setQty(''); setDirection('remove'); setProjectId(''); setIssueId(''); setReason(''); setReference(''); setTried(false) } }, [state])
   const mv = d.materials.find((m) => m.material.id === materialId)
   // the default unit cost only pre-fills a purchase; found stock (an increase) needs its cost stated
   useEffect(() => { setCost(type === 'Received' ? mv?.material.unitCost ?? '' : '') }, [mv?.material.unitCost, type])
@@ -246,14 +249,15 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
     reason: type === 'Adjustment' && reason.trim().length < 5 ? 'Give a reason for the adjustment (count difference, damage…).' : undefined,
     cost: type === 'Received' && !(Number(cost) > 0) ? 'Enter the unit cost.' : adding && cost === '' ? 'Enter the unit cost of the stock being added.' : undefined,
   }
-  function save() {
+  async function save() {
     setTried(true)
     if (Object.values(err).some(Boolean) || !mv) return
     const signed = type === 'Received' || type === 'Returned' ? q : type === 'Issued' ? -q : direction === 'add' ? q : -q
     let posted
+    setBusy(true)
     try {
-      posted = addStockMovement({
-        materialId, date, type, qty: signed,
+      posted = await addStockMovement({
+        requestId, materialId, date, type, qty: signed,
         // only stock coming in carries a price; everything else is costed FIFO when posted
         unitCost: type === 'Received' || adding ? Number(cost) : undefined,
         projectId: type === 'Issued' ? projectId : type === 'Returned' ? issue?.movement.projectId : undefined,
@@ -261,10 +265,12 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
         reason: reason || undefined, reference: reference || undefined,
       })
     } catch (e) {
-      toast.error('Movement not saved', { description: e instanceof Error ? e.message : String(e) })
+      toast.error('Movement not saved', { description: errorMessage(e) })
       return
+    } finally {
+      setBusy(false)
     }
-    const p = d.projectById.get(posted.movement.projectId ?? '')
+    const p = d.projectById.get(posted.projectId ?? '')
     const actual = formatLKR(Math.abs(posted.totalCost))
     toast.success(type === 'Issued' ? 'Issued to project' : type === 'Returned' ? 'Returned to stock' : type === 'Received' ? 'Stock received' : 'Stock adjusted', {
       description: type === 'Issued' ? `${formatQty(q, mv.material.unit)} ${mv.material.name} → ${p?.code}. ${actual} charged to the project (FIFO).`
@@ -309,7 +315,7 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
           {type === 'Returned' && <p className="text-muted-foreground flex gap-2 self-end text-xs"><Info className="size-3.5 shrink-0" />Comes back at the original issue's cost, into the batches it was taken from.</p>}
           {type === 'Received' && <p className="text-muted-foreground flex gap-2 text-xs sm:col-span-2"><Info className="size-3.5 shrink-0" />No supplier payable is created here. For credit purchases, <Link to="/suppliers/invoices/new" className="text-primary-text underline" onClick={onClose}>record a supplier invoice</Link> instead.</p>}
         </div>
-        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save}>Save movement</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={busy}>Save movement</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -319,6 +325,7 @@ function AddMaterialDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const { addMaterial, settings, materials } = useStore()
   const [f, setF] = useState({ name: '', sku: '', category: '', unit: 'nos', reorderLevel: '' as number | '', unitCost: '' as number | '' })
   const [tried, setTried] = useState(false)
+  const [busy, setBusy] = useState(false)
   useEffect(() => { if (open) { setTried(false); setF({ name: '', sku: '', category: '', unit: 'nos', reorderLevel: '', unitCost: '' }) } }, [open])
   const err = { name: !f.name.trim() ? 'Enter a name.' : undefined, sku: !f.sku.trim() ? 'Enter an item code.' : materials.some((m) => m.sku.toLowerCase() === f.sku.trim().toLowerCase()) ? 'This code is already used.' : undefined, category: !f.category.trim() ? 'Enter a category.' : undefined }
   return (
@@ -335,7 +342,20 @@ function AddMaterialDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => { setTried(true); if (Object.values(err).some(Boolean)) return; addMaterial({ name: f.name.trim(), sku: f.sku.trim(), category: f.category.trim(), unit: f.unit, reorderLevel: Number(f.reorderLevel) || 0, unitCost: Number(f.unitCost) || 0 }); toast.success('Material added', { description: f.name }); onOpenChange(false) }}><Package />Add material</Button>
+          <Button disabled={busy} onClick={async () => {
+            setTried(true)
+            if (Object.values(err).some(Boolean)) return
+            setBusy(true)
+            try {
+              await addMaterial({ name: f.name.trim(), sku: f.sku.trim(), category: f.category.trim(), unit: f.unit, reorderLevel: Number(f.reorderLevel) || 0, unitCost: Number(f.unitCost) || 0 })
+              toast.success('Material added', { description: f.name })
+              onOpenChange(false)
+            } catch (e) {
+              toast.error('Material not added', { description: errorMessage(e) })
+            } finally {
+              setBusy(false)
+            }
+          }}><Package />Add material</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

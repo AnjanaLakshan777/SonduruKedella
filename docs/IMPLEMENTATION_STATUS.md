@@ -1279,3 +1279,17 @@ For each completed task, record the date, files or migrations changed, verificat
 - The server's duplicate warning (same supplier and invoice number as a supplier invoice) is shown as a warning toast after the save. The expense is still saved.
 - Not saved: the dialog's "Receipt or invoice" attachment. The backend has no attachment for manual expenses, so the file chip still only lives in the open dialog.
 - Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend still matches. Not tried in a browser.
+
+### 2026-10-30: Frontend connected, phase 2d (suppliers and inventory save to the backend)
+- Store actions now calling the API:
+  - `addSupplier`: `POST /suppliers`.
+  - `addSupplierInvoice`: `POST /supplier-invoices`.
+    - `allocation` is `PROJECT` when a project is chosen, otherwise `STOCK`; units are sent by id.
+    - "Paid now" goes as `initialPayment`, with one `requestId` per form.
+    - The chosen file is then uploaded to `PUT /supplier-invoices/{id}/attachment`. The form now keeps the real `File`, not just its name and size. If only the upload fails, the invoice stays recorded and the form says so with a warning.
+  - `recordSupplierPayment`: `POST /supplier-invoices/{id}/payments`.
+  - `addMaterial`: `POST /inventory/materials`. The reorder level in the dialog is not sent; the backend has none (owner decision).
+  - `addStockMovement`: one of `/inventory/receipts`, `/issues`, `/returns` (against the original issue) or `/adjustments`, with one `requestId` per dialog opening. The server costs it FIFO; the toast shows the server's cost.
+- After a save the store reloads what changed: the suppliers, the invoices with their payments, and the inventory. A stock invoice also brings stock in, so it reloads the inventory too.
+- `store/inventory.test.ts`: the posting tests now append to the local ledger through a helper with the prototype's checks (`movementError`, `replayFifo`). They still check the frontend's FIFO maths on the demo data; the store action goes to the server.
+- Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend matches. Not tried in a browser.

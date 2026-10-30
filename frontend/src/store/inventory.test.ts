@@ -1,11 +1,25 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { derive } from '@/lib/finance'
+import { movementError, replayFifo } from '@/lib/fifo'
+import type { StockMovement } from '@/data/types'
 import { useStore } from './store'
 
-// The store is the prototype's ledger: postings go through addStockMovement and every figure is
-// derived again from it, the way the UI reads it through useData().
+// The pages work every stock figure out from the ledger in the store (derive -> replayFifo), the way the
+// UI reads it through useData(). The backend posts the real movements; these tests check the frontend's
+// own FIFO maths on the demo data. post() appends to the local ledger with the same checks the
+// prototype used, since the store's addStockMovement now goes to the server.
 const data = () => derive(useStore.getState())
-const post = useStore.getState().addStockMovement
+let n = 0
+function post(m: Omit<StockMovement, 'id'>) {
+  const s = useStore.getState()
+  const mat = s.materials.find((x) => x.id === m.materialId)
+  const problem = movementError(s.stockMovements, m, mat?.unit, mat?.name)
+  if (problem) throw new Error(problem)
+  const posted = { ...m, id: `test${++n}` }
+  const stockMovements = [...s.stockMovements, posted]
+  useStore.setState({ stockMovements })
+  return replayFifo(stockMovements).costed.get(posted.id)!
+}
 const base = { date: '2026-10-21', reference: 'TEST' }
 
 beforeEach(() => useStore.getState().reset())
@@ -66,9 +80,9 @@ describe('posting stock movements', () => {
     expect(useStore.getState().stockMovements).toHaveLength(count)
   })
 
-  it('leaves the default unit cost alone when a supplier invoice brings stock in', () => {
+  it('leaves the default unit cost alone when stock comes in at another price', () => {
     const cement = useStore.getState().materials.find((m) => m.sku === 'CEM-50')!
-    useStore.getState().addSupplierInvoice({ supplierId: 's1', invoiceNo: 'T-1', date: '2026-10-21', dueDate: '2026-11-04', lines: [{ id: 'l1', description: 'Cement', qty: 10, unit: 'bag', unitPrice: 9999, materialId: cement.id }] })
+    post({ ...base, materialId: cement.id, type: 'Received', qty: 10, unitCost: 9999 })
     expect(useStore.getState().materials.find((m) => m.id === cement.id)!.unitCost).toBe(cement.unitCost)
     expect(data().materials.find((m) => m.material.id === cement.id)!.layers.at(-1)).toMatchObject({ unitCost: 9999 })
   })

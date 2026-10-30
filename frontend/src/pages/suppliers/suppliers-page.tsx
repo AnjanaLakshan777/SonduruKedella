@@ -20,6 +20,7 @@ import { Field } from '@/components/app/form'
 import { useData, useStore } from '@/store/store'
 import { sum } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
+import { errorMessage } from '@/lib/api'
 
 export default function SuppliersPage() {
   const d = useData()
@@ -95,6 +96,7 @@ function SupplierDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const { addSupplier, settings } = useStore()
   const [f, setF] = useState({ name: '', contactPerson: '', phone: '', email: '', address: '', supplies: '', creditDays: settings.supplierCreditDays })
   const [tried, setTried] = useState(false)
+  const [busy, setBusy] = useState(false)
   useEffect(() => { if (open) { setTried(false); setF({ name: '', contactPerson: '', phone: '', email: '', address: '', supplies: '', creditDays: settings.supplierCreditDays }) } }, [open, settings.supplierCreditDays])
   const err = { name: !f.name.trim() ? 'Enter the supplier name.' : undefined, phone: !f.phone.trim() ? 'Enter a phone number.' : undefined }
   return (
@@ -112,7 +114,20 @@ function SupplierDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => { setTried(true); if (err.name || err.phone) return; addSupplier({ ...f, email: f.email || undefined }); toast.success('Supplier added', { description: f.name }); onOpenChange(false) }}>Add supplier</Button>
+          <Button disabled={busy} onClick={async () => {
+            setTried(true)
+            if (err.name || err.phone) return
+            setBusy(true)
+            try {
+              await addSupplier({ ...f, email: f.email || undefined })
+              toast.success('Supplier added', { description: f.name })
+              onOpenChange(false)
+            } catch (e) {
+              toast.error('Supplier not added', { description: errorMessage(e) })
+            } finally {
+              setBusy(false)
+            }
+          }}>Add supplier</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
