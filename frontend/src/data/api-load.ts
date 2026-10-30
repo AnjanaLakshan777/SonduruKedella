@@ -8,6 +8,7 @@ import type {
 } from './types'
 import { apiGet, apiGetAll, apiGetOptional } from '@/lib/api'
 import { addDays, TODAY } from '@/lib/dates'
+import { formatLKR } from '@/lib/format'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = any
@@ -110,6 +111,44 @@ export async function loadOtherIncome(): Promise<{ otherIncome: OtherIncome[]; o
   return { otherIncome: rows.map(mapOtherIncome), otherIncomeReceipts: receipts.flat().filter((r: Row) => !r.voided).map(mapIncomeReceipt) }
 }
 
+function mapExpense(e: Row): Expense {
+  keep('expense', e)
+  // same keys the expense dialog writes, so the table shows them the same way
+  const details: Record<string, string> = {}
+  if (e.quantity != null) Object.assign(details, { Item: e.description, Quantity: `${e.quantity} ${e.unit}`, 'Unit price': formatLKR(e.unitPrice) })
+  if (e.machineType) details.Machine = e.machineType
+  if (e.usageFrom) details['Usage period'] = e.usageTo ? `${e.usageFrom} to ${e.usageTo}` : e.usageFrom
+  if (e.billingPeriod) details.Period = e.billingPeriod
+  return {
+    id: String(e.id), date: e.date, scope: label(e.scope) as Expense['scope'], projectId: id(e.projectId), group: label(e.group) as ExpenseGroup,
+    category: e.category, description: e.description, payee: e.payee, supplierId: id(e.supplierId), amount: e.amount, dueDate: opt(e.dueDate),
+    invoiceNo: opt(e.invoiceNo), notes: opt(e.notes), details: Object.keys(details).length ? details : undefined,
+    quantity: opt(e.quantity), unit: opt(e.unit), unitPrice: opt(e.unitPrice), machineType: opt(e.machineType), usageFrom: opt(e.usageFrom),
+    usageTo: opt(e.usageTo), billingPeriod: opt(e.billingPeriod),
+  }
+}
+const mapExpensePayment = (p: Row): ExpensePayment => ({
+  id: String(p.id), expenseId: String(p.expenseId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
+})
+export async function loadExpenses(): Promise<{ expenses: Expense[]; expensePayments: ExpensePayment[] }> {
+  const [rows, payments] = await Promise.all([apiGetAll<Row>('/expenses'), apiGet<Row[]>('/expenses/payments')])
+  return { expenses: rows.map(mapExpense), expensePayments: payments.filter((p: Row) => !p.voided).map(mapExpensePayment) }
+}
+
+// the UI picks categories and units by name; the API wants ids
+const categoryIds = new Map<string, number>()
+const unitIds = new Map<string, number>()
+export function categoryId(group: ExpenseGroup, name: string): number {
+  const found = categoryIds.get(`${code(group)}/${name}`)
+  if (found == null) throw new Error(`Unknown category "${name}". Reload the data and try again.`)
+  return found
+}
+export function unitId(name: string): number {
+  const found = unitIds.get(name)
+  if (found == null) throw new Error(`Unknown unit "${name}". Reload the data and try again.`)
+  return found
+}
+
 // the UI picks payment methods by name; the API wants the id
 const methodIds = new Map<string, number>()
 export function methodId(name: string): number {
@@ -121,6 +160,10 @@ export function methodId(name: string): number {
 function settingsFrom(o: Row): Settings {
   methodIds.clear()
   for (const m of o.paymentMethods) methodIds.set(m.name, m.id)
+  categoryIds.clear()
+  for (const c of o.expenseCategories) categoryIds.set(`${c.group}/${c.name}`, c.id)
+  unitIds.clear()
+  for (const u of o.units) unitIds.set(u.name, u.id)
   const groups: Record<ExpenseGroup, string[]> = { Design: [], Construction: [], Consultation: [], Company: [] }
   for (const c of o.expenseCategories) if (c.active) groups[label(c.group) as ExpenseGroup].push(c.name)
   // the backend keeps only the month; the year is whichever puts the start on or before today
@@ -208,20 +251,8 @@ export async function loadAll(): Promise<DataState> {
   const clients: Client[] = clientRows.map(mapClient)
   const otherIncome: OtherIncome[] = otherIncomeRows.map(mapOtherIncome)
   const otherIncomeReceipts: OtherIncomeReceipt[] = incomeReceipts.flat().filter((r: Row) => !r.voided).map(mapIncomeReceipt)
-  const expenses: Expense[] = expenseRows.map((e: Row) => {
-    const details: Record<string, string> = {}
-    if (e.machineType) details.Machine = e.machineType
-    if (e.usageFrom) details['Usage period'] = e.usageTo && e.usageTo !== e.usageFrom ? `${e.usageFrom} – ${e.usageTo}` : e.usageFrom
-    if (e.billingPeriod) details['Billing period'] = e.billingPeriod
-    return {
-      id: String(e.id), date: e.date, scope: label(e.scope) as Expense['scope'], projectId: id(e.projectId), group: label(e.group) as ExpenseGroup,
-      category: e.category, description: e.description, payee: e.payee, supplierId: id(e.supplierId), amount: e.amount, dueDate: opt(e.dueDate),
-      invoiceNo: opt(e.invoiceNo), notes: opt(e.notes), details: Object.keys(details).length ? details : undefined,
-    }
-  })
-  const expensePayments: ExpensePayment[] = expensePaymentRows.filter((p: Row) => !p.voided).map((p: Row) => ({
-    id: String(p.id), expenseId: String(p.expenseId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
-  }))
+  const expenses: Expense[] = expenseRows.map(mapExpense)
+  const expensePayments: ExpensePayment[] = expensePaymentRows.filter((p: Row) => !p.voided).map(mapExpensePayment)
   const suppliers: Supplier[] = supplierRows.map((s: Row) => ({
     id: String(s.id), name: s.name, contactPerson: s.contactPerson ?? '', phone: s.phone, email: opt(s.email), address: s.address ?? '',
     supplies: s.supplies ?? '', creditDays: s.creditDays,

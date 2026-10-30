@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import { useMemo } from 'react'
 import { createSeed } from '@/data/seed'
-import { code, emptyState, loadActivity, loadAll, loadClients, loadOtherIncome, loadProject, mapClient, methodId, versionOf } from '@/data/api-load'
+import {
+  categoryId, code, emptyState, loadActivity, loadAll, loadClients, loadExpenses, loadOtherIncome, loadProject, mapClient, methodId, unitId, versionOf,
+} from '@/data/api-load'
 import type { PaymentInput } from '@/components/app/payment-dialog'
 import { api, apiPost, apiPut } from '@/lib/api'
 import type {
   Advance, Attendance, Client, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
-  Expense, ExpensePayment, Material, OtherIncome, Overtime, PayrollAdjustment, PayrollPayment, ProjectStatus, ProjectType,
+  ExpenseGroup, ExpenseScope, Material, OtherIncome, Overtime, PayrollAdjustment, PayrollPayment, ProjectStatus, ProjectType,
   Settings, StockMovement, Supplier, SupplierInvoice, SupplierPayment, WriteOff, ActivityEntry,
 } from '@/data/types'
 import { derive } from '@/lib/finance'
@@ -35,9 +37,10 @@ interface Actions {
   writeOff: (w: New<WriteOff>) => Promise<void>
   addOtherIncome: (i: New<OtherIncome>, received?: PaymentInput) => Promise<void>
   recordOtherIncomeReceipt: (r: PaymentInput & { incomeId: string }) => Promise<void>
-  addExpense: (e: New<Expense>, payment?: New<ExpensePayment> & { expenseId?: string }) => string
-  updateExpense: (id: string, patch: Partial<Expense>) => void
-  recordExpensePayment: (p: New<ExpensePayment>) => void
+  // the result carries the server's duplicate warning (same supplier and invoice number as a supplier invoice)
+  addExpense: (e: ExpenseInput, payment?: PaymentInput) => Promise<{ id: string; warning?: string }>
+  updateExpense: (id: string, e: ExpenseInput) => Promise<{ warning?: string }>
+  recordExpensePayment: (p: PaymentInput & { expenseId: string }) => Promise<void>
   addSupplier: (x: New<Supplier>) => string
   addSupplierInvoice: (inv: New<SupplierInvoice>, payment?: { amount: number; method: string; date: string; reference?: string }) => string
   recordSupplierPayment: (p: New<SupplierPayment>) => void
@@ -91,6 +94,39 @@ export interface ProjectInput {
   delay?: DelayTerms
 }
 
+export interface ExpenseInput {
+  date: string
+  scope: ExpenseScope
+  projectId?: string
+  group: ExpenseGroup
+  category: string
+  description: string
+  payee: string
+  supplierId?: string
+  amount: number
+  dueDate?: string
+  invoiceNo?: string
+  notes?: string
+  // a materials line: the server works the amount out from these
+  quantity?: number
+  unit?: string
+  unitPrice?: number
+  machineType?: string
+  usageFrom?: string
+  usageTo?: string
+  billingPeriod?: string
+}
+
+const expenseBody = (e: ExpenseInput) => {
+  const line = e.quantity != null && e.unit && e.unitPrice != null
+  return {
+    date: e.date, scope: code(e.scope), projectId: e.projectId, categoryId: categoryId(e.group, e.category), description: e.description,
+    payee: e.payee, supplierId: e.supplierId, amount: line ? undefined : e.amount, dueDate: e.dueDate, invoiceNo: e.invoiceNo, notes: e.notes,
+    quantity: line ? e.quantity : undefined, unitId: line ? unitId(e.unit!) : undefined, unitPrice: line ? e.unitPrice : undefined,
+    machineType: e.machineType, usageFrom: e.usageFrom, usageTo: e.usageTo, billingPeriod: e.billingPeriod,
+  }
+}
+
 const clientBody = (c: ClientInput) => ({ ...c, kind: code(c.kind) })
 // same shape for every kind of payment and receipt on the backend
 const paymentBody = (p: PaymentInput) => ({
@@ -119,6 +155,7 @@ export const useStore = create<Store>()((set, get) => {
   }
   const refreshClients = async () => set({ clients: await loadClients() })
   const refreshOtherIncome = async () => set(await loadOtherIncome())
+  const refreshExpenses = async () => set(await loadExpenses())
   const projectOf = (installmentId: string) => {
     const inst = get().installments.find((i) => i.id === installmentId)
     if (!inst) throw new Error('That installment is no longer there. Reload the data.')
@@ -209,16 +246,22 @@ export const useStore = create<Store>()((set, get) => {
       await apiPost(`/other-income/${r.incomeId}/receipts`, paymentBody(r))
       await refreshOtherIncome()
     },
-    addExpense: (e, payment) => {
-      const id = uid('e')
-      set((s) => ({
-        expenses: [...s.expenses, { ...e, id }],
-        expensePayments: payment && payment.amount > 0 ? [...s.expensePayments, { ...payment, expenseId: id, id: uid('ep') }] : s.expensePayments,
-      }))
-      return id
+    addExpense: async (e, payment) => {
+      const saved = await apiPost<{ id: number; warning?: string }>('/expenses', {
+        ...expenseBody(e), initialPayment: payment && payment.amount > 0 ? paymentBody(payment) : undefined,
+      })
+      await Promise.all([refreshExpenses(), refreshActivity()])
+      return { id: String(saved.id), warning: saved.warning ?? undefined }
     },
-    updateExpense: (id, patch) => set((s) => ({ expenses: s.expenses.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
-    recordExpensePayment: (p) => set((s) => ({ expensePayments: [...s.expensePayments, { ...p, id: uid('ep') }] })),
+    updateExpense: async (id, e) => {
+      const saved = await apiPut<{ warning?: string }>(`/expenses/${id}`, { ...expenseBody(e), version: versionOf('expense', id) })
+      await Promise.all([refreshExpenses(), refreshActivity()])
+      return { warning: saved.warning ?? undefined }
+    },
+    recordExpensePayment: async (p) => {
+      await apiPost(`/expenses/${p.expenseId}/payments`, paymentBody(p))
+      await Promise.all([refreshExpenses(), refreshActivity()])
+    },
     addSupplier: (x) => {
       const id = uid('s')
       set((s) => ({ suppliers: [...s.suppliers, { ...x, id }] }))

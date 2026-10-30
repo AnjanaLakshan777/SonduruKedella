@@ -1266,3 +1266,16 @@ For each completed task, record the date, files or migrations changed, verificat
 - Write-off dialog and the "Bill now" confirmation are async with error toasts.
 - Tests: no backend change in this step. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the production build succeeds. Not tried in a browser.
 - The other modules still use `PaymentDialog` with their local actions until phases 2c to 2f.
+
+### 2026-10-30: Frontend connected, phase 2c (expenses save to the backend)
+- Store actions now calling the API:
+  - `addExpense`: `POST /expenses`, with "paid in full / part" as `initialPayment` (one `requestId` per dialog opening).
+  - `updateExpense`: `PUT /expenses/{id}` with the version last read.
+  - `recordExpensePayment`: `POST /expenses/{id}/payments`.
+- After a save, the store reloads the expenses with their payments (`loadExpenses`) and the activity feed.
+- Categories and units are chosen by name in the UI and sent by id: `categoryId(group, name)` and `unitId(name)`, mapped from the settings the loader read.
+- A materials line sends quantity, unit and unit price; the server works the amount out. Machinery sends the machine type and usage dates, and electricity sends the billing period.
+- `Expense` gained the raw fields (`quantity`, `unit`, `unitPrice`, `machineType`, `usageFrom`, `usageTo`, `billingPeriod`). The edit dialog fills them in, so an edit sends them back instead of clearing them. The `details` keys the loader builds now match the dialog's (`Period`, formatted unit price).
+- The server's duplicate warning (same supplier and invoice number as a supplier invoice) is shown as a warning toast after the save. The expense is still saved.
+- Not saved: the dialog's "Receipt or invoice" attachment. The backend has no attachment for manual expenses, so the file chip still only lives in the open dialog.
+- Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend still matches. Not tried in a browser.

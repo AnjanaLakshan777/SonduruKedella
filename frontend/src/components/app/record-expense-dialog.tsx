@@ -7,10 +7,11 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { useStore } from '@/store/store'
+import { useStore, type ExpenseInput } from '@/store/store'
 import type { Expense, ExpenseGroup, ExpenseScope } from '@/data/types'
 import { TODAY } from '@/lib/dates'
 import { formatBytes, formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 import { AmountInput, DatePicker, Field, SelectField } from './form'
 
 const AUTO: Record<string, string> = {
@@ -44,15 +45,19 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
   const [notes, setNotes] = useState('')
   const [file, setFile] = useState<{ fileName: string; size: number } | undefined>()
   const [tried, setTried] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!open) return
     setTried(false)
+    setRequestId(crypto.randomUUID())
     if (edit) {
       setScope(edit.scope); setPid(edit.projectId ?? ''); setCategory(edit.category); setDate(edit.date); setDescription(edit.description); setPayee(edit.payee)
       setSupplierId(edit.supplierId ?? ''); setAmount(edit.amount); setInvoiceNo(edit.invoiceNo ?? ''); setDueDate(edit.dueDate ?? ''); setNotes(edit.notes ?? ''); setFile(edit.attachment)
-      setMachine(String(edit.details?.Machine ?? '')); setPeriod(String(edit.details?.Period ?? ''))
+      setMachine(edit.machineType ?? ''); setPeriod(edit.billingPeriod ?? ''); setFrom(edit.usageFrom ?? ''); setTo(edit.usageTo ?? '')
+      setQty(edit.quantity ?? ''); setUnit(edit.unit ?? 'nos'); setUnitPrice(edit.unitPrice ?? '')
     } else {
       setScope(projectId ? 'Project' : 'Project'); setPid(projectId ?? ''); setCategory(''); setDate(TODAY); setDescription(''); setPayee(''); setSupplierId(''); setAmount('')
       setQty(''); setUnit('nos'); setUnitPrice(''); setMachine(''); setFrom(''); setTo(''); setPeriod(''); setInvoiceNo(''); setDueDate(''); setPay('full'); setPaid(''); setMethod('Cash'); setNotes(''); setFile(undefined)
@@ -87,27 +92,36 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
     return undefined
   }, [isElectricity, group])
 
-  function save() {
+  async function save() {
     setTried(true)
     if (hasErr) return
     const sup = suppliers.find((s) => s.id === supplierId)
-    const details: Record<string, string | number> = {}
-    if (isMaterials && computed != null) Object.assign(details, { Item: description.trim(), Quantity: `${qty} ${unit}`, 'Unit price': formatLKR(unitPrice as number) })
-    if (isMachinery) Object.assign(details, { Machine: machine || '—', 'Usage period': from && to ? `${from} to ${to}` : '—' })
-    if (isElectricity && period) details.Period = period
-    const rec = {
+    const rec: ExpenseInput = {
       date, scope, projectId: scope === 'Project' ? pid : undefined, group, category, description: description.trim(), payee: sup?.name ?? payee.trim(), supplierId: supplierId || undefined,
-      amount: total, dueDate: dueDate || undefined, invoiceNo: invoiceNo || undefined, attachment: file, details: Object.keys(details).length ? details : undefined, notes: notes || undefined,
+      amount: total, dueDate: dueDate || undefined, invoiceNo: invoiceNo || undefined, notes: notes || undefined,
+      ...(isMaterials && computed != null ? { quantity: qty as number, unit, unitPrice: unitPrice as number } : {}),
+      ...(isMachinery ? { machineType: machine || undefined, usageFrom: from || undefined, usageTo: to || undefined } : {}),
+      ...(isElectricity && period ? { billingPeriod: period } : {}),
     }
-    if (edit) {
-      updateExpense(edit.id, rec)
-      toast.success('Expense updated', { description: `${rec.description} · ${formatLKR(total)}` })
-    } else {
-      const payAmt = pay === 'full' ? total : pay === 'part' ? (paid as number) : 0
-      addExpense(rec, payAmt ? { expenseId: '', date, amount: payAmt, method } : undefined)
-      toast.success('Expense recorded', { description: `${formatLKR(total)} · ${scope === 'Project' ? project?.code : 'Company-level'} · ${pay === 'full' ? 'paid' : pay === 'part' ? `${formatLKR(payAmt)} paid` : 'unpaid'}` })
+    setBusy(true)
+    try {
+      let warning: string | undefined
+      if (edit) {
+        warning = (await updateExpense(edit.id, rec)).warning
+        toast.success('Expense updated', { description: `${rec.description} · ${formatLKR(total)}` })
+      } else {
+        const payAmt = pay === 'full' ? total : pay === 'part' ? (paid as number) : 0
+        warning = (await addExpense(rec, payAmt ? { requestId, date, amount: payAmt, method } : undefined)).warning
+        toast.success('Expense recorded', { description: `${formatLKR(total)} · ${scope === 'Project' ? project?.code : 'Company-level'} · ${pay === 'full' ? 'paid' : pay === 'part' ? `${formatLKR(payAmt)} paid` : 'unpaid'}` })
+      }
+      // saved anyway; the server only points out it may already be on a supplier invoice
+      if (warning) toast.warning('Check for a duplicate', { description: warning })
+      onOpenChange(false)
+    } catch (e) {
+      toast.error('Expense not saved', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
     }
-    onOpenChange(false)
   }
 
   return (
@@ -200,7 +214,7 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={!!AUTO[category]}>{edit ? 'Save changes' : `Record Expense${total ? ` · ${formatLKR(total)}` : ''}`}</Button>
+          <Button onClick={save} disabled={!!AUTO[category] || busy}>{edit ? 'Save changes' : `Record Expense${total ? ` · ${formatLKR(total)}` : ''}`}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

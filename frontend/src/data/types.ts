@@ -129,6 +129,14 @@ export interface Expense {
   attachment?: { fileName: string; size: number }
   details?: Record<string, string | number>
   notes?: string
+  // the raw values behind details, so an edit sends them back instead of wiping them
+  quantity?: number
+  unit?: string
+  unitPrice?: number
+  machineType?: string
+  usageFrom?: string
+  usageTo?: string
+  billingPeriod?: string
 }
 
 export interface ExpensePayment {

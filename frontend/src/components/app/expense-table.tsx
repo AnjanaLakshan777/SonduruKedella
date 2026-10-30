@@ -103,7 +103,7 @@ export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }
         title={`Pay ${payFor?.payee ?? ''}`} description={payFor?.description}
         context={payFor ? [{ label: 'Expense amount', value: payFor.amount }, { kind: 'less', label: 'Already paid', value: payFor.paid }, { kind: 'total', label: 'Unpaid', value: payFor.remaining }] : undefined}
         outstanding={payFor?.remaining ?? 0}
-        onSubmit={(p) => payFor && recordExpensePayment({ expenseId: payFor.refId, date: p.date, amount: p.amount, method: p.method, reference: p.reference })}
+        onSubmit={(p) => (payFor ? recordExpensePayment({ expenseId: payFor.refId, ...p }) : undefined)}
       />
       <RecordExpenseDialog open={!!editFor} onOpenChange={(o) => !o && setEditFor(undefined)} edit={editFor?.expense} />
       <Sheet open={!!view} onOpenChange={(o) => !o && setView(undefined)}>
