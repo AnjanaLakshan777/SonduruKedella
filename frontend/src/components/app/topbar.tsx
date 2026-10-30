@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useData, useStore } from '@/store/store'
 import { useAuth } from '@/store/auth'
 import { emptyState } from '@/data/api-load'
-import { formatDate, formatLongToday } from '@/lib/dates'
+import { addDays, formatDate, formatLongToday, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { useTheme } from './theme'
 import { cn } from '@/lib/utils'
@@ -57,7 +57,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
   }, [])
 
   const overdue = d.installments.filter((i) => i.status === 'Overdue').sort((a, b) => b.daysOverdue - a.daysOverdue)
-  const dueSoon = d.payablesDue.filter((p) => p.status !== 'Overdue' && p.dueDate <= '2026-10-25')
+  const dueSoon = d.payablesDue.filter((p) => p.status !== 'Overdue' && p.dueDate <= addDays(TODAY, 3))
   const otPending = d.s.overtime.filter((o) => !o.approved)
   const count = overdue.length + dueSoon.length + (otPending.length ? 1 : 0)
 

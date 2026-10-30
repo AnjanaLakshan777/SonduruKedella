@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DatePicker } from './form'
+import { useStore } from '@/store/store'
+import { addMonths, fyLabel, monthEnd, monthLabel, monthStart, TODAY } from '@/lib/dates'
 
 export function SearchInput({ value, onChange, placeholder = 'Search…', className }: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
   return (
@@ -43,24 +45,33 @@ export function FilterBar({ children, onClear, active }: { children: React.React
 }
 
 export interface DateRange { from: string; to: string; preset: string }
-export const RANGE_PRESETS: { value: string; label: string; from: string; to: string }[] = [
-  { value: 'fy', label: 'This financial year', from: '2026-04-01', to: '2027-03-31' },
-  { value: 'month', label: 'This month (Oct 2026)', from: '2026-10-01', to: '2026-10-31' },
-  { value: 'last3', label: 'Last 3 months', from: '2026-08-01', to: '2026-10-31' },
-  { value: 'q1', label: 'Q1 (Apr–Jun 2026)', from: '2026-04-01', to: '2026-06-30' },
-  { value: 'q2', label: 'Q2 (Jul–Sep 2026)', from: '2026-07-01', to: '2026-09-30' },
-  { value: 'q3', label: 'Q3 (Oct–Dec 2026)', from: '2026-10-01', to: '2026-12-31' },
-]
-export const defaultRange = (): DateRange => ({ ...RANGE_PRESETS[0], preset: 'fy' })
+// Worked out from today and the financial year start in Settings; only quarters that have begun.
+export function rangePresets(): { value: string; label: string; from: string; to: string }[] {
+  const fy = useStore.getState().settings.financialYearStart
+  const fyMonth = fy.slice(0, 7)
+  const month = TODAY.slice(0, 7)
+  const short = (key: string) => monthLabel(key).split(' ')[0]
+  const quarters = [0, 1, 2, 3].map((i) => {
+    const first = addMonths(fyMonth, i * 3), last = addMonths(first, 2)
+    return { value: `q${i + 1}`, label: `Q${i + 1} (${short(first)}–${monthLabel(last)})`, from: monthStart(first), to: monthEnd(last) }
+  })
+  return [
+    { value: 'fy', label: `This financial year (${fyLabel(fy)})`, from: fy, to: monthEnd(addMonths(fyMonth, 11)) },
+    { value: 'month', label: `This month (${monthLabel(month)})`, from: monthStart(month), to: monthEnd(month) },
+    { value: 'last3', label: 'Last 3 months', from: monthStart(addMonths(month, -2)), to: monthEnd(month) },
+    ...quarters.filter((q) => q.from <= TODAY),
+  ]
+}
+export const defaultRange = (): DateRange => ({ ...rangePresets()[0], preset: 'fy' })
 export const inRange = (date: string, r: DateRange) => date >= r.from && date <= r.to
 
 export function DateRangeFilter({ value, onChange }: { value: DateRange; onChange: (r: DateRange) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select value={value.preset} onValueChange={(v) => { const p = RANGE_PRESETS.find((x) => x.value === v); onChange(p ? { from: p.from, to: p.to, preset: v } : { ...value, preset: 'custom' }) }}>
+      <Select value={value.preset} onValueChange={(v) => { const p = rangePresets().find((x) => x.value === v); onChange(p ? { from: p.from, to: p.to, preset: v } : { ...value, preset: 'custom' }) }}>
         <SelectTrigger size="sm" className={cn('w-auto min-w-44', value.preset !== 'fy' && 'border-primary-text/40')} aria-label="Date range"><SelectValue /></SelectTrigger>
         <SelectContent>
-          {RANGE_PRESETS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+          {rangePresets().map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
           <SelectItem value="custom">Custom range…</SelectItem>
         </SelectContent>
       </Select>

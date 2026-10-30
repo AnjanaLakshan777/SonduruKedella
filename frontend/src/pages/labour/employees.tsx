@@ -15,7 +15,7 @@ import { ALL, FilterBar, FilterSelect, SearchInput } from '@/components/app/filt
 import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/form'
 import { useData, useStore } from '@/store/store'
 import { sum } from '@/lib/finance'
-import { TODAY } from '@/lib/dates'
+import { monthLabel, monthStart, TODAY } from '@/lib/dates'
 import type { Employee } from '@/data/types'
 import { formatLKR } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
@@ -32,7 +32,7 @@ export function Employees() {
   }, [d])
   const monthDays = useMemo(() => {
     const m = new Map<string, number>()
-    for (const a of d.s.attendance) if (a.date >= '2026-10-01') m.set(a.employeeId, (m.get(a.employeeId) ?? 0) + (a.status === 'Present' ? 1 : a.status === 'Half Day' ? 0.5 : 0))
+    for (const a of d.s.attendance) if (a.date >= monthStart(TODAY.slice(0, 7))) m.set(a.employeeId, (m.get(a.employeeId) ?? 0) + (a.status === 'Present' ? 1 : a.status === 'Half Day' ? 0.5 : 0))
     return m
   }, [d])
   const rows = d.s.employees.filter((e) => (status === ALL || e.status === status) && (!q || `${e.name} ${e.role}`.toLowerCase().includes(q.toLowerCase())))
@@ -52,7 +52,7 @@ export function Employees() {
       </div>
       <Card className="gap-0 py-0">
         <Table>
-          <TableHeader><TableRow><TableHead className="pl-6">Employee</TableHead><TableHead className="hidden md:table-cell">Phone</TableHead><TableHead className="text-right">Daily wage (LKR)</TableHead><TableHead className="hidden text-right sm:table-cell">OT rate / hr (LKR)</TableHead><TableHead className="hidden lg:table-cell">Current work</TableHead><TableHead className="hidden text-right md:table-cell">Days in Oct</TableHead><TableHead>Status</TableHead><TableHead className="w-12 pr-4" /></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead className="pl-6">Employee</TableHead><TableHead className="hidden md:table-cell">Phone</TableHead><TableHead className="text-right">Daily wage (LKR)</TableHead><TableHead className="hidden text-right sm:table-cell">OT rate / hr (LKR)</TableHead><TableHead className="hidden lg:table-cell">Current work</TableHead><TableHead className="hidden text-right md:table-cell">Days in {monthLabel(TODAY.slice(0, 7)).split(' ')[0]}</TableHead><TableHead>Status</TableHead><TableHead className="w-12 pr-4" /></TableRow></TableHeader>
           <TableBody>
             {rows.map((e) => {
               const l = latest.get(e.id)

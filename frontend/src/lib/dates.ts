@@ -74,3 +74,23 @@ export function monthsBetween(fromKey: string, toKey: string) {
   }
   return out
 }
+
+// first and last day of a month ('2026-10' -> '2026-10-01' / '2026-10-31')
+export function monthStart(key: string) {
+  return `${key}-01`
+}
+export function monthEnd(key: string) {
+  const [y, m] = key.split('-').map(Number)
+  return toISO(new Date(Date.UTC(y, m, 0)))
+}
+// 'YYYY-MM' moved by n months
+export function addMonths(key: string, n: number) {
+  const [y, m] = key.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1 + n, 1))
+  return toISO(d).slice(0, 7)
+}
+// the financial year that starts on fyStart, as accountants write it: 2026/27
+export function fyLabel(fyStart: string) {
+  const y = Number(fyStart.slice(0, 4))
+  return `${y}/${String(y + 1).slice(2)}`
+}

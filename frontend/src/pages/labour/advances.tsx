@@ -14,7 +14,7 @@ import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/fo
 import { useData, useStore } from '@/store/store'
 import { VoidDialog } from '@/components/app/void-dialog'
 import { sum } from '@/lib/finance'
-import { addDays, formatDate, formatRange, TODAY } from '@/lib/dates'
+import { addDays, formatDate, formatRange, monthLabel, monthStart, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
 
@@ -31,7 +31,7 @@ export function AdvancesView() {
         <span>An advance is wages paid early. It is deducted from that week's net pay and is <strong className="text-foreground">not</strong> a second labour cost — the wages themselves are the cost.</span>
       </div>
       <KpiStrip items={[
-        { label: 'Advances given (Oct)', unit: 'LKR', value: <Money value={sum(rows.filter((a) => a.advance.date >= '2026-10-01'), (a) => a.advance.amount)} decimals={0} currency={false} />, caption: `${rows.filter((a) => a.advance.date >= '2026-10-01').length} advances` },
+        { label: `Advances given (${monthLabel(TODAY.slice(0, 7))})`, unit: 'LKR', value: <Money value={sum(rows.filter((a) => a.advance.date >= monthStart(TODAY.slice(0, 7))), (a) => a.advance.amount)} decimals={0} currency={false} />, caption: `${rows.filter((a) => a.advance.date >= monthStart(TODAY.slice(0, 7))).length} advances` },
         { label: 'Deducted from paid wages', unit: 'LKR', value: <Money value={sum(rows, (a) => a.deducted)} decimals={0} currency={false} />, caption: 'In pay runs already paid' },
         { label: 'To deduct this week', unit: 'LKR', value: <Money value={sum(rows, (a) => a.scheduled)} decimals={0} currency={false} />, caption: 'In the current payroll' },
         { label: 'Not yet covered', unit: 'LKR', value: <Money value={sum(rows, (a) => a.remaining)} decimals={0} currency={false} />, caption: 'Larger than wages earned so far' },

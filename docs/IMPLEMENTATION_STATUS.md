@@ -1398,3 +1398,16 @@ For each completed task, record the date, files or migrations changed, verificat
 - Settings → Categories: revenue categories are shown as fixed chips (they follow the project types, plus Other Income). The section saves only the expense categories. The project statuses note now says they are fixed instead of "come with the backend".
 - The "Planned Frontend Changes" checklist is ticked for these two items and for the payroll freeze (3a).
 - Tests: no backend change. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. Not tried in a browser.
+
+### 2026-10-30: Phase 3e, dates and year labels from the data instead of the code
+- The prototype had 2026 dates written into the pages. They now come from today (Colombo) and the financial year start in Settings:
+  - Date-range filters (`components/app/filters.tsx`): `RANGE_PRESETS` became `rangePresets()`. It gives this financial year (with its label, e.g. 2026/27), this month, the last 3 months, and the year's quarters that have started.
+  - Dashboard: the monthly chart starts at the financial year start; the title shows the year label and its first day; "payables due" covers the next 14 days.
+  - Topbar notifications: "due soon" means within 3 days.
+  - Inventory "Issued to projects", Advances "Advances given" and Employees "Days in" use the current month.
+  - Projects list: the year filters use this year and next.
+  - Reports: the page description shows the financial year label. The income chart stops at today. The labour report opens on the current month.
+  - Create Project: the code preview follows the server's rule, `PRJ-<start year>-<next number in that year>`. The server still assigns the real one.
+  - Settings: "Financial year starts" shows the server's value (read-only).
+- `lib/dates.ts`: `monthStart`, `monthEnd`, `addMonths`, `fyLabel`, with `lib/dates.test.ts` (3 tests: month ends including leap years, crossing year ends, the year label).
+- Tests: no backend change. Frontend: `tsc -b` is clean and the Vitest suite passes (22 tests, 19 before). Not tried in a browser.

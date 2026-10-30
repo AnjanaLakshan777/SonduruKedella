@@ -17,6 +17,7 @@ import { DelayTermsForm } from '@/components/app/delay-terms-form'
 import { useStore } from '@/store/store'
 import type { DelayTerms, ProjectStatus, ProjectType } from '@/data/types'
 import { formatLKR } from '@/lib/format'
+import { TODAY } from '@/lib/dates'
 import { errorMessage } from '@/lib/api'
 
 const TYPES: { value: ProjectType; label: string; hint: string }[] = [
@@ -53,7 +54,12 @@ export default function CreateProject() {
   useEffect(() => { if (!touchedSchedule) setRows(scheduleTemplate(type, contract, start, end)) }, [type, contract, start, end, touchedSchedule])
   useEffect(() => { if (!delay.contractDeadline && end) setDelay((dl) => ({ ...dl, contractDeadline: end })) }, [end, delay.contractDeadline])
 
-  const nextCode = useMemo(() => `PRJ-2026-${String(projects.length + 1).padStart(3, '0')}`, [projects.length])
+  // same rule as the server: PRJ-<start year>-<next number in that year>. Only a preview; the server assigns it.
+  const nextCode = useMemo(() => {
+    const prefix = `PRJ-${(start || TODAY).slice(0, 4)}-`
+    const last = Math.max(0, ...projects.filter((p) => p.code.startsWith(prefix)).map((p) => Number(p.code.slice(prefix.length)) || 0))
+    return `${prefix}${String(last + 1).padStart(3, '0')}`
+  }, [projects, start])
   const scheduleTotal = rows.reduce((t, r) => t + (typeof r.amount === 'number' ? r.amount : 0), 0)
   const errors = {
     name: !name.trim() ? 'Enter a project name.' : undefined,

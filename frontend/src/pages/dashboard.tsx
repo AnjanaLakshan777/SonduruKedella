@@ -14,7 +14,7 @@ import { StatusBadge } from '@/components/app/status-badge'
 import { CellMain, Mono } from '@/components/app/data-table'
 import { axisProps, ChartTooltip, Legend, moneyAxis } from '@/components/app/chart'
 import { useData } from '@/store/store'
-import { diffDays, formatDate, formatDateShort, monthLabel, monthsBetween, TODAY } from '@/lib/dates'
+import { addDays, diffDays, formatDate, formatDateShort, fyLabel, monthLabel, monthsBetween, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { sum } from '@/lib/finance'
 import { cn } from '@/lib/utils'
@@ -36,7 +36,7 @@ export default function Dashboard() {
   const t = d.totals
 
   const monthly = useMemo(
-    () => monthsBetween('2026-04', TODAY.slice(0, 7)).map((k) => ({ month: k, label: monthLabel(k), revenue: d.monthly.get(k)?.revenue ?? 0, expenses: d.monthly.get(k)?.expenses ?? 0 })),
+    () => monthsBetween(d.s.settings.financialYearStart.slice(0, 7), TODAY.slice(0, 7)).map((k) => ({ month: k, label: monthLabel(k), revenue: d.monthly.get(k)?.revenue ?? 0, expenses: d.monthly.get(k)?.expenses ?? 0 })),
     [d],
   )
   const byType = useMemo(() => {
@@ -57,7 +57,9 @@ export default function Dashboard() {
     ...d.installments.filter((i) => i.status === 'Overdue').map((i) => ({ id: i.inst.id, client: i.client.name, sub: `${i.project.code} · ${i.inst.description}`, remaining: i.remaining, due: i.inst.dueDate, days: i.daysOverdue, to: `/projects/${i.project.id}?tab=payments` })),
     ...d.otherIncome.filter((o) => o.status === 'Overdue').map((o) => ({ id: o.income.id, client: o.income.payer ?? 'Other income', sub: `Other income · ${o.income.description}`, remaining: o.remaining, due: o.income.dueDate!, days: diffDays(TODAY, o.income.dueDate!), to: '/revenue' })),
   ].sort((a, b) => b.days - a.days)
-  const payables = d.payablesDue.filter((p) => p.dueDate <= '2026-11-05').slice(0, 6)
+  // the next two weeks
+  const payablesBy = addDays(TODAY, 14)
+  const payables = d.payablesDue.filter((p) => p.dueDate <= payablesBy).slice(0, 6)
 
   const recent = useMemo(() => {
     const rows: { id: string; date: string; text: string; party: string; amount: number; to: string }[] = []
@@ -78,7 +80,7 @@ export default function Dashboard() {
     <>
       <PageHeader
         title="Dashboard"
-        description={`Financial year 2026/27 to date · 01 Apr – ${formatDate(TODAY)}`}
+        description={`Financial year ${fyLabel(d.s.settings.financialYearStart)} to date · ${formatDate(d.s.settings.financialYearStart)} – ${formatDate(TODAY)}`}
         actions={<Button asChild><Link to="/projects/new"><Plus />Create Project</Link></Button>}
       />
 
@@ -211,7 +213,7 @@ export default function Dashboard() {
         <Card className="gap-4 pb-0">
           <CardHeader>
             <CardTitle>Upcoming Supplier Payments</CardTitle>
-            <CardDescription>Credit invoices and bills due by {formatDate('2026-11-05')}</CardDescription>
+            <CardDescription>Credit invoices and bills due by {formatDate(payablesBy)}</CardDescription>
             <ViewAll to="/suppliers?tab=payables" label="All payables" />
           </CardHeader>
           <Table>

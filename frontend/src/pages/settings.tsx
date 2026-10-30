@@ -13,6 +13,7 @@ import { useStore } from '@/store/store'
 import { errorMessage } from '@/lib/api'
 import type { ExpenseGroup, Settings } from '@/data/types'
 import { formatLKR } from '@/lib/format'
+import { formatDate } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 
 const SECTIONS = [
@@ -70,7 +71,7 @@ function CompanySection({ s }: { s: Settings }) {
       <CardContent className="grid gap-4 sm:grid-cols-2">
         {fields.map(([k, l]) => <Field key={k} label={l} className={k === 'address' ? 'sm:col-span-2' : undefined}><Input value={c[k]} onChange={(e) => setC({ ...c, [k]: e.target.value })} /></Field>)}
         <Field label="Default supplier credit period" hint="Used for the due date on new supplier invoices."><div className="flex items-center gap-2"><Input type="number" min={0} className="w-24 text-right" value={credit} onChange={(e) => setCredit(Number(e.target.value))} /><span className="text-muted-foreground text-sm">days</span></div></Field>
-        <Field label="Financial year starts"><Input value="01 April" readOnly /></Field>
+        <Field label="Financial year starts" hint="Kept by the server; not changed here."><Input value={formatDate(s.financialYearStart).replace(/ \d{4}$/, '')} readOnly /></Field>
       </CardContent>
       <CardFooter className="justify-end"><Button onClick={() => save({ company: c, supplierCreditDays: credit }, 'Company information')}>Save</Button></CardFooter>
     </Card>

@@ -25,7 +25,7 @@ import { FigureList } from '@/components/app/figure-list'
 import { useData, useStore } from '@/store/store'
 import { sum, type MaterialView } from '@/lib/finance'
 import { describeAllocations } from '@/lib/fifo'
-import { formatDate, TODAY } from '@/lib/dates'
+import { formatDate, monthLabel, monthStart, TODAY } from '@/lib/dates'
 import { formatLKR, formatQty } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
 import type { MovementType, StockMovement } from '@/data/types'
@@ -40,7 +40,8 @@ export default function InventoryPage() {
   const [view, setView] = useState<MaterialView | undefined>()
   const [addOpen, setAddOpen] = useState(false)
   const rows = d.materials.filter((m) => (cat === ALL || m.material.category === cat) && (!q || `${m.material.name} ${m.material.sku}`.toLowerCase().includes(q.toLowerCase())))
-  const issuedOct = d.s.stockMovements.filter((m) => m.type === 'Issued' && m.date >= '2026-10-01')
+  const thisMonth = TODAY.slice(0, 7)
+  const issuedOct = d.s.stockMovements.filter((m) => m.type === 'Issued' && m.date >= monthStart(thisMonth))
   const moves = useMemo(() => d.s.stockMovements.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)), [d])
   const paged = usePaged(moves, 15)
   const liveView = view ? d.materials.find((m) => m.material.id === view.material.id) : undefined
@@ -55,7 +56,7 @@ export default function InventoryPage() {
       <KpiStrip items={[
         { label: 'Stock value', unit: 'LKR', value: <Money value={d.totals.stockValue} decimals={0} currency={false} />, caption: 'FIFO cost of stock on hand' },
         { label: 'Materials tracked', value: d.materials.length, caption: `${new Set(d.materials.map((m) => m.material.category)).size} categories` },
-        { label: 'Issued to projects (Oct)', unit: 'LKR', value: <Money value={sum(issuedOct, (m) => -(d.stockCost.get(m.id)?.totalCost ?? 0))} decimals={0} currency={false} />, basis: 'Recorded', caption: `${issuedOct.length} issues — charged to projects` },
+        { label: `Issued to projects (${monthLabel(thisMonth)})`, unit: 'LKR', value: <Money value={sum(issuedOct, (m) => -(d.stockCost.get(m.id)?.totalCost ?? 0))} decimals={0} currency={false} />, basis: 'Recorded', caption: `${issuedOct.length} issues — charged to projects` },
       ]} />
       <Tabs defaultValue="stock" className="gap-4">
         <TabsList variant="line"><TabsTrigger value="stock">Materials</TabsTrigger><TabsTrigger value="movements">Stock movements</TabsTrigger></TabsList>

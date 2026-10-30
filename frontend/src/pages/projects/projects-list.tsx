@@ -13,10 +13,12 @@ import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from '@/c
 import { ALL, FilterBar, FilterSelect, SearchInput } from '@/components/app/filters'
 import { EmptyState } from '@/components/app/empty-state'
 import { useData } from '@/store/store'
-import { formatDate } from '@/lib/dates'
+import { formatDate, TODAY } from '@/lib/dates'
 import { sum, type ProjectFinance } from '@/lib/finance'
 
-const YEARS = [{ value: 'started-2026', label: 'Started in 2026' }, { value: 'due-2026', label: 'Due by 31 Dec 2026' }, { value: 'due-2027', label: 'Due in 2027' }]
+// this year and next, from today
+const YEAR = TODAY.slice(0, 4), NEXT = String(Number(YEAR) + 1)
+const YEARS = [{ value: 'started-this', label: `Started in ${YEAR}` }, { value: 'due-this', label: `Due by 31 Dec ${YEAR}` }, { value: 'due-next', label: `Due in ${NEXT}` }]
 
 export default function ProjectsList() {
   useCrumbs([{ label: 'Projects' }])
@@ -33,9 +35,9 @@ export default function ProjectsList() {
     if (type !== ALL && p.project.type !== type) return false
     if (status !== ALL && p.project.status !== status) return false
     if (client !== ALL && p.client.id !== client) return false
-    if (date === 'started-2026' && !p.project.startDate.startsWith('2026')) return false
-    if (date === 'due-2026' && p.project.expectedCompletion > '2026-12-31') return false
-    if (date === 'due-2027' && !p.project.expectedCompletion.startsWith('2027')) return false
+    if (date === 'started-this' && !p.project.startDate.startsWith(YEAR)) return false
+    if (date === 'due-this' && p.project.expectedCompletion > `${YEAR}-12-31`) return false
+    if (date === 'due-next' && !p.project.expectedCompletion.startsWith(NEXT)) return false
     return true
   }), [d, q, type, status, client, date])
 

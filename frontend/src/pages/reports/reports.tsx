@@ -16,7 +16,7 @@ import { axisProps, ChartTooltip, Legend, moneyAxis } from '@/components/app/cha
 import { ageingBuckets } from '@/components/app/receivables-table'
 import { useData } from '@/store/store'
 import { sum } from '@/lib/finance'
-import { formatDate, formatRange, monthKey, monthLabel, monthsBetween } from '@/lib/dates'
+import { formatDate, formatRange, monthEnd, monthKey, monthLabel, monthsBetween, monthStart, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -74,7 +74,7 @@ export function IncomeReport() {
   const received = useMemo(() => d.s.clientPayments.filter((p) => inRange(p.date, range)), [d, range])
   const byCat = d.s.settings.revenueCategories.map((c) => ({ c, v: sum(rows.filter((r) => r.category === c), (r) => r.amount), rec: sum(rows.filter((r) => r.category === c), (r) => r.received) }))
   const byProject = d.projects.map((p) => ({ p, v: sum(rows.filter((r) => r.project?.id === p.project.id), (r) => r.amount), rec: sum(rows.filter((r) => r.project?.id === p.project.id), (r) => r.received) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v)
-  const months = monthsBetween(range.from.slice(0, 7), (range.to < '2026-10-31' ? range.to : '2026-10-31').slice(0, 7)).map((k) => ({
+  const months = monthsBetween(range.from.slice(0, 7), (range.to < TODAY ? range.to : TODAY).slice(0, 7)).map((k) => ({
     label: monthLabel(k), recorded: sum(rows.filter((r) => monthKey(r.date) === k), (r) => r.amount), received: sum(received.filter((p) => monthKey(p.date) === k), (p) => p.amount) + sum(d.s.otherIncomeReceipts.filter((p) => monthKey(p.date) === k), (p) => p.amount),
   }))
   return (
@@ -334,7 +334,7 @@ export function PayablesReport() {
 // ---------------------------------------------------------------- labour
 export function LabourReport() {
   const d = useData()
-  const [range, setRange] = useState({ from: '2026-10-01', to: '2026-10-31', preset: 'month' })
+  const [range, setRange] = useState(() => ({ from: monthStart(TODAY.slice(0, 7)), to: monthEnd(TODAY.slice(0, 7)), preset: 'month' }))
   const att = d.s.attendance.filter((a) => inRange(a.date, range))
   const emps = d.s.employees.map((e) => {
     const a = att.filter((x) => x.employeeId === e.id)

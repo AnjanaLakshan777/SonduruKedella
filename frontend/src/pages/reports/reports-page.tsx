@@ -6,6 +6,7 @@ import { useCrumbs } from '@/components/app/app-layout'
 import { PageHeader } from '@/components/app/page-header'
 import { Money } from '@/components/app/money'
 import { useData } from '@/store/store'
+import { fyLabel } from '@/lib/dates'
 import { IncomeReport, ExpenseReport, ProfitabilityReport, ReceivablesReport, PayablesReport, LabourReport } from './reports'
 
 export const REPORTS = [
@@ -35,7 +36,7 @@ export default function ReportsPage() {
     }
     return (
       <>
-        <PageHeader title="Reports" description="Financial reports for the financial year 2026/27, built from the same records as every other screen. Cash-flow reports are not part of this version." />
+        <PageHeader title="Reports" description={`Financial reports for the financial year ${fyLabel(d.s.settings.financialYearStart)}, built from the same records as every other screen. Cash-flow reports are not part of this version.`} />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {REPORTS.map((r) => (
             <Link key={r.id} to={`/reports/${r.id}`} className="group focus-visible:ring-ring/50 rounded-xl outline-none focus-visible:ring-[3px]">
