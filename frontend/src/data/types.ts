@@ -71,6 +71,8 @@ export interface Installment {
   amount: number
   billed: boolean
   billedOn?: string
+  // additional work billed on top of the contract; not part of the editable schedule
+  variation?: boolean
 }
 
 export interface ClientPayment {

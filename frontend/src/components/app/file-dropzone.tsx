@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { CircleAlert, CircleCheck, Download, Eye, FileText, FileUp, RefreshCw, Upload, X } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { CircleAlert, CircleCheck, Download, FileText, FileUp, RefreshCw, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { formatBytes } from '@/lib/format'
-import { formatDate, TODAY } from '@/lib/dates'
+import { formatDate } from '@/lib/dates'
+import { errorMessage } from '@/lib/api'
 import type { AgreementDoc } from '@/data/types'
 
 type Phase = { kind: 'idle' } | { kind: 'uploading'; name: string; size: number; progress: number } | { kind: 'error'; message: string; name?: string }
@@ -13,12 +14,13 @@ type Phase = { kind: 'idle' } | { kind: 'uploading'; name: string; size: number;
 const MAX = 20 * 1024 * 1024
 
 /**
- * Agreement PDF upload. There is no backend in this prototype: progress is simulated and the file stays in this browser
- * session only — nothing is stored on a server and no public link is created.
+ * Agreement PDF upload to the project's private storage. The server checks the file again (PDF signature, size)
+ * and only ever serves it as a download to signed-in users.
  */
-export function FileDropzone({ doc, onUploaded, onRemove, title = 'Drop the signed agreement PDF here', compact }: {
+export function FileDropzone({ doc, onUpload, downloadUrl, onRemove, title = 'Drop the signed agreement PDF here', compact }: {
   doc?: AgreementDoc
-  onUploaded: (doc: AgreementDoc, file: File) => void
+  onUpload: (file: File) => Promise<void>
+  downloadUrl?: string
   onRemove?: () => void
   title?: string
   compact?: boolean
@@ -27,32 +29,21 @@ export function FileDropzone({ doc, onUploaded, onRemove, title = 'Drop the sign
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   const [drag, setDrag] = useState(false)
   const [replacing, setReplacing] = useState(false)
-  const timer = useRef<number>()
-  const fileRef = useRef<File>()
-  const urlRef = useRef<string>()
 
-  useEffect(() => () => { window.clearInterval(timer.current); if (urlRef.current) URL.revokeObjectURL(urlRef.current) }, [])
-
-  function start(file: File) {
+  async function start(file: File) {
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     if (!isPdf) return setPhase({ kind: 'error', message: 'Only PDF files can be uploaded', name: file.name })
     if (file.size > MAX) return setPhase({ kind: 'error', message: `The file is ${formatBytes(file.size)} — the limit is 20 MB`, name: file.name })
-    fileRef.current = file
-    setPhase({ kind: 'uploading', name: file.name, size: file.size, progress: 0 })
-    let p = 0
-    timer.current = window.setInterval(() => {
-      p = Math.min(100, p + 9 + Math.random() * 14)
-      setPhase({ kind: 'uploading', name: file.name, size: file.size, progress: p })
-      if (p >= 100) {
-        window.clearInterval(timer.current)
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current)
-        urlRef.current = URL.createObjectURL(file)
-        onUploaded({ fileName: file.name, size: file.size, uploadedAt: TODAY }, file)
-        setPhase({ kind: 'idle' })
-        setReplacing(false)
-        toast.success('Agreement attached', { description: 'Prototype only: the file is kept in this browser session, not uploaded to a server.' })
-      }
-    }, 180)
+    // fetch can't report upload progress, so the bar just shows it's busy
+    setPhase({ kind: 'uploading', name: file.name, size: file.size, progress: 60 })
+    try {
+      await onUpload(file)
+      setPhase({ kind: 'idle' })
+      setReplacing(false)
+      toast.success('Agreement uploaded', { description: file.name })
+    } catch (e) {
+      setPhase({ kind: 'error', message: errorMessage(e), name: file.name })
+    }
   }
   const pick = () => input.current?.click()
   const hidden = (
@@ -66,24 +57,19 @@ export function FileDropzone({ doc, onUploaded, onRemove, title = 'Drop the sign
         <div className="bg-muted grid size-10 shrink-0 place-items-center rounded-md"><FileText className="size-5" /></div>
         <div className="grid min-w-0 flex-1 gap-1.5">
           <div className="truncate font-medium">{phase.name}</div>
-          <div className="text-muted-foreground text-xs">{formatBytes(phase.size)} · Uploading {Math.round(phase.progress)}%</div>
+          <div className="text-muted-foreground text-xs">{formatBytes(phase.size)} · Uploading…</div>
           <Progress value={phase.progress} aria-label="Upload progress" />
         </div>
-        <Button variant="ghost" size="icon" aria-label="Cancel upload" onClick={() => { window.clearInterval(timer.current); setPhase({ kind: 'idle' }) }}><X /></Button>
       </div>
     )
   }
 
   if (doc && !replacing && phase.kind === 'idle') {
-    const open = (download: boolean) => {
-      if (!urlRef.current) {
-        toast('Sample document', { description: 'This sample agreement has no file behind it. Upload a PDF to preview or download it.' })
-        return
-      }
+    // the server always sends it as an attachment, so this is a download either way
+    const open = () => {
+      if (!downloadUrl) return
       const a = document.createElement('a')
-      a.href = urlRef.current
-      if (download) a.download = doc.fileName
-      else a.target = '_blank'
+      a.href = downloadUrl
       a.rel = 'noopener'
       a.click()
     }
@@ -96,8 +82,7 @@ export function FileDropzone({ doc, onUploaded, onRemove, title = 'Drop the sign
           <div className="text-muted-foreground text-xs">{formatBytes(doc.size)} · Uploaded {formatDate(doc.uploadedAt)} · Private to this project</div>
         </div>
         <div className="flex flex-wrap gap-1">
-          <Button variant="ghost" size="sm" onClick={() => open(false)}><Eye />Preview</Button>
-          <Button variant="ghost" size="sm" onClick={() => open(true)}><Download />Download</Button>
+          <Button variant="ghost" size="sm" onClick={open} disabled={!downloadUrl}><Download />Download</Button>
           <Button variant="outline" size="sm" onClick={() => setReplacing(true)}><RefreshCw />Replace</Button>
           {onRemove && <Button variant="ghost" size="sm" className="text-destructive" onClick={onRemove}>Remove</Button>}
         </div>

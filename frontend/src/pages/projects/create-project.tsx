@@ -16,8 +16,8 @@ import { ScheduleEditor, scheduleTemplate, type ScheduleRow } from '@/components
 import { DelayTermsForm } from '@/components/app/delay-terms-form'
 import { useStore } from '@/store/store'
 import type { DelayTerms, ProjectStatus, ProjectType } from '@/data/types'
-import { TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 
 const TYPES: { value: ProjectType; label: string; hint: string }[] = [
   { value: 'Construction', label: 'Construction', hint: 'Agreed build with an installment schedule' },
@@ -28,7 +28,8 @@ const TYPES: { value: ProjectType; label: string; hint: string }[] = [
 export default function CreateProject() {
   useCrumbs([{ label: 'Projects', to: '/projects' }, { label: 'Create Project' }])
   const navigate = useNavigate()
-  const { clients, projects, settings, addProject, addClient } = useStore()
+  const { clients, projects, settings, addProject } = useStore()
+  const [busy, setBusy] = useState(false)
   const [name, setName] = useState('')
   const [type, setType] = useState<ProjectType>('Construction')
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing')
@@ -65,23 +66,32 @@ export default function CreateProject() {
   }
   const errorList = Object.values(errors).filter(Boolean) as string[]
 
-  function save() {
+  async function save() {
     setTried(true)
     if (errorList.length) {
       toast.error('Some details need attention', { description: errorList[0] })
       return
     }
-    const cid = clientMode === 'existing' ? clientId : addClient({ name: nc.name.trim(), phone: nc.phone.trim(), city: nc.city.trim(), address: nc.address.trim(), email: nc.email || undefined, kind: 'Individual', createdAt: TODAY })
-    const id = addProject(
-      {
-        code: nextCode, name: name.trim(), type, clientId: cid, location: location.trim() || nc.city || '', description: description.trim(),
-        contractValue: contract, startDate: start, expectedCompletion: end, status, notes: notes || undefined, createdAt: TODAY,
+    setBusy(true)
+    try {
+      const id = await addProject({
+        name: name.trim(), type, location: location.trim() || nc.city || '', description: description.trim(),
+        ...(clientMode === 'existing'
+          ? { clientId }
+          : { newClient: { name: nc.name.trim(), phone: nc.phone.trim(), city: nc.city.trim(), address: nc.address.trim(), email: nc.email || undefined, kind: 'Individual' } }),
+        contractValue: contract, startDate: start, expectedCompletion: end, status, notes: notes || undefined,
         delay: type === 'Construction' && delayOn ? { ...delay, enabled: true } : undefined,
-      },
-      contract > 0 ? rows.map((r) => ({ projectId: '', description: r.description.trim(), dueDate: r.dueDate, amount: Number(r.amount), billed: false })) : [],
-    )
-    toast.success(`${nextCode} created`, { description: `${name.trim()} · ${formatLKR(contract)} agreed. Upload the agreement PDF from the project page.` })
-    navigate(`/projects/${id}`)
+        schedule: contract > 0 ? rows.map((r) => ({ description: r.description.trim(), dueDate: r.dueDate, amount: Number(r.amount) })) : [],
+      })
+      // the server gives the real code; the one in the header was only a preview
+      const saved = useStore.getState().projects.find((p) => p.id === id)
+      toast.success(`${saved?.code ?? 'Project'} created`, { description: `${name.trim()} · ${formatLKR(contract)} agreed. Upload the agreement PDF from the project page.` })
+      navigate(`/projects/${id}`)
+    } catch (e) {
+      toast.error('Project not created', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -198,7 +208,7 @@ export default function CreateProject() {
           </Card>
           <div className="flex gap-2">
             <Button variant="outline" asChild className="flex-1"><Link to="/projects">Cancel</Link></Button>
-            <Button className="flex-1" onClick={save}>Create Project</Button>
+            <Button className="flex-1" onClick={save} disabled={busy}>Create Project</Button>
           </div>
         </aside>
       </div>

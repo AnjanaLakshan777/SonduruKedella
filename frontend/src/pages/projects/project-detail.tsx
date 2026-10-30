@@ -19,6 +19,7 @@ import { FileDropzone } from '@/components/app/file-dropzone'
 import { useData, useStore } from '@/store/store'
 import { projectActivity } from '@/lib/finance'
 import { diffDays, formatDate, TODAY } from '@/lib/dates'
+import { apiUrl, errorMessage } from '@/lib/api'
 import { formatLKR } from '@/lib/format'
 import type { ProjectStatus } from '@/data/types'
 import { cn } from '@/lib/utils'
@@ -33,7 +34,7 @@ export default function ProjectDetail() {
   const [params, setParams] = useSearchParams()
   const d = useData()
   const navigate = useNavigate()
-  const { updateProject, setAgreement } = useStore()
+  const { setProjectStatus, uploadAgreement } = useStore()
   const pf = d.projectFinById.get(id)
   useCrumbs([{ label: 'Projects', to: '/projects' }, { label: pf?.project.name ?? 'Not found' }])
   const [payFor, setPayFor] = useState<string | null>(null)
@@ -48,11 +49,13 @@ export default function ProjectDetail() {
   const hasCommission = p.type !== 'Consultation'
   const activity = projectActivity(d, id)
 
-  function changeStatus(s: ProjectStatus) {
-    const patch: Partial<typeof p> = { status: s }
-    if (s === 'Completed' && !p.actualCompletion) patch.actualCompletion = TODAY
-    updateProject(p.id, patch)
-    toast.success(`Status changed to ${s}`, { description: s === 'Completed' && p.delay?.enabled && !p.delay.appliedAmount ? 'Check the delay deduction on the Payments tab before the final invoice.' : undefined })
+  async function changeStatus(s: ProjectStatus) {
+    try {
+      await setProjectStatus(p.id, s)
+      toast.success(`Status changed to ${s}`, { description: s === 'Completed' && p.delay?.enabled && !p.delay.appliedAmount ? 'Check the delay deduction on the Payments tab before the final invoice.' : undefined })
+    } catch (e) {
+      toast.error('Status not changed', { description: errorMessage(e) })
+    }
   }
 
   return (
@@ -215,7 +218,7 @@ export default function ProjectDetail() {
               <CardDescription>Upload the signed agreement as a PDF so it stays with the project. This app stores an existing agreement — it does not create or sign one.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4">
-              <FileDropzone doc={p.agreement} onUploaded={(doc) => setAgreement(p.id, doc)} />
+              <FileDropzone doc={p.agreement} onUpload={(file) => uploadAgreement(p.id, file)} downloadUrl={apiUrl(`/projects/${p.id}/agreement/download`)} />
               <p className="text-muted-foreground flex items-center gap-1.5 text-xs"><Lock className="size-3.5" />Private to this project. Files are never shared through a public link.</p>
             </CardContent>
           </Card>

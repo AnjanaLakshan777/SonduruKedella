@@ -80,3 +80,8 @@ export async function apiGetOptional<T>(path: string): Promise<T | undefined> {
     throw e
   }
 }
+
+export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+// for plain links (downloads): the browser sends the session cookie itself
+export const apiUrl = (path: string) => BASE + path

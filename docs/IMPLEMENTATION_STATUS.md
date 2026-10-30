@@ -1230,3 +1230,24 @@ For each completed task, record the date, files or migrations changed, verificat
 - Seed script fix: a re-run caps an issue at the stock on hand on that date, not at today's stock. An earlier re-run had posted one backdated issue (movement 61, 800 kg steel dated 2026-09-14) against stock received on 2026-10-13. It is valid under the backend's posting-order FIFO and is left as it is.
 - Tests: the new list endpoints are covered in `PayrollApiIntegrationTest` (payments, adjustments), `ExpenseApiIntegrationTest` and `ScheduleAndWriteOffIntegrationTest`. Frontend: `tsc -b` is clean, and the 19 Vitest tests pass.
   - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 684 tests, 0 failures, 0 errors, 0 skipped.
+
+### 2026-10-30: Frontend connected, phase 2a (clients and projects save to the backend)
+- Store actions that now call the API. They are `async` and throw `ApiError` with the server's message. After a save the store reads back what the server has (`loadProject`, `loadClients`, `loadActivity`); nothing is guessed locally.
+  - `addClient`, `updateClient`: `POST /clients`, `PUT /clients/{id}` (with the version last read).
+  - `addProject`: `POST /projects`, schedule and delay terms included. A new client is created in the same transaction (`newClient`) instead of a separate call first. The toast shows the code the server assigned.
+  - `setProjectStatus`: `PUT /projects/{id}/status`. The server sets the actual completion date.
+  - `uploadAgreement`: `PUT /projects/{id}/agreement` (multipart). The dropzone uploads for real; the simulated progress and the browser-only copy are gone. "Download" links to `/agreement/download` (always an attachment, so "Preview" was dropped).
+  - `saveDelayTerms`, `applyDelayDeduction`, `reverseDelayDeduction`: replace the old `setDelayTerms`, which did all three locally.
+  - `reviseSchedule`: `PUT /projects/{id}/schedule`. Variations are no longer part of the edit dialog: the scheduled rows must equal the contract value, as the backend requires.
+  - `addVariation`: `POST /projects/{id}/variations`, from the Revenue page's "additional work" form.
+- `Installment.variation` is set from the API's `kind`. The edit dialog uses it instead of the "Variation:" description prefix.
+- Record versions for optimistic locking are kept in `data/api-load.ts` (`versionOf`), refreshed whenever a row is read.
+- Forms disable their save button while saving and show the server's refusal as an error toast.
+- Backend:
+  - New `PUT /api/v1/projects/{id}/delay-terms` `{enabled, terms, version}`. It adds terms (version null), changes them, or switches them off (`enabled: false`, the row is kept).
+  - Construction projects only. A stale version gets 409, and so does any change while a deduction is applied ("Reverse it before changing the terms").
+  - It writes activity entries: added, updated, removed.
+  - `DelayTermsService.fill` keeps only the value of the chosen rule, for both create and edit.
+  - Tests in `ScheduleAndWriteOffIntegrationTest`: add, stale version, rule change clearing the old value, blocked while applied, switch off, the activity log, design project 400, unknown project 404. `DelayTermsServiceTest` constructor updated.
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 686 tests, 0 failures, 0 errors, 0 skipped. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. The development backend was rebuilt, and loading after sign-in was checked against it. Saving was not tried in a browser.
+- Still local until later phases: billing, receipts, write-offs, other income (2b); expenses (2c); suppliers and inventory (2d); labour and payroll (2e); commissions and settings (2f).

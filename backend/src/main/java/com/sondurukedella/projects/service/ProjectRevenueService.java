@@ -8,6 +8,7 @@ import com.sondurukedella.revenue.dto.DeductionApplyRequest;
 import com.sondurukedella.revenue.dto.DeductionReverseRequest;
 import com.sondurukedella.revenue.dto.DelayCalculationResponse;
 import com.sondurukedella.revenue.dto.DelayTermsResponse;
+import com.sondurukedella.revenue.dto.DelayTermsUpdateRequest;
 import com.sondurukedella.revenue.dto.InstallmentReceivableDetail;
 import com.sondurukedella.revenue.dto.InstallmentReceivableResponse;
 import com.sondurukedella.revenue.dto.ProjectFacts;
@@ -24,6 +25,7 @@ import com.sondurukedella.revenue.dto.VariationRequest;
 import com.sondurukedella.revenue.service.InstallmentScheduleService;
 import com.sondurukedella.revenue.service.BillingService;
 import com.sondurukedella.revenue.service.DelayDeductionService;
+import com.sondurukedella.revenue.service.DelayTermsService;
 import com.sondurukedella.revenue.service.ReceiptService;
 import com.sondurukedella.revenue.service.ReceiptService.ReceiptResult;
 import com.sondurukedella.revenue.service.ReceivableService;
@@ -46,6 +48,7 @@ public class ProjectRevenueService {
     private final ReceiptService receipts;
     private final WriteOffService writeOffs;
     private final DelayDeductionService deductions;
+    private final DelayTermsService delayTerms;
     private final InstallmentScheduleService schedule;
 
     public ProjectReceivablesResponse receivables(long projectId) {
@@ -118,6 +121,10 @@ public class ProjectRevenueService {
 
     public DelayTermsResponse reverseDeduction(long projectId, DeductionReverseRequest request) {
         return deductions.reverse(facts(projectId), request);
+    }
+
+    public DelayTermsResponse saveDelayTerms(long projectId, DelayTermsUpdateRequest request) {
+        return delayTerms.save(projectId, facts(projectId).projectType(), request);
     }
 
     private void requireExists(long projectId) {

@@ -20,10 +20,11 @@ import { useStore } from '@/store/store'
 import { calcDelay, sum, type InstallmentView, type ProjectFinance } from '@/lib/finance'
 import { formatDate, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 import type { DelayTerms } from '@/data/types'
 
 export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance; payFor: string | null; setPayFor: (id: string | null) => void }) {
-  const { recordClientPayment, billInstallment, replaceSchedule } = useStore()
+  const { recordClientPayment, billInstallment, reviseSchedule } = useStore()
   const [woFor, setWoFor] = useState<InstallmentView | undefined>()
   const [billFor, setBillFor] = useState<InstallmentView | undefined>()
   const [editOpen, setEditOpen] = useState(false)
@@ -157,38 +158,52 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <EditScheduleDialog open={editOpen} onOpenChange={setEditOpen} pf={pf} onSave={(rows) => {
-        replaceSchedule(pf.project.id, rows.map((r) => ({ id: r.id, projectId: pf.project.id, description: r.description.trim(), dueDate: r.dueDate, amount: Number(r.amount), billed: r.billed ?? false, billedOn: pf.installments.find((x) => x.inst.id === r.id)?.inst.billedOn })))
+      <EditScheduleDialog open={editOpen} onOpenChange={setEditOpen} pf={pf} onSave={async (rows) => {
+        await reviseSchedule(pf.project.id, rows.map((r) => ({ id: r.id, description: r.description.trim(), dueDate: r.dueDate, amount: Number(r.amount) })))
         toast.success('Payment schedule updated')
       }} />
     </div>
   )
 }
 
-function EditScheduleDialog({ open, onOpenChange, pf, onSave }: { open: boolean; onOpenChange: (o: boolean) => void; pf: ProjectFinance; onSave: (rows: ScheduleRow[]) => void }) {
+function EditScheduleDialog({ open, onOpenChange, pf, onSave }: { open: boolean; onOpenChange: (o: boolean) => void; pf: ProjectFinance; onSave: (rows: ScheduleRow[]) => Promise<void> }) {
   const [rows, setRows] = useState<ScheduleRow[]>([])
   const [tried, setTried] = useState(false)
+  const [busy, setBusy] = useState(false)
   useEffect(() => {
     if (open) {
       setTried(false)
-      setRows(pf.installments.map((i) => ({ key: newRowKey(), id: i.inst.id, description: i.inst.description, dueDate: i.inst.dueDate, amount: i.inst.amount, billed: i.inst.billed, locked: i.inst.billed || i.paid > 0 })))
+      // variations are billed extras on top of the contract, not part of the plan being edited
+      setRows(pf.installments.filter((i) => !i.inst.variation).map((i) => ({ key: newRowKey(), id: i.inst.id, description: i.inst.description, dueDate: i.inst.dueDate, amount: i.inst.amount, billed: i.inst.billed, locked: i.inst.billed || i.paid > 0 })))
     }
   }, [open, pf])
   const total = rows.reduce((t, r) => t + (Number(r.amount) || 0), 0)
-  const variations = pf.installments.filter((i) => i.inst.description.startsWith('Variation:')).reduce((t, i) => t + i.inst.amount, 0)
-  const target = pf.contractValue + variations
+  const variations = pf.installments.filter((i) => i.inst.variation).reduce((t, i) => t + i.inst.amount, 0)
+  const target = pf.contractValue
   const valid = Math.abs(total - target) < 0.01 && rows.every((r) => r.description.trim() && r.dueDate && Number(r.amount) > 0)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Edit payment schedule</DialogTitle>
-          <DialogDescription>Installments must add up to the contract value of {formatLKR(pf.contractValue)}{variations ? ` plus ${formatLKR(variations)} of billed variations` : ''}. Billed or paid installments are locked.</DialogDescription>
+          <DialogDescription>Installments must add up to the contract value of {formatLKR(pf.contractValue)}{variations ? ` (the ${formatLKR(variations)} of billed variations is separate)` : ''}. Billed installments are locked.</DialogDescription>
         </DialogHeader>
         <ScheduleEditor rows={rows} onChange={setRows} contractValue={target} showErrors={tried} />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => { setTried(true); if (valid) { onSave(rows); onOpenChange(false) } }}>Save schedule</Button>
+          <Button disabled={busy} onClick={async () => {
+            setTried(true)
+            if (!valid) return
+            setBusy(true)
+            try {
+              await onSave(rows)
+              onOpenChange(false)
+            } catch (e) {
+              toast.error('Schedule not saved', { description: errorMessage(e) })
+            } finally {
+              setBusy(false)
+            }
+          }}>Save schedule</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -196,8 +211,17 @@ function EditScheduleDialog({ open, onOpenChange, pf, onSave }: { open: boolean;
 }
 
 function DelaySection({ pf }: { pf: ProjectFinance }) {
-  const { setDelayTerms } = useStore()
+  const { saveDelayTerms, applyDelayDeduction, reverseDelayDeduction } = useStore()
   const p = pf.project
+  // saves, then toasts either way
+  const run = async (save: () => Promise<void>, done: () => void, failed: string) => {
+    try {
+      await save()
+      done()
+    } catch (e) {
+      toast.error(failed, { description: errorMessage(e) })
+    }
+  }
   const d = p.delay
   const [editOpen, setEditOpen] = useState(false)
   const [terms, setTerms] = useState<DelayTerms>(d ?? { enabled: true, contractDeadline: p.expectedCompletion, rule: 'per_day' })
@@ -216,15 +240,13 @@ function DelaySection({ pf }: { pf: ProjectFinance }) {
         <DialogHeader><DialogTitle>Delay deduction terms</DialogTitle><DialogDescription>Copy the rule exactly from the signed agreement.</DialogDescription></DialogHeader>
         <DelayTermsForm value={terms} onChange={setTerms} contractValue={p.contractValue} showErrors={termsTried} />
         <DialogFooter>
-          {d?.enabled && <Button variant="ghost" className="text-destructive mr-auto" onClick={() => { setDelayTerms(p.id, { ...terms, enabled: false, appliedAmount: undefined }, 'Delay deduction terms removed.'); setEditOpen(false) }}>Remove terms</Button>}
+          {d?.enabled && <Button variant="ghost" className="text-destructive mr-auto" onClick={() => run(() => saveDelayTerms(p.id, terms, false), () => setEditOpen(false), 'Terms not removed')}>Remove terms</Button>}
           <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
           <Button onClick={() => {
             setTermsTried(true)
             const ok = terms.contractDeadline && ((terms.rule === 'per_day' && terms.ratePerDay! > 0) || (terms.rule === 'percent_per_week' && terms.percentPerWeek! > 0) || (terms.rule === 'fixed_amount' && terms.fixedAmount! > 0))
             if (!ok) return
-            setDelayTerms(p.id, { ...terms, enabled: true }, 'Delay deduction terms updated.')
-            setEditOpen(false)
-            toast.success('Delay deduction terms saved')
+            run(() => saveDelayTerms(p.id, terms, true), () => { setEditOpen(false); toast.success('Delay deduction terms saved') }, 'Terms not saved')
           }}>Save terms</Button>
         </DialogFooter>
       </DialogContent>
@@ -275,7 +297,7 @@ function DelaySection({ pf }: { pf: ProjectFinance }) {
         {applied ? (
           <div className="bg-muted/50 grid gap-1 rounded-md p-3 text-sm">
             <span>Applied on {formatDate(d.appliedOn)} against <strong>{pf.installments.find((i) => i.inst.id === d.appliedToInstallmentId)?.inst.description}</strong>.</span>
-            <Button variant="link" size="sm" className="h-auto justify-self-start px-0" onClick={() => { setDelayTerms(p.id, { ...d, appliedAmount: undefined, appliedOn: undefined, appliedToInstallmentId: undefined }, 'Delay deduction reversed for review.'); toast('Deduction removed', { description: 'The installment shows its full amount again.' }) }}>Reverse to review again</Button>
+            <Button variant="link" size="sm" className="h-auto justify-self-start px-0" onClick={() => run(() => reverseDelayDeduction(p.id), () => toast('Deduction removed', { description: 'The installment shows its full amount again.' }), 'Deduction not reversed')}>Reverse to review again</Button>
           </div>
         ) : (
           calc && calc.daysLate > 0 && (
@@ -300,11 +322,11 @@ function DelaySection({ pf }: { pf: ProjectFinance }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              setDelayTerms(p.id, { ...d, actualCompletion: completion, appliedAmount: amt, appliedOn: TODAY, appliedToInstallmentId: target?.inst.id, notes: note ? `${d.notes ?? ''} ${note}`.trim() : d.notes },
-                `Delay deduction of ${formatLKR(amt)} applied (${calc?.explanation}).`)
-              toast.success('Delay deduction applied', { description: `${formatLKR(amt)} deducted from ${target?.inst.description}.` })
-            }}>Apply deduction</AlertDialogAction>
+            <AlertDialogAction onClick={() => target && run(
+              () => applyDelayDeduction(p.id, { completionDate: completion, installmentId: target.inst.id, amount: amt, notes: note || undefined }),
+              () => toast.success('Delay deduction applied', { description: `${formatLKR(amt)} deducted from ${target.inst.description}.` }),
+              'Deduction not applied',
+            )}>Apply deduction</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

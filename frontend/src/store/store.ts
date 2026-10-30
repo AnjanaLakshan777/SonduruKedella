@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 import { useMemo } from 'react'
 import { createSeed } from '@/data/seed'
-import { emptyState, loadAll } from '@/data/api-load'
+import { code, emptyState, loadActivity, loadAll, loadClients, loadProject, mapClient, versionOf } from '@/data/api-load'
+import { api, apiPost, apiPut } from '@/lib/api'
 import type {
-  Advance, AgreementDoc, Attendance, Client, ClientPayment, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
-  Expense, ExpensePayment, Installment, Material, OtherIncome, OtherIncomeReceipt, Overtime, PayrollAdjustment, PayrollPayment, Project,
+  Advance, Attendance, Client, ClientPayment, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
+  Expense, ExpensePayment, Material, OtherIncome, OtherIncomeReceipt, Overtime, PayrollAdjustment, PayrollPayment, ProjectStatus, ProjectType,
   Settings, StockMovement, Supplier, SupplierInvoice, SupplierPayment, WriteOff, ActivityEntry,
 } from '@/data/types'
 import { derive } from '@/lib/finance'
@@ -17,13 +18,17 @@ export const uid = (p: string) => `${p}${++n}`
 type New<T extends { id: string }> = Omit<T, 'id'>
 
 interface Actions {
-  addClient: (c: New<Client>) => string
-  updateClient: (id: string, patch: Partial<Client>) => void
-  addProject: (p: New<Project>, schedule: New<Installment>[]) => string
-  updateProject: (id: string, patch: Partial<Project>, note?: string) => void
-  setAgreement: (projectId: string, doc: AgreementDoc | undefined) => void
-  setDelayTerms: (projectId: string, terms: DelayTerms, note?: string) => void
-  replaceSchedule: (projectId: string, rows: (New<Installment> & { id?: string })[]) => void
+  // saved on the backend; they throw ApiError (with the server's message) when it says no
+  addClient: (c: ClientInput) => Promise<string>
+  updateClient: (id: string, c: ClientInput) => Promise<void>
+  addProject: (p: ProjectInput) => Promise<string>
+  setProjectStatus: (id: string, status: ProjectStatus) => Promise<void>
+  uploadAgreement: (projectId: string, file: File) => Promise<void>
+  saveDelayTerms: (projectId: string, terms: DelayTerms, enabled: boolean) => Promise<void>
+  applyDelayDeduction: (projectId: string, d: { completionDate: string; installmentId: string; amount: number; notes?: string }) => Promise<void>
+  reverseDelayDeduction: (projectId: string) => Promise<void>
+  reviseSchedule: (projectId: string, rows: { id?: string; description: string; dueDate: string; amount: number }[]) => Promise<void>
+  addVariation: (projectId: string, v: { description: string; amount: number; dueDate: string; billedOn: string }) => Promise<void>
   billInstallment: (id: string, date: string) => void
   recordClientPayment: (p: New<ClientPayment>) => void
   writeOff: (w: New<WriteOff>) => void
@@ -58,54 +63,116 @@ interface Actions {
 
 export type Store = DataState & Actions & { loaded: boolean }
 
+export interface ClientInput {
+  name: string
+  kind: Client['kind']
+  phone: string
+  email?: string
+  address: string
+  city: string
+  notes?: string
+}
+
+export interface ProjectInput {
+  name: string
+  type: ProjectType
+  // an existing client, or newClient to create one in the same transaction
+  clientId?: string
+  newClient?: ClientInput
+  location: string
+  description: string
+  contractValue: number
+  startDate: string
+  expectedCompletion: string
+  status: ProjectStatus
+  notes?: string
+  schedule: { description: string; dueDate: string; amount: number }[]
+  delay?: DelayTerms
+}
+
+const clientBody = (c: ClientInput) => ({ ...c, kind: code(c.kind) })
+const delayBody = (d: DelayTerms) => ({
+  contractDeadline: d.contractDeadline, rule: code(d.rule), ratePerDay: d.ratePerDay, percentPerWeek: d.percentPerWeek,
+  fixedAmount: d.fixedAmount, graceDays: d.graceDays, maxDeduction: d.maxDeduction, notes: d.notes,
+})
+
 export const useStore = create<Store>()((set, get) => {
   const log = (projectId: string | undefined, kind: ActivityEntry['kind'], text: string) =>
     set((s) => ({ activity: [...s.activity, { id: uid('a'), date: TODAY, projectId, kind, text }] }))
+  // after a save, read back what the server now has instead of guessing it locally
+  const refreshProject = async (projectId: string) => {
+    const b = await loadProject(projectId)
+    set((s) => {
+      const instIds = new Set(s.installments.filter((i) => i.projectId === projectId).map((i) => i.id))
+      return {
+        projects: s.projects.some((p) => p.id === projectId) ? s.projects.map((p) => (p.id === projectId ? b.project : p)) : [...s.projects, b.project],
+        installments: [...s.installments.filter((i) => i.projectId !== projectId), ...b.installments],
+        clientPayments: [...s.clientPayments.filter((p) => !instIds.has(p.installmentId)), ...b.clientPayments],
+        writeOffs: [...s.writeOffs.filter((w) => !instIds.has(w.installmentId)), ...b.writeOffs],
+      }
+    })
+  }
+  const refreshClients = async () => set({ clients: await loadClients() })
+  const refreshActivity = async () => set({ activity: await loadActivity() })
   return {
     ...emptyState(),
     loaded: false,
     log,
     load: async () => set({ ...(await loadAll()), loaded: true }),
-    addClient: (c) => {
-      const id = uid('c')
-      set((s) => ({ clients: [...s.clients, { ...c, id }] }))
+    addClient: async (c) => {
+      const saved = mapClient(await apiPost('/clients', clientBody(c)))
+      set((s) => ({ clients: [...s.clients, saved] }))
+      return saved.id
+    },
+    updateClient: async (id, c) => {
+      const saved = mapClient(await apiPut(`/clients/${id}`, { ...clientBody(c), version: versionOf('client', id) }))
+      set((s) => ({ clients: s.clients.map((x) => (x.id === id ? saved : x)) }))
+    },
+    addProject: async (p) => {
+      const created = await apiPost<{ id: number }>('/projects', {
+        name: p.name, type: code(p.type), clientId: p.clientId, newClient: p.newClient && clientBody(p.newClient), location: p.location,
+        description: p.description, contractValue: p.contractValue, startDate: p.startDate, expectedCompletion: p.expectedCompletion,
+        status: code(p.status), notes: p.notes, schedule: p.schedule, delayTerms: p.delay && delayBody(p.delay),
+      })
+      const id = String(created.id)
+      await Promise.all([refreshProject(id), p.newClient && refreshClients(), refreshActivity()])
       return id
     },
-    updateClient: (id, patch) => set((s) => ({ clients: s.clients.map((c) => (c.id === id ? { ...c, ...patch } : c)) })),
-    addProject: (p, schedule) => {
-      const id = uid('p')
-      set((s) => ({
-        projects: [...s.projects, { ...p, id }],
-        installments: [...s.installments, ...schedule.map((r) => ({ ...r, id: uid('i'), projectId: id }))],
-      }))
-      log(id, 'status', `Project created in ${p.status}.`)
-      return id
+    setProjectStatus: async (id, status) => {
+      await apiPut(`/projects/${id}/status`, { status: code(status), version: versionOf('project', id) })
+      await Promise.all([refreshProject(id), refreshActivity()])
     },
-    updateProject: (id, patch, note) => {
-      const before = get().projects.find((p) => p.id === id)
-      set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) }))
-      if (before && patch.status && patch.status !== before.status) log(id, 'status', `Status changed from ${before.status} to ${patch.status}.${note ? ` ${note}` : ''}`)
-      else if (note) log(id, 'note', note)
+    uploadAgreement: async (projectId, file) => {
+      const form = new FormData()
+      form.append('file', file)
+      await api('PUT', `/projects/${projectId}/agreement`, form)
+      await Promise.all([refreshProject(projectId), refreshActivity()])
     },
-    setAgreement: (projectId, doc) => {
-      set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, agreement: doc } : p)) }))
-      log(projectId, 'document', doc ? `Agreement uploaded: ${doc.fileName}` : 'Agreement removed.')
+    saveDelayTerms: async (projectId, terms, enabled) => {
+      await apiPut(`/projects/${projectId}/delay-terms`, { enabled, terms: delayBody(terms), version: versionOf('delay', projectId) })
+      await Promise.all([refreshProject(projectId), refreshActivity()])
     },
-    setDelayTerms: (projectId, terms, note) => {
-      set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, delay: terms } : p)) }))
-      if (note) log(projectId, 'deduction', note)
+    applyDelayDeduction: async (projectId, d) => {
+      await apiPost(`/projects/${projectId}/delay-terms/deduction`, { ...d, version: versionOf('delay', projectId) })
+      await Promise.all([refreshProject(projectId), refreshActivity()])
     },
-    replaceSchedule: (projectId, rows) =>
-      set((s) => {
-        const keep = new Set(rows.filter((r) => r.id).map((r) => r.id))
-        const others = s.installments.filter((i) => i.projectId !== projectId || keep.has(i.id))
-        const updated = others.map((i) => {
-          const r = rows.find((x) => x.id === i.id)
-          return r ? { ...i, ...r, id: i.id } : i
-        })
-        const added = rows.filter((r) => !r.id).map((r) => ({ ...r, id: uid('i'), projectId }) as Installment)
-        return { installments: [...updated, ...added] }
-      }),
+    reverseDelayDeduction: async (projectId) => {
+      await apiPost(`/projects/${projectId}/delay-terms/deduction/reverse`, { version: versionOf('delay', projectId) })
+      await Promise.all([refreshProject(projectId), refreshActivity()])
+    },
+    reviseSchedule: async (projectId, rows) => {
+      await apiPut(`/projects/${projectId}/schedule`, {
+        installments: rows.map((r) => ({
+          id: r.id, version: r.id ? versionOf('installment', r.id) : undefined,
+          installment: { description: r.description, dueDate: r.dueDate, amount: r.amount },
+        })),
+      })
+      await Promise.all([refreshProject(projectId), refreshActivity()])
+    },
+    addVariation: async (projectId, v) => {
+      await apiPost(`/projects/${projectId}/variations`, v)
+      await Promise.all([refreshProject(projectId), refreshActivity()])
+    },
     billInstallment: (id, date) => set((s) => ({ installments: s.installments.map((i) => (i.id === id ? { ...i, billed: true, billedOn: date } : i)) })),
     recordClientPayment: (p) => set((s) => ({ clientPayments: [...s.clientPayments, { ...p, id: uid('cp') }] })),
     writeOff: (w) => {

@@ -25,6 +25,7 @@ import { useData, useStore } from '@/store/store'
 import { sum } from '@/lib/finance'
 import { addDays, formatDate, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 
 interface Row { id: string; date: string; category: string; projectId?: string; code?: string; project?: string; client: string; description: string; amount: number; received: number; outstanding: number; status: string; due?: string; otherId?: string }
 
@@ -155,7 +156,7 @@ export default function RevenuePage() {
 
 function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const d = useData()
-  const { billInstallment, replaceSchedule, addOtherIncome } = useStore()
+  const { billInstallment, addVariation, addOtherIncome } = useStore()
   const [category, setCategory] = useState('Construction')
   const [mode, setMode] = useState<'bill' | 'variation'>('bill')
   const [projectId, setProjectId] = useState('')
@@ -184,14 +185,19 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
     amount: (!isProject || mode === 'variation') && !(amt > 0) ? 'Enter the amount.' : undefined,
     received: !isProject && typeof receivedNow === 'number' && receivedNow > amt ? 'Cannot exceed the amount.' : undefined,
   }
-  function save() {
+  async function save() {
     setTried(true)
     if (Object.values(err).some(Boolean)) return
     if (isProject && mode === 'bill' && inst) {
       billInstallment(inst.inst.id, date)
       toast.success('Revenue recorded', { description: `${formatLKR(inst.net)} billed to ${pf!.client.name} — ${inst.inst.description}. Record payments as they arrive.` })
     } else if (isProject && pf) {
-      replaceSchedule(pf.project.id, [...pf.installments.map((i) => ({ ...i.inst })), { projectId: pf.project.id, description: `Variation: ${description.trim()}`, dueDate: due, amount: amt, billed: true, billedOn: date }])
+      try {
+        await addVariation(pf.project.id, { description: `Variation: ${description.trim()}`, amount: amt, dueDate: due!, billedOn: date })
+      } catch (e) {
+        toast.error('Variation not saved', { description: errorMessage(e) })
+        return
+      }
       toast.success('Additional work billed', { description: `${formatLKR(amt)} added to ${pf.project.code} as a variation. The original contract value is unchanged.` })
     } else {
       addOtherIncome({ date, description: description.trim(), payer: payer || undefined, amount: amt, dueDate: due, reference: reference || undefined, notes: notes || undefined }, typeof receivedNow === 'number' && receivedNow > 0 ? { amount: receivedNow, method, date } : undefined)

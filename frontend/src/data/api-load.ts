@@ -20,6 +20,83 @@ const label = (code: string) => code.toLowerCase().split('_').map((w) => w[0].to
 
 export const PROJECT_STATUSES: ProjectStatus[] = ['Planning', 'In Progress', 'On Hold', 'Completed', 'Cancelled']
 
+// The backend wants the version you read on every edit (optimistic locking). The UI types have no
+// room for it, so it lives here, keyed like "project:12", and gets refreshed whenever a row is mapped.
+const versions = new Map<string, number>()
+export const versionOf = (kind: string, id: string) => versions.get(`${kind}:${id}`)
+function keep<T extends { id: number; version?: number }>(kind: string, row: T): T {
+  if (row.version != null) versions.set(`${kind}:${row.id}`, row.version)
+  return row
+}
+
+// API enum codes for the UI's labels: 'In Progress' -> IN_PROGRESS
+export const code = (s: string) => s.toUpperCase().replace(/ /g, '_')
+
+export function mapClient(c: Row): Client {
+  keep('client', c)
+  return {
+    id: String(c.id), name: c.name, kind: label(c.kind) as Client['kind'], phone: c.phone, email: opt(c.email), address: c.address ?? '',
+    city: c.city ?? '', notes: opt(c.notes), createdAt: day(c.createdAt),
+  }
+}
+
+export function mapProject(p: Row, delay?: Row, agreement?: Row): Project {
+  keep('project', p)
+  if (delay) versions.set(`delay:${p.id}`, delay.version)
+  else versions.delete(`delay:${p.id}`)
+  return {
+    id: String(p.id), code: p.code, name: p.name, type: label(p.type) as ProjectType, clientId: String(p.clientId),
+    location: p.location ?? '', description: p.description ?? '', contractValue: p.contractValue, startDate: p.startDate,
+    expectedCompletion: p.expectedCompletion, actualCompletion: opt(p.actualCompletion), status: label(p.status) as ProjectStatus,
+    notes: opt(p.notes), createdAt: day(p.createdAt),
+    agreement: agreement && { fileName: agreement.fileName, size: agreement.size, uploadedAt: day(agreement.uploadedAt) },
+    delay: delay ? delayFrom(delay) : undefined,
+  }
+}
+
+export function mapInstallment(i: Row): Installment {
+  keep('installment', i)
+  return {
+    id: String(i.id), projectId: String(i.projectId), description: i.description, dueDate: i.dueDate, amount: i.amount,
+    billed: i.billed, billedOn: opt(i.billedOn), variation: i.kind === 'VARIATION' || undefined,
+  }
+}
+
+const mapReceipt = (r: Row): ClientPayment => ({
+  id: String(r.id), installmentId: String(r.installmentId), date: r.paymentDate, amount: r.amount, method: r.method,
+  reference: opt(r.reference), notes: opt(r.notes),
+})
+const mapWriteOff = (w: Row): WriteOff => ({ id: String(w.id), installmentId: String(w.installmentId), date: w.date, amount: w.amount, reason: w.reason })
+const mapActivity = (a: Row): ActivityEntry => ({ id: String(a.id), date: a.date, projectId: id(a.projectId), kind: a.kind.toLowerCase(), text: a.message })
+
+// one project with everything hanging off it, for the initial load and for refreshing after a save
+async function projectBundle(p: Row) {
+  const [schedule, receipts, writeOffs, delay, agreement] = await Promise.all([
+    apiGet<Row[]>(`/projects/${p.id}/schedule`),
+    apiGet<Row[]>(`/projects/${p.id}/receipts`),
+    apiGet<Row[]>(`/projects/${p.id}/write-offs`),
+    apiGet<Row | undefined>(`/projects/${p.id}/delay-terms`),
+    apiGetOptional<Row>(`/projects/${p.id}/agreement`),
+  ])
+  return {
+    project: mapProject(p, delay, agreement),
+    installments: schedule.map(mapInstallment),
+    clientPayments: receipts.filter((r: Row) => !r.voided).map(mapReceipt),
+    writeOffs: writeOffs.filter((w: Row) => !w.voided).map(mapWriteOff),
+  }
+}
+export type ProjectBundle = Awaited<ReturnType<typeof projectBundle>>
+
+export async function loadProject(projectId: string): Promise<ProjectBundle> {
+  return projectBundle(await apiGet<Row>(`/projects/${projectId}`))
+}
+export async function loadClients(): Promise<Client[]> {
+  return (await apiGetAll<Row>('/clients')).map(mapClient)
+}
+export async function loadActivity(): Promise<ActivityEntry[]> {
+  return (await apiGetAll<Row>('/activity')).map(mapActivity)
+}
+
 function settingsFrom(o: Row): Settings {
   const groups: Record<ExpenseGroup, string[]> = { Design: [], Construction: [], Consultation: [], Company: [] }
   for (const c of o.expenseCategories) if (c.active) groups[label(c.group) as ExpenseGroup].push(c.name)
@@ -92,17 +169,7 @@ export async function loadAll(): Promise<DataState> {
       apiGetAll<Row>('/activity'),
     ])
 
-  // per-project pieces: schedule, receipts, write-offs, delay terms, agreement
-  const perProject = await Promise.all(projectRows.map(async (p: Row) => {
-    const [schedule, receipts, writeOffs, delay, agreement] = await Promise.all([
-      apiGet<Row[]>(`/projects/${p.id}/schedule`),
-      apiGet<Row[]>(`/projects/${p.id}/receipts`),
-      apiGet<Row[]>(`/projects/${p.id}/write-offs`),
-      apiGet<Row | undefined>(`/projects/${p.id}/delay-terms`),
-      apiGetOptional<Row>(`/projects/${p.id}/agreement`),
-    ])
-    return { p, schedule, receipts, writeOffs, delay, agreement }
-  }))
+  const perProject = await Promise.all(projectRows.map(projectBundle))
   const liveInvoices = invoiceRows.filter((i: Row) => i.status !== 'CANCELLED')
   const [incomeReceipts, invoiceDetails] = await Promise.all([
     Promise.all(otherIncomeRows.map((o: Row) => apiGet<Row[]>(`/other-income/${o.id}/receipts`))),
@@ -111,30 +178,11 @@ export async function loadAll(): Promise<DataState> {
   const firstDay = employeeRows.reduce((m: string, e: Row) => (e.joinedOn < m ? e.joinedOn : m), TODAY)
   const [attendanceRows, overtimeRows] = await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay)])
 
-  const projects: Project[] = perProject.map(({ p, delay, agreement }) => ({
-    id: String(p.id), code: p.code, name: p.name, type: label(p.type) as ProjectType, clientId: String(p.clientId),
-    location: p.location ?? '', description: p.description ?? '', contractValue: p.contractValue, startDate: p.startDate,
-    expectedCompletion: p.expectedCompletion, actualCompletion: opt(p.actualCompletion), status: label(p.status) as ProjectStatus,
-    notes: opt(p.notes), createdAt: day(p.createdAt),
-    agreement: agreement && { fileName: agreement.fileName, size: agreement.size, uploadedAt: day(agreement.uploadedAt) },
-    delay: delay ? delayFrom(delay) : undefined,
-  }))
-  const installments: Installment[] = perProject.flatMap(({ schedule }) => schedule.map((i: Row) => ({
-    id: String(i.id), projectId: String(i.projectId), description: i.description, dueDate: i.dueDate, amount: i.amount,
-    billed: i.billed, billedOn: opt(i.billedOn),
-  })))
-  const clientPayments: ClientPayment[] = perProject.flatMap(({ receipts }) => receipts.filter((r: Row) => !r.voided).map((r: Row) => ({
-    id: String(r.id), installmentId: String(r.installmentId), date: r.paymentDate, amount: r.amount, method: r.method,
-    reference: opt(r.reference), notes: opt(r.notes),
-  })))
-  const writeOffs: WriteOff[] = perProject.flatMap(({ writeOffs }) => writeOffs.filter((w: Row) => !w.voided).map((w: Row) => ({
-    id: String(w.id), installmentId: String(w.installmentId), date: w.date, amount: w.amount, reason: w.reason,
-  })))
-
-  const clients: Client[] = clientRows.map((c: Row) => ({
-    id: String(c.id), name: c.name, kind: label(c.kind) as Client['kind'], phone: c.phone, email: opt(c.email), address: c.address ?? '',
-    city: c.city ?? '', notes: opt(c.notes), createdAt: day(c.createdAt),
-  }))
+  const projects: Project[] = perProject.map((b) => b.project)
+  const installments: Installment[] = perProject.flatMap((b) => b.installments)
+  const clientPayments: ClientPayment[] = perProject.flatMap((b) => b.clientPayments)
+  const writeOffs: WriteOff[] = perProject.flatMap((b) => b.writeOffs)
+  const clients: Client[] = clientRows.map(mapClient)
   const otherIncome: OtherIncome[] = otherIncomeRows.map((o: Row) => ({
     id: String(o.id), date: o.date, description: o.description, payer: opt(o.payer), amount: o.amount, dueDate: opt(o.dueDate),
     reference: opt(o.reference), notes: opt(o.notes),
@@ -213,9 +261,7 @@ export async function loadAll(): Promise<DataState> {
   const commissionPayments: CommissionPayment[] = commissionPaymentRows.filter((p: Row) => !p.voided).map((p: Row) => ({
     id: String(p.id), arrangementId: String(p.commissionId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
   }))
-  const activity: ActivityEntry[] = activityRows.map((a: Row) => ({
-    id: String(a.id), date: a.date, projectId: id(a.projectId), kind: a.kind.toLowerCase(), text: a.message,
-  }))
+  const activity: ActivityEntry[] = activityRows.map(mapActivity)
 
   return {
     clients, projects, installments, clientPayments, writeOffs, otherIncome, otherIncomeReceipts, expenses, expensePayments, suppliers,

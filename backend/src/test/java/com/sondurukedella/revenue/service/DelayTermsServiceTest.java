@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import com.sondurukedella.activity.service.ActivityService;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -28,11 +29,14 @@ class DelayTermsServiceTest {
     @Mock
     private DelayDeductionTermsRepository repository;
 
+    @Mock
+    private ActivityService activityService;
+
     private DelayTermsService service;
 
     @BeforeEach
     void setUp() {
-        service = new DelayTermsService(repository, new RevenueMapper());
+        service = new DelayTermsService(repository, new RevenueMapper(), activityService);
     }
 
     @Test

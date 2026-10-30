@@ -131,6 +131,53 @@ class ScheduleAndWriteOffIntegrationTest {
         reverse(999_999_999L, "x", 0).andExpect(status().isNotFound());
     }
 
+    @Test
+    void delayTermsCanBeAddedChangedAndSwitchedOffButNotWhileADeductionIsApplied() throws Exception {
+        String perDay = "{\"contractDeadline\":\"2026-10-01\",\"rule\":\"PER_DAY\",\"ratePerDay\":5000,\"fixedAmount\":99}";
+        saveTerms(true, perDay, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true)).andExpect(jsonPath("$.ratePerDay").value(5000.0))
+                .andExpect(jsonPath("$.fixedAmount").doesNotExist());
+        saveTerms(true, perDay, null).andExpect(status().isConflict()); // they exist now: send the version
+
+        // switching rule drops the old rule's value
+        saveTerms(true, "{\"contractDeadline\":\"2026-10-01\",\"rule\":\"FIXED_AMOUNT\",\"fixedAmount\":50000}", termsVersion())
+                .andExpect(status().isOk()).andExpect(jsonPath("$.fixedAmount").value(50000.0)).andExpect(jsonPath("$.ratePerDay").doesNotExist());
+
+        bill(foundation);
+        mockMvc.perform(post("/api/v1/projects/" + project + "/delay-terms/deduction").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"completionDate\":\"2026-10-20\",\"installmentId\":%d,\"version\":%d}".formatted(foundation, termsVersion())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.appliedAmount").value(50000.0));
+        saveTerms(true, perDay, termsVersion()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(containsString("Reverse it")));
+
+        mockMvc.perform(post("/api/v1/projects/" + project + "/delay-terms/deduction/reverse").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"version\":%d}".formatted(termsVersion()))).andExpect(status().isOk());
+        saveTerms(false, perDay, termsVersion()).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+        assertThat(jdbc.queryForList("SELECT message FROM activity_log WHERE project_id = ? AND kind = 'DEDUCTION'", String.class, project))
+                .contains("Delay deduction terms added.", "Delay deduction terms updated.", "Delay deduction terms removed.");
+    }
+
+    @Test
+    void onlyConstructionProjectsHaveDelayTerms() throws Exception {
+        long client = jdbc.queryForObject("SELECT client_id FROM projects WHERE id = ?", Long.class, project);
+        long design = ApiFixtures.project(mockMvc, client, "DESIGN", "Sched Design");
+        mockMvc.perform(put("/api/v1/projects/" + design + "/delay-terms").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true,\"terms\":{\"contractDeadline\":\"2026-10-01\",\"rule\":\"PER_DAY\",\"ratePerDay\":5000}}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/v1/projects/999999999/delay-terms").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":true,\"terms\":{\"contractDeadline\":\"2026-10-01\",\"rule\":\"PER_DAY\",\"ratePerDay\":5000}}"))
+                .andExpect(status().isNotFound());
+    }
+
+    private ResultActions saveTerms(boolean enabled, String terms, Long version) throws Exception {
+        return mockMvc.perform(put("/api/v1/projects/" + project + "/delay-terms").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":%s,\"terms\":%s,\"version\":%s}".formatted(enabled, terms, version)));
+    }
+
+    private long termsVersion() {
+        return jdbc.queryForObject("SELECT version FROM delay_deduction_terms WHERE project_id = ?", Long.class, project);
+    }
+
     private void bill(long installmentId) throws Exception {
         mockMvc.perform(post("/api/v1/projects/" + project + "/installments/" + installmentId + "/bill").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"billedOn\":\"2026-10-20\",\"version\":" + version(installmentId) + "}"))

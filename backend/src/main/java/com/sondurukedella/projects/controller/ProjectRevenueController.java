@@ -6,6 +6,7 @@ import com.sondurukedella.revenue.dto.DeductionApplyRequest;
 import com.sondurukedella.revenue.dto.DeductionReverseRequest;
 import com.sondurukedella.revenue.dto.DelayCalculationResponse;
 import com.sondurukedella.revenue.dto.DelayTermsResponse;
+import com.sondurukedella.revenue.dto.DelayTermsUpdateRequest;
 import com.sondurukedella.revenue.dto.InstallmentReceivableDetail;
 import com.sondurukedella.revenue.dto.InstallmentReceivableResponse;
 import com.sondurukedella.revenue.dto.ProjectReceivablesResponse;
@@ -122,6 +123,12 @@ public class ProjectRevenueController {
     public DelayCalculationResponse delayCalculation(@PathVariable long projectId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate completionDate) {
         return service.delayCalculation(projectId, completionDate);
+    }
+
+    // add, change or switch off the terms (enabled=false); 409 while a deduction is applied
+    @PutMapping("/delay-terms")
+    public DelayTermsResponse saveDelayTerms(@PathVariable long projectId, @Valid @RequestBody DelayTermsUpdateRequest request) {
+        return service.saveDelayTerms(projectId, request);
     }
 
     @PostMapping("/delay-terms/deduction")
