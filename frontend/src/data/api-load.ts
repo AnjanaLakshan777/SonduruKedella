@@ -178,6 +178,53 @@ export async function loadInventory(): Promise<{ materials: Material[]; stockMov
   return { materials: materials.map(mapMaterial), stockMovements: mapMovements(movements) }
 }
 
+// adjustments are keyed by week and worker, not by their own id
+export const adjustmentKey = (weekStart: string, employeeId: string) => `${weekStart}:${employeeId}`
+
+function mapLabour(employeeRows: Row[], attendanceRows: Row[], overtimeRows: Row[], advanceRows: Row[], adjustmentRows: Row[], paymentRows: Row[]) {
+  const employees: Employee[] = employeeRows.map((e: Row) => {
+    keep('employee', e)
+    return {
+      id: String(e.id), name: e.name, role: e.role, phone: e.phone ?? '', dailyRate: e.dailyWage, overtimeRate: e.overtimeRate,
+      status: label(e.status) as Employee['status'], joinedOn: e.joinedOn, address: opt(e.address),
+    }
+  })
+  const attendance: Attendance[] = attendanceRows.map((a: Row) => ({
+    date: a.date, employeeId: String(a.employeeId), status: label(a.status) as Attendance['status'], projectId: id(a.projectId), notes: opt(a.notes),
+  }))
+  const overtime: Overtime[] = overtimeRows.map((o: Row) => {
+    keep('overtime', o)
+    return {
+      id: String(o.id), date: o.date, employeeId: String(o.employeeId), projectId: id(o.projectId), hours: o.hours, rate: o.hourlyRate,
+      approved: o.approved, recordedBy: o.recordedBy, notes: opt(o.notes),
+    }
+  })
+  const advances: Advance[] = advanceRows.filter((a: Row) => !a.voided).map((a: Row) => ({
+    id: String(a.id), date: a.paymentDate, employeeId: String(a.employeeId), amount: a.amount, method: a.paymentMethod, notes: opt(a.notes),
+  }))
+  const payrollAdjustments: PayrollAdjustment[] = adjustmentRows.map((a: Row) => {
+    versions.set(`adjustment:${adjustmentKey(a.weekStart, String(a.employeeId))}`, a.version)
+    return {
+      weekStart: a.weekStart, employeeId: String(a.employeeId), advanceDeduction: opt(a.advanceDeduction), otherDeduction: opt(a.otherDeduction),
+      otherNote: opt(a.otherNote),
+    }
+  })
+  const payrollPayments: PayrollPayment[] = paymentRows.filter((p: Row) => !p.voided).map((p: Row) => ({
+    id: String(p.id), weekStart: p.weekStart, employeeId: String(p.employeeId), date: p.paymentDate, amount: p.amount, method: p.paymentMethod,
+  }))
+  return { employees, attendance, overtime, advances, payrollAdjustments, payrollPayments }
+}
+
+// everything labour and payroll: one save can change attendance, recoveries and what each week owes
+export async function loadLabour() {
+  const [employeeRows, advanceRows, adjustmentRows, paymentRows] = await Promise.all([
+    apiGetAll<Row>('/employees'), apiGetAll<Row>('/payroll/advances'), apiGet<Row[]>('/payroll/adjustments'), apiGet<Row[]>('/payroll/payments'),
+  ])
+  const firstDay = employeeRows.reduce((m: string, e: Row) => (e.joinedOn < m ? e.joinedOn : m), TODAY)
+  const [attendanceRows, overtimeRows] = await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay)])
+  return mapLabour(employeeRows, attendanceRows, overtimeRows, advanceRows, adjustmentRows, paymentRows)
+}
+
 // the UI picks categories and units by name; the API wants ids
 const categoryIds = new Map<string, number>()
 const unitIds = new Map<string, number>()
@@ -301,27 +348,8 @@ export async function loadAll(): Promise<DataState> {
   const supplierPayments: SupplierPayment[] = invoiceDetails.flatMap(mapInvoicePayments)
   const materials: Material[] = materialRows.map(mapMaterial)
   const stockMovements: StockMovement[] = mapMovements(movementRows)
-  const employees: Employee[] = employeeRows.map((e: Row) => ({
-    id: String(e.id), name: e.name, role: e.role, phone: e.phone ?? '', dailyRate: e.dailyWage, overtimeRate: e.overtimeRate,
-    status: label(e.status) as Employee['status'], joinedOn: e.joinedOn, address: opt(e.address),
-  }))
-  const attendance: Attendance[] = attendanceRows.map((a: Row) => ({
-    date: a.date, employeeId: String(a.employeeId), status: label(a.status) as Attendance['status'], projectId: id(a.projectId), notes: opt(a.notes),
-  }))
-  const overtime: Overtime[] = overtimeRows.map((o: Row) => ({
-    id: String(o.id), date: o.date, employeeId: String(o.employeeId), projectId: id(o.projectId), hours: o.hours, rate: o.hourlyRate,
-    approved: o.approved, recordedBy: o.recordedBy, notes: opt(o.notes),
-  }))
-  const advances: Advance[] = advanceRows.filter((a: Row) => !a.voided).map((a: Row) => ({
-    id: String(a.id), date: a.paymentDate, employeeId: String(a.employeeId), amount: a.amount, method: a.paymentMethod, notes: opt(a.notes),
-  }))
-  const payrollAdjustments: PayrollAdjustment[] = adjustmentRows.map((a: Row) => ({
-    weekStart: a.weekStart, employeeId: String(a.employeeId), advanceDeduction: opt(a.advanceDeduction), otherDeduction: opt(a.otherDeduction),
-    otherNote: opt(a.otherNote),
-  }))
-  const payrollPayments: PayrollPayment[] = payrollPaymentRows.filter((p: Row) => !p.voided).map((p: Row) => ({
-    id: String(p.id), weekStart: p.weekStart, employeeId: String(p.employeeId), date: p.paymentDate, amount: p.amount, method: p.paymentMethod,
-  }))
+  const { employees, attendance, overtime, advances, payrollAdjustments, payrollPayments } =
+    mapLabour(employeeRows, attendanceRows, overtimeRows, advanceRows, adjustmentRows, payrollPaymentRows)
   const commissions: CommissionArrangement[] = commissionRows.filter((c: Row) => c.status !== 'VOIDED').map((c: Row) => ({
     id: String(c.id), projectId: String(c.projectId), recipient: c.recipient, role: c.role ?? '', rate: c.ratePct,
     status: c.status === 'PENDING' ? 'Pending' : 'Confirmed', confirmedOn: opt(c.confirmedOn),

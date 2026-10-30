@@ -10,6 +10,7 @@ import { Money } from '@/components/app/money'
 import { CellMain } from '@/components/app/data-table'
 import { DatePicker, SelectField } from '@/components/app/form'
 import { useData, useStore } from '@/store/store'
+import { errorMessage } from '@/lib/api'
 import type { Attendance, AttendanceStatus } from '@/data/types'
 import { addDays, dayName, formatDate, formatLongToday, TODAY, weekday, weekStart } from '@/lib/dates'
 import { cn } from '@/lib/utils'
@@ -21,6 +22,7 @@ const NONE = '__none'
 export function AttendanceView() {
   const d = useData()
   const saveAttendance = useStore((s) => s.saveAttendance)
+  const [busy, setBusy] = useState(false)
   const [date, setDate] = useState(TODAY)
   const [rows, setRows] = useState<Record<string, Attendance & { marked: boolean }>>({})
   const [dirty, setDirty] = useState(false)
@@ -44,10 +46,18 @@ export function AttendanceView() {
   const isSunday = weekday(date) === 0
   const savedCount = list.filter((x) => d.s.attendance.some((a) => a.date === date && a.employeeId === x.e.id)).length
 
-  function save() {
-    saveAttendance(date, list.map((x) => ({ date, employeeId: x.e.id, status: x.a.status, projectId: x.a.status === 'Absent' ? x.a.projectId : x.a.projectId, notes: x.a.notes || undefined })))
-    setDirty(false)
-    toast.success(`Attendance saved for ${formatDate(date)}`, { description: `${list.filter((x) => x.a.status === 'Present').length} present · ${list.filter((x) => x.a.status === 'Half Day').length} half day · ${list.filter((x) => x.a.status === 'Absent').length} absent` })
+  async function save() {
+    setBusy(true)
+    try {
+      await saveAttendance(date, list.map((x) => ({ date, employeeId: x.e.id, status: x.a.status, projectId: x.a.projectId, notes: x.a.notes || undefined })))
+      setDirty(false)
+      toast.success(`Attendance saved for ${formatDate(date)}`, { description: `${list.filter((x) => x.a.status === 'Present').length} present · ${list.filter((x) => x.a.status === 'Half Day').length} half day · ${list.filter((x) => x.a.status === 'Absent').length} absent` })
+    } catch (e) {
+      // e.g. a paid (frozen) week can't change
+      toast.error('Attendance not saved', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -105,7 +115,7 @@ export function AttendanceView() {
               </Table>
               <CardContent className="flex items-center justify-end gap-3 pb-6">
                 {dirty && <span className="text-warning text-sm">Unsaved changes</span>}
-                <Button onClick={save} disabled={!list.length}><Save />Save attendance</Button>
+                <Button onClick={save} disabled={!list.length || busy}><Save />Save attendance</Button>
               </CardContent>
             </>
           )}

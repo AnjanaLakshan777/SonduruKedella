@@ -15,6 +15,7 @@ import { useData, useStore } from '@/store/store'
 import { sum } from '@/lib/finance'
 import { addDays, formatDate, formatRange, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 
 export function AdvancesView() {
   const d = useData()
@@ -67,7 +68,9 @@ function AdvanceDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const [method, setMethod] = useState('Cash')
   const [notes, setNotes] = useState('')
   const [tried, setTried] = useState(false)
-  useEffect(() => { if (open) { setEmployeeId(''); setDate(TODAY); setAmount(''); setMethod('Cash'); setNotes(''); setTried(false) } }, [open])
+  const [busy, setBusy] = useState(false)
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  useEffect(() => { if (open) { setRequestId(crypto.randomUUID()); setEmployeeId(''); setDate(TODAY); setAmount(''); setMethod('Cash'); setNotes(''); setTried(false) } }, [open])
   const week = d.payroll[d.payroll.length - 1]
   const line = week?.lines.find((l) => l.employee.id === employeeId)
   const amt = typeof amount === 'number' ? amount : 0
@@ -90,7 +93,20 @@ function AdvanceDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => { setTried(true); if (err.emp || err.amount) return; addAdvance({ employeeId, date, amount: amt, method, notes: notes || undefined }); toast.success('Advance recorded', { description: `${formatLKR(amt)} to ${d.empById.get(employeeId)?.name} — will be deducted on payday.` }); onOpenChange(false) }}>Record {amt ? formatLKR(amt) : 'advance'}</Button>
+          <Button disabled={busy} onClick={async () => {
+            setTried(true)
+            if (err.emp || err.amount) return
+            setBusy(true)
+            try {
+              await addAdvance({ requestId, employeeId, date, amount: amt, method, notes: notes || undefined })
+              toast.success('Advance recorded', { description: `${formatLKR(amt)} to ${d.empById.get(employeeId)?.name} — will be deducted on payday.` })
+              onOpenChange(false)
+            } catch (e) {
+              toast.error('Advance not recorded', { description: errorMessage(e) })
+            } finally {
+              setBusy(false)
+            }
+          }}>Record {amt ? formatLKR(amt) : 'advance'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

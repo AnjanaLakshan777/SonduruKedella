@@ -12,12 +12,16 @@ import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/fo
 import { useData, useStore } from '@/store/store'
 import { formatDate, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
+import { useAuth } from '@/store/auth'
 
 const NONE = '__none'
 
 export function OvertimeView() {
   const d = useData()
   const { addOvertime, approveOvertime } = useStore()
+  const me = useAuth((s) => s.user)
+  const [busy, setBusy] = useState(false)
   const [employeeId, setEmployeeId] = useState('')
   const [date, setDate] = useState(TODAY)
   const [projectId, setProjectId] = useState(NONE)
@@ -38,13 +42,27 @@ export function OvertimeView() {
   const err = { emp: !employeeId ? 'Choose the worker.' : undefined, hours: !(h > 0 && h <= 8) ? 'Enter 0.5 to 8 hours.' : undefined, rate: !(r > 0) ? 'Enter the hourly rate.' : undefined }
   const list = useMemo(() => d.s.overtime.slice().sort((a, b) => Number(a.approved) - Number(b.approved) || b.date.localeCompare(a.date)), [d])
 
-  function save() {
+  async function save() {
     setTried(true)
     if (Object.values(err).some(Boolean)) return
-    addOvertime({ date, employeeId, projectId: projectId === NONE ? undefined : projectId, hours: h, rate: r, approved: false, recordedBy: 'Pradeep Jayasinghe', notes: notes || undefined })
-    toast.success('Overtime recorded — awaiting approval', { description: `${emp!.name}: ${h} h × ${formatLKR(r)} = ${formatLKR(h * r)}` })
-    setHours(''); setNotes(''); setTried(false)
+    setBusy(true)
+    try {
+      // whoever is signed in records it
+      await addOvertime({ date, employeeId, projectId: projectId === NONE ? undefined : projectId, hours: h, rate: r, recordedBy: me?.displayName ?? '', notes: notes || undefined })
+      toast.success('Overtime recorded — awaiting approval', { description: `${emp!.name}: ${h} h × ${formatLKR(r)} = ${formatLKR(h * r)}` })
+      setHours(''); setNotes(''); setTried(false)
+    } catch (e) {
+      toast.error('Overtime not recorded', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
   }
+  const approve = (o: { id: string; hours: number }, name: string, approved: boolean) =>
+    approveOvertime(o.id, approved)
+      .then(() => approved
+        ? toast.success('Overtime approved', { description: `${o.hours} h for ${name} added to the weekly payroll.` })
+        : toast('Approval withdrawn', { description: 'Removed from payroll until approved again.' }))
+      .catch((e) => toast.error('Not changed', { description: errorMessage(e) }))
 
   return (
     <div className="grid items-start gap-6 xl:grid-cols-3">
@@ -60,7 +78,7 @@ export function OvertimeView() {
           </div>
           <div className="bg-muted/60 flex items-center justify-between rounded-md px-3 py-2 text-sm"><span className="text-muted-foreground">Overtime amount</span><Money value={h * r} className="font-semibold" /></div>
           <Field label="Notes" optional><Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Slab concreting ran late" /></Field>
-          <Button onClick={save}><Plus />Record overtime</Button>
+          <Button onClick={save} disabled={busy}><Plus />Record overtime</Button>
           <p className="text-muted-foreground text-xs">Rates default to each worker's configured rate (Settings → wage defaults). Change it here for special arrangements.</p>
         </CardContent>
       </Card>
@@ -82,8 +100,8 @@ export function OvertimeView() {
                   <TableCell className="text-right font-medium"><Money value={o.hours * o.rate} currency={false} /></TableCell>
                   <TableCell><StatusBadge status={o.approved ? 'Approved' : 'Awaiting Approval'} /></TableCell>
                   <TableCell className="pr-4">
-                    {o.approved ? <Button variant="ghost" size="sm" onClick={() => { approveOvertime(o.id, false); toast('Approval withdrawn', { description: 'Removed from payroll until approved again.' }) }}><X />Undo</Button>
-                      : <Button variant="outline" size="sm" onClick={() => { approveOvertime(o.id, true); toast.success('Overtime approved', { description: `${o.hours} h for ${e.name} added to the weekly payroll.` }) }}><Check />Approve</Button>}
+                    {o.approved ? <Button variant="ghost" size="sm" onClick={() => approve(o, e.name, false)}><X />Undo</Button>
+                      : <Button variant="outline" size="sm" onClick={() => approve(o, e.name, true)}><Check />Approve</Button>}
                   </TableCell>
                 </TableRow>
               )

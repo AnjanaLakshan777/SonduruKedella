@@ -19,6 +19,7 @@ import { useData, useStore } from '@/store/store'
 import type { PayrollLine } from '@/lib/finance'
 import { formatDate, formatRange, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 
 export function PayrollView() {
   const d = useData()
@@ -166,9 +167,9 @@ export function PayrollView() {
         title={`Pay ${payFor?.employee.name ?? ''}`} description={`Week ${formatRange(w.weekStart, w.weekEnd)}`}
         context={payFor ? [{ label: 'Net payable', value: payFor.net }, { kind: 'less', label: 'Already paid', value: payFor.paid }, { kind: 'total', label: 'Remaining', value: payFor.remaining }] : undefined}
         outstanding={payFor?.remaining ?? 0}
-        onSubmit={(p) => payFor && recordPayrollPayments([{ weekStart: w.weekStart, employeeId: payFor.employee.id, date: p.date, amount: p.amount, method: p.method }])}
+        onSubmit={(p) => (payFor ? recordPayrollPayments([{ weekStart: w.weekStart, employeeId: payFor.employee.id, ...p }]) : undefined)}
       />
-      <AdjustDialog line={adjFor} weekStart={w.weekStart} onClose={() => setAdjFor(undefined)} onSave={(a) => { setPayrollAdjustment(a); toast.success('Deductions updated', { description: 'Net pay recalculated.' }) }} />
+      <AdjustDialog line={adjFor} weekStart={w.weekStart} onClose={() => setAdjFor(undefined)} onSave={async (a) => { await setPayrollAdjustment(a); toast.success('Deductions updated', { description: 'Net pay recalculated.' }) }} />
       <AlertDialog open={payAll} onOpenChange={setPayAll}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -182,7 +183,13 @@ export function PayrollView() {
           <FigureList rows={unpaid.map((l) => ({ label: l.employee.name, value: l.remaining }))} />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { recordPayrollPayments(unpaid.map((l) => ({ weekStart: w.weekStart, employeeId: l.employee.id, date: payDate, amount: l.remaining, method: payMethod }))); toast.success('Payroll paid', { description: `${formatLKR(w.remaining)} to ${unpaid.length} workers.` }) }}>Record payments</AlertDialogAction>
+            <AlertDialogAction onClick={() => {
+              const total = w.remaining, count = unpaid.length
+              recordPayrollPayments(unpaid.map((l) => ({ requestId: crypto.randomUUID(), weekStart: w.weekStart, employeeId: l.employee.id, date: payDate, amount: l.remaining, method: payMethod })))
+                .then(() => toast.success('Payroll paid', { description: `${formatLKR(total)} to ${count} workers.` }))
+                // the ones before the failure are paid; the page now shows what's still owed
+                .catch((e) => toast.error('Not all payments were recorded', { description: errorMessage(e) }))
+            }}>Record payments</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -190,11 +197,12 @@ export function PayrollView() {
   )
 }
 
-function AdjustDialog({ line, weekStart, onClose, onSave }: { line?: PayrollLine; weekStart: string; onClose: () => void; onSave: (a: { weekStart: string; employeeId: string; advanceDeduction: number; otherDeduction: number; otherNote?: string }) => void }) {
+function AdjustDialog({ line, weekStart, onClose, onSave }: { line?: PayrollLine; weekStart: string; onClose: () => void; onSave: (a: { weekStart: string; employeeId: string; advanceDeduction: number; otherDeduction: number; otherNote?: string }) => Promise<void> }) {
   const [adv, setAdv] = useState<number | ''>('')
   const [other, setOther] = useState<number | ''>('')
   const [note, setNote] = useState('')
   const [tried, setTried] = useState(false)
+  const [busy, setBusy] = useState(false)
   useEffect(() => { if (line) { setAdv(line.advanceDeduction); setOther(line.otherDeduction || ''); setNote(line.otherNote ?? ''); setTried(false) } }, [line])
   const a = Number(adv) || 0, o = Number(other) || 0
   const err = !line ? undefined : a > line.advancesOutstanding ? `Only ${formatLKR(line.advancesOutstanding)} in advances is outstanding.` : a + o > line.gross ? 'Deductions cannot exceed gross wages.' : o > 0 && !note.trim() ? 'Explain the other deduction.' : undefined
@@ -210,7 +218,19 @@ function AdjustDialog({ line, weekStart, onClose, onSave }: { line?: PayrollLine
         </div>
         <div className="bg-muted/60 flex justify-between rounded-md px-3 py-2 text-sm"><span className="text-muted-foreground">Net payable</span><Money value={net} className="font-semibold" /></div>
         {tried && err && <p className="text-destructive text-sm">{err}</p>}
-        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={() => { setTried(true); if (err || !line) return; onSave({ weekStart, employeeId: line.employee.id, advanceDeduction: a, otherDeduction: o, otherNote: note || undefined }); onClose() }}>Save deductions</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={busy} onClick={async () => {
+          setTried(true)
+          if (err || !line) return
+          setBusy(true)
+          try {
+            await onSave({ weekStart, employeeId: line.employee.id, advanceDeduction: a, otherDeduction: o, otherNote: note || undefined })
+            onClose()
+          } catch (e) {
+            toast.error('Deductions not saved', { description: errorMessage(e) })
+          } finally {
+            setBusy(false)
+          }
+        }}>Save deductions</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )

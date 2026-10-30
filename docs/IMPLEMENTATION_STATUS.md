@@ -1293,3 +1293,18 @@ For each completed task, record the date, files or migrations changed, verificat
 - After a save the store reloads what changed: the suppliers, the invoices with their payments, and the inventory. A stock invoice also brings stock in, so it reloads the inventory too.
 - `store/inventory.test.ts`: the posting tests now append to the local ledger through a helper with the prototype's checks (`movementError`, `replayFifo`). They still check the frontend's FIFO maths on the demo data; the store action goes to the server.
 - Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend matches. Not tried in a browser.
+
+### 2026-10-30: Frontend connected, phase 2e (labour and payroll save to the backend)
+- Store actions now calling the API:
+  - `addEmployee`: `POST /employees`.
+  - `updateEmployee`: `PUT /employees/{id}`. When the status changed, a second call goes to `PUT /employees/{id}/status`, because the backend keeps active/inactive out of an ordinary edit.
+  - `saveAttendance`: `PUT /attendance/{date}` with the whole day's register. The server refuses changes to a paid (frozen) week, and the error is shown.
+  - `addOvertime`: `POST /overtime`. It starts unapproved. "Recorded by" is now the signed-in user's name; the prototype had a fixed name.
+  - `approveOvertime`: `PUT /overtime/{id}/approval` (approve or withdraw).
+  - `addAdvance`: `POST /payroll/advances` (one `requestId` per dialog opening).
+  - `setPayrollAdjustment`: `PUT /payroll/weeks/{w}/employees/{e}/adjustment`, with the adjustment's version, or null when there is none yet.
+  - `recordPayrollPayments`: one `POST .../payments` per worker. "Pay all" sends them one by one; if one fails it stops, the rest are kept, and the page reloads to show what is still owed.
+- After a save the store reloads labour as one bundle (`loadLabour`): employees, attendance, overtime, advances, adjustments and payroll payments. A payment can change recoveries and frozen weeks, so all of these can change.
+- Versions are kept for employees, overtime and adjustments (adjustments by week and worker).
+- Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend matches. Not tried in a browser.
+- Known gap: the payroll page still works out what each week owes in the browser (`lib/finance.ts`). If that ever differs from the backend's figure (for example a frozen week whose rates changed later), the server refuses an overpayment and the error is shown. Phase 3 should read the week from `GET /payroll/weeks/{w}` instead.

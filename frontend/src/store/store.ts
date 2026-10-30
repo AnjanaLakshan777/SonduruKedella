@@ -3,13 +3,13 @@ import { useMemo } from 'react'
 import { createSeed } from '@/data/seed'
 import {
   categoryId, code, emptyState, loadActivity, loadAll, loadClients, loadExpenses, loadInventory, loadOtherIncome, loadProject, loadSupplierInvoices,
-  loadSuppliers, mapClient, methodId, unitId, versionOf,
+  loadLabour, loadSuppliers, mapClient, methodId, unitId, versionOf, adjustmentKey,
 } from '@/data/api-load'
 import type { PaymentInput } from '@/components/app/payment-dialog'
 import { api, apiPost, apiPut } from '@/lib/api'
 import type {
-  Advance, Attendance, Client, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
-  ExpenseGroup, ExpenseScope, Material, OtherIncome, Overtime, PayrollAdjustment, PayrollPayment, ProjectStatus, ProjectType,
+  Attendance, Client, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
+  ExpenseGroup, ExpenseScope, Material, OtherIncome, Overtime, PayrollAdjustment, ProjectStatus, ProjectType,
   Settings, StockMovement, Supplier, SupplierInvoice, WriteOff, ActivityEntry,
 } from '@/data/types'
 import { derive } from '@/lib/finance'
@@ -49,14 +49,16 @@ interface Actions {
   // The server costs it FIFO and refuses what isn't allowed (more than in stock, a return beyond the issue...).
   // requestId: one per dialog opening, so a retry doesn't post twice. qty is signed, as in the ledger.
   addStockMovement: (m: New<StockMovement> & { requestId: string; notes?: string }) => Promise<{ totalCost: number; projectId?: string }>
-  addEmployee: (e: New<Employee>) => void
-  updateEmployee: (id: string, patch: Partial<Employee>) => void
-  saveAttendance: (date: string, rows: Attendance[]) => void
-  addOvertime: (o: New<Overtime>) => void
-  approveOvertime: (id: string, approved: boolean) => void
-  addAdvance: (a: New<Advance>) => void
-  setPayrollAdjustment: (a: PayrollAdjustment) => void
-  recordPayrollPayments: (rows: New<PayrollPayment>[]) => void
+  addEmployee: (e: New<Employee>) => Promise<void>
+  updateEmployee: (id: string, e: New<Employee>) => Promise<void>
+  // the whole register for the day; a worker left out has no attendance that day
+  saveAttendance: (date: string, rows: Attendance[]) => Promise<void>
+  addOvertime: (o: Omit<New<Overtime>, 'approved'>) => Promise<void>
+  approveOvertime: (id: string, approved: boolean) => Promise<void>
+  addAdvance: (a: PaymentInput & { employeeId: string }) => Promise<void>
+  setPayrollAdjustment: (a: PayrollAdjustment) => Promise<void>
+  // one payment per worker-week; the first payment freezes that week on the server
+  recordPayrollPayments: (rows: (PaymentInput & { weekStart: string; employeeId: string })[]) => Promise<void>
   saveCommissions: (projectId: string, rows: (New<CommissionArrangement> & { id?: string })[], confirm: boolean) => void
   recordCommissionPayment: (p: New<CommissionPayment>) => void
   updateSettings: (patch: Partial<Settings>) => void
@@ -130,6 +132,9 @@ const expenseBody = (e: ExpenseInput) => {
 }
 
 const clientBody = (c: ClientInput) => ({ ...c, kind: code(c.kind) })
+const employeeBody = (e: New<Employee>) => ({
+  name: e.name, role: e.role, phone: e.phone, address: e.address, dailyWage: e.dailyRate, overtimeRate: e.overtimeRate, joinedOn: e.joinedOn,
+})
 // same shape for every kind of payment and receipt on the backend
 const paymentBody = (p: PaymentInput) => ({
   requestId: p.requestId, paymentDate: p.date, amount: p.amount, paymentMethodId: methodId(p.method), reference: p.reference, notes: p.notes,
@@ -160,6 +165,7 @@ export const useStore = create<Store>()((set, get) => {
   const refreshExpenses = async () => set(await loadExpenses())
   const refreshInvoices = async () => set(await loadSupplierInvoices())
   const refreshInventory = async () => set(await loadInventory())
+  const refreshLabour = async () => set(await loadLabour())
   const projectOf = (installmentId: string) => {
     const inst = get().installments.find((i) => i.id === installmentId)
     if (!inst) throw new Error('That installment is no longer there. Reload the data.')
@@ -313,15 +319,49 @@ export const useStore = create<Store>()((set, get) => {
       await Promise.all([refreshInventory(), refreshActivity()])
       return { totalCost: posted.totalCost, projectId: posted.projectId == null ? undefined : String(posted.projectId) }
     },
-    addEmployee: (e) => set((s) => ({ employees: [...s.employees, { ...e, id: uid('w') }] })),
-    updateEmployee: (id, patch) => set((s) => ({ employees: s.employees.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
-    saveAttendance: (date, rows) => set((s) => ({ attendance: [...s.attendance.filter((a) => a.date !== date), ...rows] })),
-    addOvertime: (o) => set((s) => ({ overtime: [...s.overtime, { ...o, id: uid('ot') }] })),
-    approveOvertime: (id, approved) => set((s) => ({ overtime: s.overtime.map((o) => (o.id === id ? { ...o, approved } : o)) })),
-    addAdvance: (a) => set((s) => ({ advances: [...s.advances, { ...a, id: uid('ad') }] })),
-    setPayrollAdjustment: (a) =>
-      set((s) => ({ payrollAdjustments: [...s.payrollAdjustments.filter((x) => !(x.weekStart === a.weekStart && x.employeeId === a.employeeId)), a] })),
-    recordPayrollPayments: (rows) => set((s) => ({ payrollPayments: [...s.payrollPayments, ...rows.map((r) => ({ ...r, id: uid('pp') }))] })),
+    addEmployee: async (e) => {
+      await apiPost('/employees', { ...employeeBody(e), status: code(e.status) })
+      await refreshLabour()
+    },
+    updateEmployee: async (id, e) => {
+      const saved = await apiPut<{ version: number; status: string }>(`/employees/${id}`, { ...employeeBody(e), version: versionOf('employee', id) })
+      // active/inactive has its own endpoint, so an ordinary edit can't flip it by accident
+      if (saved.status !== code(e.status)) await apiPut(`/employees/${id}/status`, { status: code(e.status), version: saved.version })
+      await refreshLabour()
+    },
+    saveAttendance: async (date, rows) => {
+      await apiPut(`/attendance/${date}`, {
+        entries: rows.map((r) => ({ employeeId: r.employeeId, status: code(r.status), projectId: r.projectId, notes: r.notes })),
+      })
+      await refreshLabour()
+    },
+    addOvertime: async (o) => {
+      await apiPost('/overtime', { employeeId: o.employeeId, date: o.date, projectId: o.projectId, hours: o.hours, hourlyRate: o.rate, recordedBy: o.recordedBy, notes: o.notes })
+      await refreshLabour()
+    },
+    approveOvertime: async (id, approved) => {
+      await apiPut(`/overtime/${id}/approval`, { approved, version: versionOf('overtime', id) })
+      await refreshLabour()
+    },
+    addAdvance: async (a) => {
+      await apiPost('/payroll/advances', { ...paymentBody(a), employeeId: a.employeeId })
+      await refreshLabour()
+    },
+    setPayrollAdjustment: async (a) => {
+      await apiPut(`/payroll/weeks/${a.weekStart}/employees/${a.employeeId}/adjustment`, {
+        advanceDeduction: a.advanceDeduction, otherDeduction: a.otherDeduction, otherNote: a.otherNote,
+        version: versionOf('adjustment', adjustmentKey(a.weekStart, a.employeeId)) ?? null,
+      })
+      await refreshLabour()
+    },
+    recordPayrollPayments: async (rows) => {
+      try {
+        // one at a time: each locks that worker on the server, and a failure stops the rest
+        for (const r of rows) await apiPost(`/payroll/weeks/${r.weekStart}/employees/${r.employeeId}/payments`, paymentBody(r))
+      } finally {
+        await refreshLabour()
+      }
+    },
     saveCommissions: (projectId, rows, confirm) => {
       set((s) => {
         const others = s.commissions.filter((c) => c.projectId !== projectId)

@@ -18,6 +18,7 @@ import { sum } from '@/lib/finance'
 import { TODAY } from '@/lib/dates'
 import type { Employee } from '@/data/types'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 
 export function Employees() {
   const d = useData()
@@ -85,6 +86,7 @@ export function Employees() {
 
 function EmployeeDialog({ state, onClose }: { state: { open: boolean; e?: Employee }; onClose: () => void }) {
   const { addEmployee, updateEmployee, settings } = useStore()
+  const [busy, setBusy] = useState(false)
   const [f, setF] = useState({ name: '', role: 'Labourer', phone: '', dailyRate: '' as number | '', overtimeRate: '' as number | '', status: 'Active' as Employee['status'], joinedOn: TODAY, address: '' })
   const [otTouched, setOtTouched] = useState(false)
   const [tried, setTried] = useState(false)
@@ -97,14 +99,21 @@ function EmployeeDialog({ state, onClose }: { state: { open: boolean; e?: Employ
   const suggested = typeof f.dailyRate === 'number' ? Math.round(((f.dailyRate / settings.wages.hoursPerDay) * settings.wages.overtimeMultiplier) / 10) * 10 : 0
   useEffect(() => { if (!otTouched && suggested) setF((x) => ({ ...x, overtimeRate: suggested })) }, [suggested, otTouched])
   const err = { name: !f.name.trim() ? 'Enter the name.' : undefined, rate: !(Number(f.dailyRate) > 0) ? 'Enter the daily wage.' : undefined, ot: !(Number(f.overtimeRate) > 0) ? 'Enter the overtime rate.' : undefined }
-  function save() {
+  async function save() {
     setTried(true)
     if (Object.values(err).some(Boolean)) return
     const rec = { ...f, name: f.name.trim(), dailyRate: Number(f.dailyRate), overtimeRate: Number(f.overtimeRate), address: f.address || undefined }
-    if (state.e) updateEmployee(state.e.id, rec)
-    else addEmployee(rec)
-    toast.success(state.e ? 'Employee updated' : 'Employee added', { description: `${rec.name} · ${formatLKR(rec.dailyRate)} per day` })
-    onClose()
+    setBusy(true)
+    try {
+      if (state.e) await updateEmployee(state.e.id, rec)
+      else await addEmployee(rec)
+      toast.success(state.e ? 'Employee updated' : 'Employee added', { description: `${rec.name} · ${formatLKR(rec.dailyRate)} per day` })
+      onClose()
+    } catch (e) {
+      toast.error(state.e ? 'Employee not updated' : 'Employee not added', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
   }
   return (
     <Dialog open={state.open} onOpenChange={(o) => !o && onClose()}>
@@ -119,7 +128,7 @@ function EmployeeDialog({ state, onClose }: { state: { open: boolean; e?: Employ
           <Field label="Joined on"><DatePicker value={f.joinedOn} onChange={(v) => setF({ ...f, joinedOn: v })} /></Field>
           <Field label="Employment status"><SelectField value={f.status} onChange={(v) => setF({ ...f, status: v as Employee['status'] })} options={['Active', 'Inactive']} /></Field>
         </div>
-        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save}>{state.e ? 'Save changes' : 'Add employee'}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={busy}>{state.e ? 'Save changes' : 'Add employee'}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )
