@@ -4,6 +4,7 @@ import com.sondurukedella.activity.entity.ActivityKind;
 import com.sondurukedella.activity.service.ActivityService;
 import com.sondurukedella.agreements.storage.AgreementFileStore;
 import com.sondurukedella.agreements.storage.AgreementStorageProperties;
+import com.sondurukedella.agreements.storage.DocumentType;
 import com.sondurukedella.agreements.storage.StoredFile;
 import com.sondurukedella.agreements.validation.AgreementFiles;
 import com.sondurukedella.common.exception.BusinessRuleException;
@@ -45,6 +46,7 @@ import com.sondurukedella.suppliers.validation.SupplierText;
 import jakarta.persistence.criteria.Predicate;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Set;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -56,6 +58,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -201,7 +204,7 @@ public class SupplierInvoiceService {
         return detail(invoice);
     }
 
-    // Same private store and checks as agreements. File first, then the row; the old file is deleted
+    // Same private store as agreements, but a PDF, JPG or PNG. File first, then the row; the old file is deleted
     // once the new one is saved.
     public SupplierInvoiceDetail attach(long id, MultipartFile file) {
         if (!invoices.existsById(id)) {
@@ -209,10 +212,10 @@ public class SupplierInvoiceService {
         }
         long maxBytes = storageProperties.maxSize().toBytes();
         String fileName = AgreementFiles.safeFileName(file.getOriginalFilename());
-        AgreementFiles.validateUpload(fileName, file.getContentType(), file.getSize(), maxBytes);
+        DocumentType type = AgreementFiles.validateReceiptUpload(fileName, file.getContentType(), file.getSize(), maxBytes);
         StoredFile stored;
         try (InputStream in = file.getInputStream()) {
-            stored = fileStore.store(in, maxBytes);
+            stored = fileStore.store(in, maxBytes, Set.of(type));
         } catch (IOException ex) {
             throw new StorageException("Could not read the uploaded file", ex);
         }
@@ -239,16 +242,17 @@ public class SupplierInvoiceService {
     public AttachmentDownload attachment(long id) {
         SupplierInvoice invoice = invoices.findById(id).orElseThrow(SupplierInvoiceService::notFound);
         if (invoice.getAttachmentStorageKey() == null) {
-            throw new NotFoundException("No PDF is attached to this invoice.");
+            throw new NotFoundException("No file is attached to this invoice.");
         }
         if (!fileStore.exists(invoice.getAttachmentStorageKey())) {
             throw new StorageException("Supplier invoice " + id + " has attachment metadata but no stored file", null);
         }
-        return new AttachmentDownload(invoice.getAttachmentFilename(), invoice.getAttachmentSize(), fileStore.open(invoice.getAttachmentStorageKey()));
+        return new AttachmentDownload(invoice.getAttachmentFilename(), invoice.getAttachmentSize(),
+                DocumentType.ofKey(invoice.getAttachmentStorageKey()).mediaType(), fileStore.open(invoice.getAttachmentStorageKey()));
     }
 
     // caller closes the stream (Spring does it when writing the response)
-    public record AttachmentDownload(String fileName, long size, InputStream content) {
+    public record AttachmentDownload(String fileName, long size, MediaType contentType, InputStream content) {
     }
 
     private boolean sameTerms(SupplierInvoice invoice, String invoiceNo, LocalDate invoiceDate, Long projectId, List<PlannedLine> planned) {

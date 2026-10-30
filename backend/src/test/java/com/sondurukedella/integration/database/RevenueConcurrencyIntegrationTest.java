@@ -76,7 +76,13 @@ class RevenueConcurrencyIntegrationTest {
         } finally {
             jdbc.execute("ALTER TABLE client_payments ENABLE TRIGGER trg_client_payments_guard");
         }
-        jdbc.update("DELETE FROM receivable_write_offs WHERE installment_id IN (" + installments + ")");
+        // receivable_write_offs refuses deletes too (V7 trigger); same, lift it for this cleanup only
+        jdbc.execute("ALTER TABLE receivable_write_offs DISABLE TRIGGER trg_receivable_write_offs_guard");
+        try {
+            jdbc.update("DELETE FROM receivable_write_offs WHERE installment_id IN (" + installments + ")");
+        } finally {
+            jdbc.execute("ALTER TABLE receivable_write_offs ENABLE TRIGGER trg_receivable_write_offs_guard");
+        }
         jdbc.update("DELETE FROM installments WHERE project_id IN (" + projects + ")");
         jdbc.update("DELETE FROM projects WHERE code LIKE 'REVTEST-%'");
         jdbc.update("DELETE FROM clients WHERE name LIKE 'RevTest%'");

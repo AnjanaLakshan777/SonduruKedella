@@ -98,6 +98,9 @@ class AgreementStorageIntegrationTest {
     void cleanUp() {
         String projects = "SELECT id FROM projects WHERE code LIKE 'AGTEST-%'";
         jdbc.update("DELETE FROM activity_log WHERE project_id IN (" + projects + ")");
+        // the expenses the attachment tests create (company-level, so no project)
+        jdbc.update("DELETE FROM activity_log WHERE message LIKE '%AgTest%'");
+        jdbc.update("DELETE FROM expenses WHERE description LIKE 'AgTest%'");
         jdbc.update("DELETE FROM project_agreements WHERE project_id IN (" + projects + ")");
         jdbc.update("DELETE FROM projects WHERE code LIKE 'AGTEST-%'");
         jdbc.update("DELETE FROM clients WHERE name LIKE 'AgTest%'");
@@ -163,7 +166,7 @@ class AgreementStorageIntegrationTest {
     void anExpenseCanCarryAPrivateReceiptPdf() throws Exception {
         long category = jdbc.queryForObject("SELECT id FROM expense_categories WHERE expense_group = 'COMPANY' AND name = 'Marketing'", Long.class);
         String created = mockMvc.perform(post("/api/v1/expenses").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
-                        {"date":"2026-10-20","scope":"COMPANY","categoryId":%d,"description":"Banner print","payee":"Sign Arts","amount":5000}"""
+                        {"date":"2026-10-20","scope":"COMPANY","categoryId":%d,"description":"AgTest banner print","payee":"AgTest Sign Arts","amount":5000}"""
                         .formatted(category)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.attachmentFilename").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
@@ -181,7 +184,7 @@ class AgreementStorageIntegrationTest {
         mockMvc.perform(get(attachment + "/download")).andExpect(status().isOk()).andExpect(content().bytes(PDF_V1))
                 .andExpect(header().string("Content-Disposition", containsString("attachment")));
         assertThat(jdbc.queryForList("SELECT message FROM activity_log WHERE kind = 'DOCUMENT'", String.class))
-                .anyMatch(m -> m.contains("Banner print") && m.contains("receipt.pdf"));
+                .anyMatch(m -> m.contains("AgTest banner print") && m.contains("receipt.pdf"));
 
         // replacing it removes the old file
         mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "receipt2.pdf", "application/pdf", PDF_V2)).with(csrf()))
@@ -190,6 +193,32 @@ class AgreementStorageIntegrationTest {
         mockMvc.perform(get(attachment + "/download")).andExpect(content().bytes(PDF_V2));
         mockMvc.perform(multipart(HttpMethod.PUT, "/api/v1/expenses/999999999/attachment")
                 .file(new MockMultipartFile("file", "receipt.pdf", "application/pdf", PDF_V1)).with(csrf())).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void aReceiptPhotoCanBeUploadedButNotPassedOffAsAPdfOrAnAgreement() throws Exception {
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 16, 'J', 'F', 'I', 'F', 0, 1};
+        long category = jdbc.queryForObject("SELECT id FROM expense_categories WHERE expense_group = 'COMPANY' AND name = 'Marketing'", Long.class);
+        String created = mockMvc.perform(post("/api/v1/expenses").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"date":"2026-10-20","scope":"COMPANY","categoryId":%d,"description":"AgTest fuel","payee":"AgTest Ceypetco","amount":3000}"""
+                        .formatted(category)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String attachment = "/api/v1/expenses/" + ((Number) com.jayway.jsonpath.JsonPath.read(created, "$.id")).longValue() + "/attachment";
+
+        // a phone photo of the bill
+        mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "IMG_2041.jpg", "image/jpeg", jpeg)).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.expense.attachmentFilename").value("IMG_2041.jpg"));
+        mockMvc.perform(get(attachment + "/download")).andExpect(status().isOk()).andExpect(content().bytes(jpeg))
+                .andExpect(header().string("Content-Type", "image/jpeg"))
+                .andExpect(header().string("Content-Disposition", containsString("attachment")));
+        assertThat(storedFiles()).anyMatch(name -> name.endsWith(".jpg"));
+
+        // the same photo renamed to .pdf is refused: the bytes decide
+        mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "bill.pdf", "application/pdf", jpeg)).with(csrf()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("The file is not a valid PDF."));
+        // agreements stay PDF only
+        mockMvc.perform(multipart(HttpMethod.PUT, url(project)).file(new MockMultipartFile("file", "contract.jpg", "image/jpeg", jpeg)).with(csrf()))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.sondurukedella.agreements.validation;
 
 import com.sondurukedella.agreements.entity.ProjectAgreement;
+import com.sondurukedella.agreements.storage.DocumentType;
 import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.common.exception.PayloadTooLargeException;
 import java.util.Locale;
@@ -28,9 +29,26 @@ public final class AgreementFiles {
         if (!fileName.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
             throw new InvalidRequestException("Only PDF files can be uploaded.");
         }
-        if (!isPdfContentType(declaredContentType)) {
+        if (!isContentType(declaredContentType, MediaType.APPLICATION_PDF)) {
             throw new InvalidRequestException("Only PDF files can be uploaded (content type must be application/pdf).");
         }
+    }
+
+    // Receipts and bills (expenses, supplier invoices): PDF, JPG or PNG. Returns the type the name
+    // says, which the store then holds the bytes to - a photo renamed to .pdf is refused.
+    public static DocumentType validateReceiptUpload(String fileName, String declaredContentType, long declaredSize, long maxBytes) {
+        if (declaredSize <= 0) {
+            throw new InvalidRequestException("The file is empty.");
+        }
+        if (declaredSize > maxBytes) {
+            throw tooLarge(maxBytes);
+        }
+        DocumentType type = DocumentType.ofFileName(fileName).filter(DocumentType.RECEIPTS::contains)
+                .orElseThrow(() -> new InvalidRequestException("Only PDF, JPG or PNG files can be uploaded."));
+        if (!isContentType(declaredContentType, type.mediaType())) {
+            throw new InvalidRequestException("The file's content type doesn't match a " + type.keyExtension().toUpperCase(Locale.ROOT) + " file.");
+        }
+        return type;
     }
 
     public static PayloadTooLargeException tooLarge(long maxBytes) {
@@ -52,19 +70,20 @@ public final class AgreementFiles {
         }
         if (name.length() > ProjectAgreement.FILENAME_MAX_LENGTH) {
             // keep the extension so the extension check and the download still make sense
-            String extension = name.toLowerCase(Locale.ROOT).endsWith(".pdf") ? name.substring(name.length() - 4) : "";
+            int dot = name.lastIndexOf('.');
+            String extension = dot >= 0 && name.length() - dot <= 5 ? name.substring(dot) : "";
             name = name.substring(0, ProjectAgreement.FILENAME_MAX_LENGTH - extension.length()) + extension;
         }
         return name;
     }
 
-    private static boolean isPdfContentType(String declared) {
+    private static boolean isContentType(String declared, MediaType expected) {
         if (declared == null) {
             return false;
         }
         try {
             // ignores parameters like ";charset=..." but not the type itself
-            return MediaType.APPLICATION_PDF.equalsTypeAndSubtype(MediaType.parseMediaType(declared));
+            return expected.equalsTypeAndSubtype(MediaType.parseMediaType(declared));
         } catch (InvalidMediaTypeException ex) {
             return false;
         }

@@ -53,6 +53,32 @@ class AgreementFileStoreTest {
     }
 
     @Test
+    void receiptPhotosAreStoredUnderTheirRealTypeWhenAllowed() {
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 16, 'J', 'F', 'I', 'F'};
+        byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13};
+        StoredFile photo = store.store(new ByteArrayInputStream(jpeg), 1024, DocumentType.RECEIPTS);
+        StoredFile scan = store.store(new ByteArrayInputStream(png), 1024, DocumentType.RECEIPTS);
+        assertThat(photo.key()).matches("[0-9a-f-]{36}\\.jpg");
+        assertThat(scan.key()).matches("[0-9a-f-]{36}\\.png");
+        assertThat(DocumentType.ofKey(photo.key())).isEqualTo(DocumentType.JPEG);
+        assertThat(store.exists(scan.key())).isTrue();
+    }
+
+    @Test
+    void theBytesHaveToBeOneOfTheAllowedTypes() {
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 16};
+        // agreements stay PDF only
+        assertThatThrownBy(() -> store.store(new ByteArrayInputStream(jpeg), 1024))
+                .isInstanceOf(InvalidRequestException.class).hasMessage("The file is not a valid PDF.");
+        // a photo named .pdf is held to PDF
+        assertThatThrownBy(() -> store.store(new ByteArrayInputStream(jpeg), 1024, java.util.Set.of(DocumentType.PDF)))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> store.store(new ByteArrayInputStream("GIF89a....".getBytes()), 1024, DocumentType.RECEIPTS))
+                .isInstanceOf(InvalidRequestException.class).hasMessage("The file must be a PDF, JPG or PNG.");
+        assertThat(files()).isEmpty();
+    }
+
+    @Test
     void theStorageDirectoryIsCreatedOnFirstUseNotAtStartup() {
         assertThat(store.root()).doesNotExist();
         store.store(new ByteArrayInputStream(PDF), 1024);

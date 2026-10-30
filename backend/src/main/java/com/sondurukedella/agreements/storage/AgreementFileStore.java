@@ -6,7 +6,6 @@ import com.sondurukedella.common.exception.StorageException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +14,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -27,9 +29,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgreementFileStore {
 
-    private static final byte[] PDF_SIGNATURE = "%PDF-".getBytes(StandardCharsets.US_ASCII);
     // the only shape of key we ever create; anything else is refused before touching the disk
-    private static final Pattern KEY = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.pdf");
+    private static final Pattern KEY = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(pdf|jpg|png)");
     private static final int BUFFER_SIZE = 64 * 1024;
 
     private final Path root;
@@ -41,17 +42,22 @@ public class AgreementFileStore {
     // Streams the upload to a temp file (never the whole thing in memory), hashing and counting as
     // it goes, and only then moves it into place under a new key. On any failure the temp file is
     // removed, so a rejected or broken upload leaves nothing behind.
+    // agreements: PDF only, as before
     public StoredFile store(InputStream in, long maxBytes) {
+        return store(in, maxBytes, DocumentType.PDF_ONLY);
+    }
+
+    public StoredFile store(InputStream in, long maxBytes, Set<DocumentType> allowed) {
         createRoot();
-        String key = UUID.randomUUID() + ".pdf";
         Path temp = root.resolve(".upload-" + UUID.randomUUID() + ".tmp");
         try {
             long size;
             String sha256;
+            DocumentType type;
             try (OutputStream out = Files.newOutputStream(temp)) {
                 MessageDigest digest = sha256();
                 byte[] buffer = new byte[BUFFER_SIZE];
-                byte[] header = new byte[PDF_SIGNATURE.length];
+                byte[] header = new byte[DocumentType.HEADER_LENGTH];
                 size = 0;
                 int read;
                 while ((read = in.read(buffer)) != -1) {
@@ -69,12 +75,11 @@ public class AgreementFileStore {
                 if (size == 0) {
                     throw new InvalidRequestException("The file is empty.");
                 }
-                // the name and content type can say anything; the bytes have to start like a PDF
-                if (size < header.length || !Arrays.equals(header, PDF_SIGNATURE)) {
-                    throw new InvalidRequestException("The file is not a valid PDF.");
-                }
+                // the name and content type can say anything; the bytes decide what the file really is
+                type = DocumentType.detect(header, size).filter(allowed::contains).orElseThrow(() -> new InvalidRequestException(describe(allowed)));
                 sha256 = HexFormat.of().formatHex(digest.digest());
             }
+            String key = UUID.randomUUID() + "." + type.keyExtension();
             moveIntoPlace(temp, resolve(key));
             return new StoredFile(key, size, sha256);
         } catch (IOException ex) {
@@ -82,6 +87,16 @@ public class AgreementFileStore {
         } finally {
             deleteQuietly(temp);
         }
+    }
+
+    // "The file is not a valid PDF." or "The file must be a PDF, JPG or PNG."
+    private static String describe(Set<DocumentType> allowed) {
+        List<String> names = Arrays.stream(DocumentType.values()).filter(allowed::contains)
+                .map(t -> t.keyExtension().toUpperCase(Locale.ROOT)).toList();
+        if (names.size() == 1) {
+            return "The file is not a valid " + names.get(0) + ".";
+        }
+        return "The file must be a " + String.join(", ", names.subList(0, names.size() - 1)) + " or " + names.get(names.size() - 1) + ".";
     }
 
     public InputStream open(String key) {

@@ -4,6 +4,7 @@ import com.sondurukedella.activity.entity.ActivityKind;
 import com.sondurukedella.activity.service.ActivityService;
 import com.sondurukedella.agreements.storage.AgreementFileStore;
 import com.sondurukedella.agreements.storage.AgreementStorageProperties;
+import com.sondurukedella.agreements.storage.DocumentType;
 import com.sondurukedella.agreements.storage.StoredFile;
 import com.sondurukedella.agreements.validation.AgreementFiles;
 import com.sondurukedella.common.exception.NotFoundException;
@@ -12,14 +13,17 @@ import com.sondurukedella.expenses.entity.Expense;
 import com.sondurukedella.expenses.repository.ExpenseRepository;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
-// The receipt or bill PDF of a manual expense. Same private store and checks as agreements and
-// supplier invoices. File first, then the row; the old file goes once the new one is saved.
+// The receipt or bill of a manual expense: a PDF, JPG or PNG. Same private store as agreements and
+// supplier invoices; the bytes have to match the type the name says.
+// File first, then the row; the old file goes once the new one is saved.
 @Service
 @RequiredArgsConstructor
 public class ExpenseAttachmentService {
@@ -36,10 +40,10 @@ public class ExpenseAttachmentService {
         }
         long maxBytes = storageProperties.maxSize().toBytes();
         String fileName = AgreementFiles.safeFileName(file.getOriginalFilename());
-        AgreementFiles.validateUpload(fileName, file.getContentType(), file.getSize(), maxBytes);
+        DocumentType type = AgreementFiles.validateReceiptUpload(fileName, file.getContentType(), file.getSize(), maxBytes);
         StoredFile stored;
         try (InputStream in = file.getInputStream()) {
-            stored = fileStore.store(in, maxBytes);
+            stored = fileStore.store(in, maxBytes, Set.of(type));
         } catch (IOException ex) {
             throw new StorageException("Could not read the uploaded file", ex);
         }
@@ -67,15 +71,16 @@ public class ExpenseAttachmentService {
     public AttachmentDownload attachment(long id) {
         Expense expense = expenses.findById(id).orElseThrow(ExpensePaymentService::expenseNotFound);
         if (expense.getAttachmentStorageKey() == null) {
-            throw new NotFoundException("No PDF is attached to this expense.");
+            throw new NotFoundException("No file is attached to this expense.");
         }
         if (!fileStore.exists(expense.getAttachmentStorageKey())) {
             throw new StorageException("Expense " + id + " has attachment metadata but no stored file", null);
         }
-        return new AttachmentDownload(expense.getAttachmentFilename(), expense.getAttachmentSize(), fileStore.open(expense.getAttachmentStorageKey()));
+        return new AttachmentDownload(expense.getAttachmentFilename(), expense.getAttachmentSize(),
+                DocumentType.ofKey(expense.getAttachmentStorageKey()).mediaType(), fileStore.open(expense.getAttachmentStorageKey()));
     }
 
     // caller closes the stream (Spring does it when writing the response)
-    public record AttachmentDownload(String fileName, long size, InputStream content) {
+    public record AttachmentDownload(String fileName, long size, MediaType contentType, InputStream content) {
     }
 }

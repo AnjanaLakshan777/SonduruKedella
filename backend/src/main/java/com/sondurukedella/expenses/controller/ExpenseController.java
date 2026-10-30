@@ -108,7 +108,7 @@ public class ExpenseController {
         return paymentService.listAll();
     }
 
-    // the receipt or bill as a PDF in a multipart part called "file"; replaces the old one
+    // the receipt or bill (PDF, JPG or PNG) in a multipart part called "file"; replaces the old one
     @PutMapping(path = "/{id}/attachment", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ExpenseDetail attach(@PathVariable long id, @RequestPart("file") MultipartFile file) {
         attachments.attach(id, file);
@@ -120,7 +120,7 @@ public class ExpenseController {
     public ResponseEntity<InputStreamResource> attachment(@PathVariable long id) {
         ExpenseAttachmentService.AttachmentDownload download = attachments.attachment(id);
         return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
+                .contentType(download.contentType())
                 .contentLength(download.size())
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
                         .filename(download.fileName(), StandardCharsets.UTF_8).build().toString())

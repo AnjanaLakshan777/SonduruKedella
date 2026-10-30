@@ -1448,3 +1448,25 @@ For each completed task, record the date, files or migrations changed, verificat
   - Two runs in `backend/` itself failed with `NoClassDefFoundError` (`PayrollCalculator$1`, `CommissionCalculator$1`, `DelayTermsRules$1`, `DelayDeductionCalculator$1`). VS Code's Java builder (Eclipse compiler) writes to the same `target/classes` and deletes the `$1` classes javac makes for enum switches, even right after `mvn clean`. It is an environment clash, not a code fault.
   - Keep VS Code's Java auto-build off while running Maven tests (`"java.autobuild.enabled": false`), or run them on a copy.
 - **Correction of earlier counts:** the totals recorded today (681, 683, 684 and 686) were too high by 21. They summed every report file in `backend/target/surefire-reports`, including two stale reports from tests that no longer exist under those names: `clients.validation.OptionalEmailValidatorTest`, moved to `common.validation` (13), and `inventory.service.StockCostingTest`, removed earlier (8). Those entries now carry the corrected numbers. Every class in those runs passed, so the pass/fail result is unchanged.
+
+### 2026-10-30: Receipt photos (JPG, PNG) for expenses and supplier invoices
+- Owner's request: bills and receipts can be phone photos, not only PDFs.
+- `agreements/storage/DocumentType` (new): PDF, JPEG and PNG, each with its file signature, the name extensions it accepts (`.pdf`; `.jpg`/`.jpeg`; `.png`) and its media type. `PDF_ONLY` and `RECEIPTS` are the two allowed sets.
+- `AgreementFileStore`:
+  - `store(in, max)` is unchanged for agreements (PDF only).
+  - The new `store(in, max, allowed)` reads the type from the first bytes and refuses anything outside the allowed set: "The file is not a valid PDF." or "The file must be a PDF, JPG or PNG.". It stores the file under `<uuid>.pdf|jpg|png`.
+  - The key pattern allows the three extensions; keys are still only ones the store creates.
+- `AgreementFiles.validateReceiptUpload`: the name must be `.pdf`, `.jpg`, `.jpeg` or `.png`, and the declared content type must match it. It returns the type, and the service then requires the bytes to be exactly that type, so a photo renamed `.pdf` is refused. Shortened long names keep any short extension.
+- Expense and supplier invoice attachments use it. The download content type comes from the stored type (`image/jpeg`, `image/png` or `application/pdf`), always as an attachment, never shown inline. "No PDF is attached" became "No file is attached".
+- **Agreements stay PDF only** (signed contracts); an image upload there is refused.
+- Frontend: the expense dialog ("Attach file", with a hint about phone photos) and the supplier invoice form accept PDF, JPG and PNG.
+- Tests:
+  - `AgreementFileStoreTest`: photos stored under their real type; agreements still refuse a JPEG; a JPEG held to PDF is refused; a GIF is refused with the combined message; nothing is left on disk.
+  - `AgreementFilesTest`: receipt name and type rules, plus extension kept when shortening.
+  - `AgreementStorageIntegrationTest.aReceiptPhotoCanBeUploadedButNotPassedOffAsAPdfOrAnAgreement`.
+  - These classes pass on the isolated copy. Frontend: `tsc -b` is clean and the 22 Vitest tests pass.
+- Two test-cleanup bugs, found and fixed on the way:
+  - My new attachment tests in `AgreementStorageIntegrationTest` left their expenses behind. That class isn't transactional and cleans up by name. They are now `AgTest…` rows, deleted in `@AfterEach` with their activity entries. These leftovers caused the `ExpenseApiIntegrationTest` count failures in the earlier full runs.
+  - `RevenueConcurrencyIntegrationTest` cleanup failed whenever a race had produced a write-off: V7's `trg_receivable_write_offs_guard` refuses deletes. Its cleanup now lifts that trigger only around the delete, like the other concurrency tests. Its leftovers had broken `ProjectRepositoryTest` and its own next `setUp`.
+- Tests, backend: full suite on an isolated copy of `backend/` with a throwaway PostgreSQL 17 (2026-10-30): **671 tests, 0 failures, 0 errors, 0 skipped**.
+- The development backend was not rebuilt for this change yet, because Docker Desktop was paused.

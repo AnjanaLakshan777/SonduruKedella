@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.sondurukedella.agreements.storage.DocumentType;
 import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.common.exception.PayloadTooLargeException;
 import org.junit.jupiter.api.Test;
@@ -81,6 +82,28 @@ class AgreementFilesTest {
     void theDeclaredTypeMustBeApplicationPdf(String type) {
         assertThatThrownBy(() -> AgreementFiles.validateUpload("a.pdf", type, 10, MAX))
                 .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void receiptsMayBePdfJpgOrPngAndTheNameAndTypeMustAgree() {
+        assertThat(AgreementFiles.validateReceiptUpload("bill.pdf", "application/pdf", 10, MAX)).isEqualTo(DocumentType.PDF);
+        assertThat(AgreementFiles.validateReceiptUpload("IMG_2041.JPG", "image/jpeg", 10, MAX)).isEqualTo(DocumentType.JPEG);
+        assertThat(AgreementFiles.validateReceiptUpload("photo.jpeg", "image/jpeg", 10, MAX)).isEqualTo(DocumentType.JPEG);
+        assertThat(AgreementFiles.validateReceiptUpload("scan.png", "image/png", 10, MAX)).isEqualTo(DocumentType.PNG);
+        assertThatThrownBy(() -> AgreementFiles.validateReceiptUpload("photo.gif", "image/gif", 10, MAX))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("PDF, JPG or PNG");
+        assertThatThrownBy(() -> AgreementFiles.validateReceiptUpload("photo.jpg", "image/png", 10, MAX))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> AgreementFiles.validateReceiptUpload("photo.jpg", "image/jpeg", 0, MAX))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("empty");
+        assertThatThrownBy(() -> AgreementFiles.validateReceiptUpload("photo.jpg", "image/jpeg", MAX + 1, MAX))
+                .isInstanceOf(PayloadTooLargeException.class);
+    }
+
+    @Test
+    void aLongNameKeepsItsExtensionWhenShortened() {
+        String name = AgreementFiles.safeFileName("a".repeat(400) + ".jpeg");
+        assertThat(name).endsWith(".jpeg");
     }
 
     @Test

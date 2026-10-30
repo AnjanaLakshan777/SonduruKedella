@@ -140,7 +140,7 @@ export default function SupplierInvoiceForm() {
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <Field label="Notes" optional className="sm:col-span-2"><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
               <Field label="Invoice copy" optional hint="PDF or photo of the invoice, kept privately with the record.">
-                <input ref={fileRef} type="file" hidden accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); e.target.value = '' }} />
+                <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); e.target.value = '' }} />
                 {file ? <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm"><Paperclip className="text-muted-foreground size-4" /><span className="flex-1 truncate">{file.name}</span><span className="text-muted-foreground text-xs">{formatBytes(file.size)}</span><button type="button" aria-label="Remove" onClick={() => setFile(undefined)}><X className="size-4" /></button></div>
                   : <Button variant="outline" className="justify-self-start" onClick={() => fileRef.current?.click()}><Paperclip />Attach invoice</Button>}
               </Field>
