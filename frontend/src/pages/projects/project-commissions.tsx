@@ -23,8 +23,10 @@ let k = 0
 /** Commission = agreed contract value × recipient %. Shares are never capped or redistributed automatically. */
 export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
   const d = useData()
-  const { saveCommissions, recordCommissionPayment, voidCommissionPayment } = useStore()
+  const { saveCommissions, recordCommissionPayment, voidCommissionPayment, voidCommission } = useStore()
   const [voiding, setVoiding] = useState<{ commissionId: string; id: string; label: string }>()
+  // voiding a whole confirmed arrangement (as opposed to one of its payments)
+  const [voidingArr, setVoidingArr] = useState<{ id: string; label: string }>()
   const p = pf.project
   const views = useMemo(() => d.commissions.filter((c) => c.project.id === p.id), [d, p.id])
   const confirmed = views.length > 0 && views.every((v) => v.arr.status === 'Confirmed')
@@ -82,11 +84,13 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
                 <TableBody>
                   {rows.map((r) => (
                     <TableRow key={r.key} className="hover:bg-transparent">
-                      <TableCell className="pl-6"><Input value={r.recipient} onChange={(e) => set(r.key, { recipient: e.target.value })} placeholder="Full name" aria-label="Recipient" aria-invalid={(tried && !r.recipient.trim()) || undefined} /></TableCell>
-                      <TableCell><Input value={r.role} onChange={(e) => set(r.key, { role: e.target.value })} placeholder="e.g. 3D designer" aria-label="Role" /></TableCell>
-                      <TableCell><Input type="number" step="0.5" min={0} className="text-right" value={r.rate} onChange={(e) => set(r.key, { rate: e.target.value === '' ? '' : Number(e.target.value) })} aria-label="Rate percent" aria-invalid={(tried && !!rowErr(r)) || undefined} /></TableCell>
+                      <TableCell className="pl-6"><Input value={r.recipient} disabled={r.status === 'Confirmed'} onChange={(e) => set(r.key, { recipient: e.target.value })} placeholder="Full name" aria-label="Recipient" aria-invalid={(tried && !r.recipient.trim()) || undefined} /></TableCell>
+                      <TableCell><Input value={r.role} disabled={r.status === 'Confirmed'} onChange={(e) => set(r.key, { role: e.target.value })} placeholder="e.g. 3D designer" aria-label="Role" /></TableCell>
+                      <TableCell><Input type="number" step="0.5" min={0} className="text-right" value={r.rate} disabled={r.status === 'Confirmed'} onChange={(e) => set(r.key, { rate: e.target.value === '' ? '' : Number(e.target.value) })} aria-label="Rate percent" aria-invalid={(tried && !!rowErr(r)) || undefined} /></TableCell>
                       <TableCell className="text-right font-medium"><Money value={(p.contractValue * (Number(r.rate) || 0)) / 100} currency={false} /></TableCell>
-                      <TableCell className="pr-4"><Button variant="ghost" size="icon" className="size-8" aria-label="Remove recipient" disabled={views.find((v) => v.arr.id === r.id)?.paid ? true : false} onClick={() => setRows(rows.filter((x) => x.key !== r.key))}><Trash2 /></Button></TableCell>
+                      <TableCell className="pr-4">{r.status === 'Confirmed' && r.id
+                        ? <Button variant="ghost" size="icon" className="size-8" aria-label="Void confirmed commission" title="Confirmed: void it, then add the corrected one" onClick={() => setVoidingArr({ id: r.id!, label: `${r.recipient}'s ${r.rate}% commission` })}><Ban /></Button>
+                        : <Button variant="ghost" size="icon" className="size-8" aria-label="Remove recipient" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}><Trash2 /></Button>}</TableCell>
                     </TableRow>
                   ))}
                   {!rows.length && <TableRow className="hover:bg-transparent"><TableCell colSpan={5} className="text-muted-foreground pl-6">No recipients yet.</TableCell></TableRow>}
@@ -101,6 +105,7 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
                   <Button disabled={!rows.length} onClick={() => { setTried(true); if (!invalid) setConfirmOpen(true) }}>Review & confirm</Button>
                 </div>
                 {tried && invalid && <p className="text-destructive w-full text-xs">Every recipient needs a name and a percentage.</p>}
+                {rows.some((r) => r.status === 'Confirmed') && <p className="text-muted-foreground w-full text-xs">Confirmed commissions can't be changed. To correct one, void it (void its payments first) and add the corrected recipient.</p>}
               </CardContent>
             </>
           ) : (
@@ -115,7 +120,7 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
                     <TableCell className="text-right"><Money value={v.paid} currency={false} /></TableCell>
                     <TableCell className="text-right font-medium"><Money value={v.remaining} currency={false} /></TableCell>
                     <TableCell><StatusBadge status={v.status} /></TableCell>
-                    <TableCell className="pr-4"><Button size="sm" variant="outline" disabled={v.remaining <= 0} onClick={() => setPayFor(v)}><HandCoins />Pay</Button></TableCell>
+                    <TableCell className="pr-4"><span className="flex items-center gap-1"><Button size="sm" variant="outline" disabled={v.remaining <= 0} onClick={() => setPayFor(v)}><HandCoins />Pay</Button><Button size="icon" variant="ghost" className="size-8" aria-label="Void commission" onClick={() => setVoidingArr({ id: v.arr.id, label: `${v.arr.recipient}'s ${v.arr.rate}% commission` })}><Ban /></Button></span></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -170,6 +175,8 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <VoidDialog target={voidingArr} onClose={() => setVoidingArr(undefined)} onVoid={(reason) => voidCommission(voidingArr!.id, reason)}
+        description="It stays in the history, marked void, and stops counting as a cost. Void its payments first if any were made. Then add the corrected recipient and confirm." />
       <VoidDialog target={voiding} onClose={() => setVoiding(undefined)} onVoid={(reason) => voidCommissionPayment(voiding!.commissionId, voiding!.id, reason)} />
       <PaymentDialog
         open={!!payFor} onOpenChange={(o) => !o && setPayFor(undefined)} direction="out" verb="Record Payment" successTitle="Commission payment recorded"

@@ -1372,3 +1372,15 @@ For each completed task, record the date, files or migrations changed, verificat
 - The server's rules still decide; its refusal is shown. Examples: an advance already recovered, a payment in a frozen payroll week, an invoice with payments.
 - Not in the UI yet: voiding an other-income receipt (no page lists the receipts) and voiding or replacing a commission arrangement (phase 3c).
 - Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend matches. Not tried in a browser.
+
+### 2026-10-30: Phase 3c, void and replace a confirmed commission
+- The backend never changes a confirmed commission. It is voided (reason required, payments voided first), and the corrected one is added as a new arrangement. Before this, the UI let a confirmed rate be edited and the save was then refused.
+- Project → Commissions:
+  - In the edit table ("Revise"), confirmed rows are read-only: name, role and rate are disabled.
+  - Their remove button is replaced by Void, and a note explains the void-then-add flow.
+  - Drafts can still be removed or changed freely.
+  - In the confirmed view each row has a Void button next to Pay.
+  - Voiding uses the shared `VoidDialog`. It sends the arrangement's version, then reloads the commissions and the activity feed.
+  - The server's refusal is shown, for example "Void its payments first".
+- Store: `voidCommission` → `POST /commissions/{id}/void` `{reason, version}`.
+- Tests: no backend change. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. Not tried in a browser.

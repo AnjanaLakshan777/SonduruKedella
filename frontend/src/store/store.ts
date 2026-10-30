@@ -66,6 +66,8 @@ interface Actions {
   cancelSupplierInvoice: (invoiceId: string, reason: string) => Promise<void>
   voidAdvance: (advanceId: string, reason: string) => Promise<void>
   voidCommissionPayment: (commissionId: string, paymentId: string, reason: string) => Promise<void>
+  // a confirmed commission is never edited: void it (payments voided first) and add the corrected one
+  voidCommission: (commissionId: string, reason: string) => Promise<void>
   // a paid week changes only through corrections (+/-, with a reason); a wrong one is voided, not edited
   recordPayrollCorrection: (weekStart: string, employeeId: string, c: { requestId: string; correctionDate: string; wageDelta: number; projectId?: string; reason: string }) => Promise<void>
   voidPayrollCorrection: (weekStart: string, employeeId: string, correctionId: string, version: number, reason: string) => Promise<void>
@@ -400,6 +402,10 @@ export const useStore = create<Store>()((set, get) => {
     voidAdvance: async (advanceId, reason) => {
       await apiPost(`/payroll/advances/${advanceId}/void`, { reason, version: versionOf('advance', advanceId) })
       await refreshLabour()
+    },
+    voidCommission: async (commissionId, reason) => {
+      await apiPost(`/commissions/${commissionId}/void`, { reason, version: versionOf('commission', commissionId) })
+      await Promise.all([refreshCommissions(), refreshActivity()])
     },
     voidCommissionPayment: async (commissionId, paymentId, reason) => {
       await apiPost(`/commissions/${commissionId}/payments/${paymentId}/void`, { reason, version: versionOf('commissionPayment', paymentId) })
