@@ -1484,3 +1484,15 @@ For each completed task, record the date, files or migrations changed, verificat
 - In the Record Expense dialog, the Supplier select (shown for a materials line) now has a "New" button. It opens the same "Add supplier" dialog as the Suppliers page. The supplier is saved through `POST /suppliers` and selected in the expense straight away, so a purchase from a shop that isn't on the list no longer means leaving the form.
 - `components/app/supplier-dialog.tsx`: the dialog moved out of `suppliers-page.tsx` so both places use the same one. It gained `onCreated(id)` and an optional `defaultName`. The Suppliers page uses it unchanged.
 - Tests: no backend change. Frontend: `tsc -b` is clean and the 24 Vitest tests pass. Not tried in a browser.
+
+### 2026-10-31: Reports download as PDF and Excel
+- Each report's Export menu (income, expenses, project profitability, client receivables, supplier payables, labour payments) now offers PDF, Excel (.xlsx), Download CSV and Copy as CSV. The old "Excel export isn't connected yet" placeholder is gone.
+- The files are built in the browser (`lib/export.ts`) from the same rows the CSV uses, so they match what is on screen and respect the page's filters. There is no backend endpoint for this.
+  - Excel (`exceljs` 4.4.0): a bold, frozen header row with an autofilter. Amounts are stored as numbers formatted `#,##0.00`. Day and hour counts are plain numbers. Column widths fit the content.
+  - PDF (`jspdf` 4.2.1 + `jspdf-autotable` 5.0.9): A4 landscape. The company name, report title, the date range (for income, expenses and labour) and the generation date are at the top. Numbers are right-aligned and every page is numbered.
+  - Both libraries load only when someone exports. They are separate build chunks and are not in the main bundle.
+- Known limits:
+  - jsPDF's built-in font has no Sinhala or Tamil glyphs, so such text would not print correctly in the PDF. Excel and CSV are not affected.
+  - `exceljs` brings in `uuid` 8.3.2, which `npm audit` flags (moderate, `uuid <11.1.1`). The existing `@remix-run/router` advisory comes from react-router and is unrelated.
+- Verified: `tsc -b` is clean and the 24 Vitest tests pass. `vite build` succeeds. A sample .xlsx and .pdf were generated in Node and read back to check the number formats and layout. Not tried in a browser.
+- The frontend Docker container needs a rebuild (`docker compose up -d --build -V frontend`) to pick up the new npm packages. `-V` replaces its anonymous `node_modules` volume, which would otherwise keep the old packages. It does not touch the database volume.
