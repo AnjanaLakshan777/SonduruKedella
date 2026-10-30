@@ -621,25 +621,17 @@ export function clientSummary(d: Derived, clientId: string) {
 }
 
 /** Project activity, derived from records plus logged notes. */
+// The project's timeline, newest first. The backend writes an entry for every change (billing, payments,
+// write-offs, expenses, stock issues, commissions, documents, status), so the log is the only source -
+// building entries from the records as well would show each event twice.
 export function projectActivity(d: Derived, projectId: string) {
   const out: { id: string; date: string; kind: string; text: string; amount?: number }[] = []
-  const pf = d.projectFinById.get(projectId)
-  if (!pf) return out
-  for (const i of pf.installments) {
-    if (i.inst.billed) out.push({ id: `b${i.inst.id}`, date: i.inst.billedOn ?? i.inst.dueDate, kind: 'revenue', text: `Revenue recorded — ${i.inst.description}`, amount: i.inst.amount })
-    for (const p of i.payments) out.push({ id: p.id, date: p.date, kind: 'payment', text: `Payment received against ${i.inst.description} (${p.method}${p.reference ? `, ${p.reference}` : ''})`, amount: p.amount })
-    for (const w of i.writeOffs) out.push({ id: w.id, date: w.date, kind: 'writeoff', text: `Written off from ${i.inst.description}: ${w.reason}`, amount: w.amount })
-  }
-  for (const l of d.expenseLines.filter((l) => l.projectId === projectId && (l.source === 'Manual' || l.source === 'Supplier invoice'))) {
-    out.push({ id: `x${l.id}`, date: l.date, kind: 'expense', text: `${l.category}: ${l.description}`, amount: l.amount })
-  }
-  for (const c of d.commissions.filter((c) => c.project.id === projectId)) {
-    for (const p of c.payments) out.push({ id: p.id, date: p.date, kind: 'commission', text: `Commission paid to ${c.arr.recipient}`, amount: p.amount })
-  }
-  if (pf.project.agreement) out.push({ id: 'agr', date: pf.project.agreement.uploadedAt, kind: 'document', text: `Agreement uploaded: ${pf.project.agreement.fileName}` })
-  out.push({ id: 'created', date: pf.project.createdAt, kind: 'status', text: 'Project created' })
-  for (const a of d.s.activity.filter((a) => a.projectId === projectId)) out.push({ id: a.id, date: a.date, kind: a.kind, text: a.text })
-  return out.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
+  if (!d.projectFinById.get(projectId)) return out
+  const entries = d.s.activity.filter((a) => a.projectId === projectId)
+  // same date: the later recording first, then the higher id (numbers, not text: 100 comes after 99)
+  entries.sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt ?? '').localeCompare(a.createdAt ?? '') || Number(b.id) - Number(a.id))
+  for (const a of entries) out.push({ id: a.id, date: a.date, kind: a.kind, text: a.text })
+  return out
 }
 
 export { sum }

@@ -304,6 +304,8 @@ export interface ActivityEntry {
   projectId?: string
   text: string
   kind: 'payment' | 'expense' | 'document' | 'status' | 'commission' | 'note' | 'writeoff' | 'deduction'
+  // when it was recorded (server time); orders entries that share a date
+  createdAt?: string
 }
 
 export interface Settings {

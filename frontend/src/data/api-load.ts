@@ -68,7 +68,9 @@ const mapReceipt = (r: Row): ClientPayment => (keep('receipt', r), {
   reference: opt(r.reference), notes: opt(r.notes),
 })
 const mapWriteOff = (w: Row): WriteOff => (keep('writeOff', w), { id: String(w.id), installmentId: String(w.installmentId), date: w.date, amount: w.amount, reason: w.reason })
-const mapActivity = (a: Row): ActivityEntry => ({ id: String(a.id), date: a.date, projectId: id(a.projectId), kind: a.kind.toLowerCase(), text: a.message })
+const mapActivity = (a: Row): ActivityEntry => ({
+  id: String(a.id), date: a.date, projectId: id(a.projectId), kind: a.kind.toLowerCase(), text: a.message, createdAt: a.createdAt,
+})
 
 // one project with everything hanging off it, for the initial load and for refreshing after a save
 async function projectBundle(p: Row) {

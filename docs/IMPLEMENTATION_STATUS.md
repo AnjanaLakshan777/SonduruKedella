@@ -1470,3 +1470,12 @@ For each completed task, record the date, files or migrations changed, verificat
   - `RevenueConcurrencyIntegrationTest` cleanup failed whenever a race had produced a write-off: V7's `trg_receivable_write_offs_guard` refuses deletes. Its cleanup now lifts that trigger only around the delete, like the other concurrency tests. Its leftovers had broken `ProjectRepositoryTest` and its own next `setUp`.
 - Tests, backend: full suite on an isolated copy of `backend/` with a throwaway PostgreSQL 17 (2026-10-30): **671 tests, 0 failures, 0 errors, 0 skipped**.
 - The development backend was not rebuilt for this change yet, because Docker Desktop was paused.
+
+### 2026-10-30: Project timeline order and duplicates fixed
+- Two faults in the project page's Activity timeline (`lib/finance.ts` `projectActivity`):
+  - **Duplicates.** It built entries from the records (billing, receipts, write-offs, expenses, commission payments, the agreement, "Project created") *and* added the backend's activity log. The backend logs all of those itself, so each event appeared twice, the two copies with different dates (business date versus the date recorded).
+  - **Order within a day.** Entries with the same date were ordered by id as text and ascending: oldest first, and "100" before "99".
+- Now the timeline is the backend's activity log only, one entry per event. It is ordered by date (newest first), then by when the entry was recorded (`createdAt`, newly mapped by the loader onto `ActivityEntry`), then by the numeric id.
+- Tests: `lib/finance.test.ts` (2) covers newest first, a later recording first within a day, other projects left out, and the numeric id tie-break.
+  - Against the development data, PRJ-2026-001 shows 46 entries for 46 log rows, from the delay deduction and the status change at the top down to "Project created" at the bottom.
+  - Frontend: `tsc -b` is clean and the Vitest suite passes (24 tests). No backend change.
