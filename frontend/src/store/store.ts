@@ -3,20 +3,17 @@ import { useMemo } from 'react'
 import { createSeed } from '@/data/seed'
 import {
   categoryId, code, emptyState, loadActivity, loadAll, loadClients, loadExpenses, loadInventory, loadOtherIncome, loadProject, loadSupplierInvoices,
-  loadLabour, loadSuppliers, mapClient, methodId, unitId, versionOf, adjustmentKey,
+  loadLabour, loadSuppliers, mapClient, methodId, unitId, versionOf, adjustmentKey, loadCommissions, loadSettings, findCategoryId, findUnitId,
+  findMethodId,
 } from '@/data/api-load'
 import type { PaymentInput } from '@/components/app/payment-dialog'
 import { api, apiPost, apiPut } from '@/lib/api'
 import type {
-  Attendance, Client, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
+  Attendance, Client, DataState, DelayTerms, Employee,
   ExpenseGroup, ExpenseScope, Material, OtherIncome, Overtime, PayrollAdjustment, ProjectStatus, ProjectType,
-  Settings, StockMovement, Supplier, SupplierInvoice, WriteOff, ActivityEntry,
+  Settings, StockMovement, Supplier, SupplierInvoice, WriteOff,
 } from '@/data/types'
 import { derive } from '@/lib/finance'
-import { TODAY } from '@/lib/dates'
-
-let n = 1000
-export const uid = (p: string) => `${p}${++n}`
 
 type New<T extends { id: string }> = Omit<T, 'id'>
 
@@ -59,10 +56,10 @@ interface Actions {
   setPayrollAdjustment: (a: PayrollAdjustment) => Promise<void>
   // one payment per worker-week; the first payment freezes that week on the server
   recordPayrollPayments: (rows: (PaymentInput & { weekStart: string; employeeId: string })[]) => Promise<void>
-  saveCommissions: (projectId: string, rows: (New<CommissionArrangement> & { id?: string })[], confirm: boolean) => void
-  recordCommissionPayment: (p: New<CommissionPayment>) => void
-  updateSettings: (patch: Partial<Settings>) => void
-  log: (projectId: string | undefined, kind: ActivityEntry['kind'], text: string) => void
+  // the project's whole set; drafts left out are removed, confirmed ones can't be changed (void them instead)
+  saveCommissions: (projectId: string, rows: { id?: string; recipient: string; role: string; rate: number }[], confirm: boolean, acceptPolicyException?: boolean) => Promise<void>
+  recordCommissionPayment: (p: PaymentInput & { arrangementId: string }) => Promise<void>
+  updateSettings: (patch: Partial<Settings>) => Promise<void>
   // fills everything from the backend; loaded stays false until the first load finishes
   load: () => Promise<void>
   // the demo data, for the unit tests
@@ -132,6 +129,14 @@ const expenseBody = (e: ExpenseInput) => {
 }
 
 const clientBody = (c: ClientInput) => ({ ...c, kind: code(c.kind) })
+// units and payment methods: add the new names, remove the dropped ones (the server refuses removing one still in use)
+async function saveList(path: string, before: string[], after: string[], idOf: (name: string) => number | undefined) {
+  for (const name of after.filter((x) => !before.includes(x))) await apiPost(path, { name })
+  for (const name of before.filter((x) => !after.includes(x))) {
+    const id = idOf(name)
+    if (id != null) await api('DELETE', `${path}/${id}`)
+  }
+}
 const employeeBody = (e: New<Employee>) => ({
   name: e.name, role: e.role, phone: e.phone, address: e.address, dailyWage: e.dailyRate, overtimeRate: e.overtimeRate, joinedOn: e.joinedOn,
 })
@@ -145,8 +150,6 @@ const delayBody = (d: DelayTerms) => ({
 })
 
 export const useStore = create<Store>()((set, get) => {
-  const log = (projectId: string | undefined, kind: ActivityEntry['kind'], text: string) =>
-    set((s) => ({ activity: [...s.activity, { id: uid('a'), date: TODAY, projectId, kind, text }] }))
   // after a save, read back what the server now has instead of guessing it locally
   const refreshProject = async (projectId: string) => {
     const b = await loadProject(projectId)
@@ -166,6 +169,7 @@ export const useStore = create<Store>()((set, get) => {
   const refreshInvoices = async () => set(await loadSupplierInvoices())
   const refreshInventory = async () => set(await loadInventory())
   const refreshLabour = async () => set(await loadLabour())
+  const refreshCommissions = async () => set(await loadCommissions())
   const projectOf = (installmentId: string) => {
     const inst = get().installments.find((i) => i.id === installmentId)
     if (!inst) throw new Error('That installment is no longer there. Reload the data.')
@@ -175,7 +179,6 @@ export const useStore = create<Store>()((set, get) => {
   return {
     ...emptyState(),
     loaded: false,
-    log,
     load: async () => set({ ...(await loadAll()), loaded: true }),
     addClient: async (c) => {
       const saved = mapClient(await apiPost('/clients', clientBody(c)))
@@ -362,22 +365,61 @@ export const useStore = create<Store>()((set, get) => {
         await refreshLabour()
       }
     },
-    saveCommissions: (projectId, rows, confirm) => {
-      set((s) => {
-        const others = s.commissions.filter((c) => c.projectId !== projectId)
-        const next = rows.map((r) => ({
-          ...r,
-          id: r.id ?? uid('cm'),
-          projectId,
-          status: confirm ? ('Confirmed' as const) : r.status,
-          confirmedOn: confirm ? (r.confirmedOn ?? TODAY) : r.confirmedOn,
-        }))
-        return { commissions: [...others, ...next] }
+    saveCommissions: async (projectId, rows, confirm, acceptPolicyException) => {
+      await apiPut(`/projects/${projectId}/commissions`, {
+        confirm, acceptPolicyException,
+        arrangements: rows.map((r) => ({
+          id: r.id, version: r.id ? versionOf('commission', r.id) : undefined, recipient: r.recipient, role: r.role, ratePct: r.rate,
+        })),
       })
-      log(projectId, 'commission', confirm ? `Commission arrangement confirmed (${rows.map((r) => `${r.recipient} ${r.rate}%`).join(', ')}).` : 'Commission arrangement saved as draft.')
+      await Promise.all([refreshCommissions(), refreshActivity()])
     },
-    recordCommissionPayment: (p) => set((s) => ({ commissionPayments: [...s.commissionPayments, { ...p, id: uid('cmp') }] })),
-    updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
+    recordCommissionPayment: async (p) => {
+      await apiPost(`/commissions/${p.arrangementId}/payments`, paymentBody(p))
+      await Promise.all([refreshCommissions(), refreshActivity()])
+    },
+    updateSettings: async (patch) => {
+      const now = get().settings
+      if (patch.company || patch.supplierCreditDays != null) {
+        const c = patch.company ?? now.company
+        await apiPut('/settings/company', {
+          ...c, supplierCreditDays: patch.supplierCreditDays ?? now.supplierCreditDays, version: versionOf('settings', 'company'),
+        })
+      }
+      if (patch.commission) {
+        // Super Admin only on the server; an Admin gets the 403 message
+        await apiPut('/settings/commission-policy', {
+          designCommissionPool: patch.commission.designCommissionPool, constructionDefaultRate: patch.commission.constructionDefaultRate,
+          version: versionOf('settings', 'commission'),
+        })
+      }
+      if (patch.wages) {
+        await apiPut('/settings/wages', {
+          defaultDailyRate: patch.wages.defaultDailyRate, hoursPerDay: patch.wages.hoursPerDay, overtimeMultiplier: patch.wages.overtimeMultiplier,
+          payday: code(patch.wages.payday), version: versionOf('settings', 'wages'),
+        })
+      }
+      if (patch.revenueCategories && patch.revenueCategories.join('|') !== now.revenueCategories.join('|')) {
+        throw new Error('Revenue categories are fixed (Design, Construction, Consultation, Other Income) and can’t be changed here.')
+      }
+      try {
+        // the lists are saved as what was added and what was removed
+        if (patch.expenseCategories) {
+          for (const group of Object.keys(patch.expenseCategories) as ExpenseGroup[]) {
+            const before = now.expenseCategories[group], after = patch.expenseCategories[group]
+            for (const name of after.filter((x) => !before.includes(x))) await apiPost('/settings/expense-categories', { group: code(group), name })
+            for (const name of before.filter((x) => !after.includes(x))) {
+              const id = findCategoryId(group, name)
+              if (id != null) await api('DELETE', `/settings/expense-categories/${id}`)
+            }
+          }
+        }
+        if (patch.units) await saveList('/settings/units', now.units, patch.units, findUnitId)
+        if (patch.paymentMethods) await saveList('/settings/payment-methods', now.paymentMethods, patch.paymentMethods, findMethodId)
+      } finally {
+        set({ settings: await loadSettings() })
+      }
+    },
     reset: () => set(() => ({ ...createSeed() })),
   }
 })

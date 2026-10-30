@@ -1308,3 +1308,28 @@ For each completed task, record the date, files or migrations changed, verificat
 - Versions are kept for employees, overtime and adjustments (adjustments by week and worker).
 - Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend matches. Not tried in a browser.
 - Known gap: the payroll page still works out what each week owes in the browser (`lib/finance.ts`). If that ever differs from the backend's figure (for example a frozen week whose rates changed later), the server refuses an overpayment and the error is shown. Phase 3 should read the week from `GET /payroll/weeks/{w}` instead.
+
+### 2026-10-30: Frontend connected, phase 2f (commissions and settings save to the backend); phase 2 complete
+- Commissions:
+  - `saveCommissions`: `PUT /projects/{id}/commissions` with the project's whole set, each existing row carrying its id and version.
+  - Confirming over the policy is sent as `acceptPolicyException`; this is the "confirm as an exception" the dialog already warns about.
+  - Revising a confirmed row is refused by the server ("void it and add the corrected one") and the message is shown. The void-and-replace flow is phase 3.
+  - `recordCommissionPayment`: `POST /commissions/{id}/payments`.
+  - The store reloads commissions with their payments, plus the activity feed.
+- Settings (`updateSettings`):
+  - The company profile and supplier credit days go to `PUT /settings/company`.
+  - The commission policy goes to `PUT /settings/commission-policy`. It is Super Admin only, so an Admin sees the permission message.
+  - Wages go to `PUT /settings/wages`. Each sends the version from the last read.
+  - Expense categories, units and payment methods are saved as differences: `POST` for each added name and `DELETE` for each removed one. The server refuses removing one that is locked or in use, and the settings are always read back afterwards, so the page shows what really happened.
+  - Revenue categories are fixed in the backend. A change to them is refused with a message; making that section read-only is phase 3.
+- Every store action now saves through the API. The local-only `log` action and `uid` are gone. `reset()` (the demo data) stays for the unit tests.
+- Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend matches. Not tried in a browser.
+- Next (phase 3, UI alignment):
+  - Remove the low-stock UI.
+  - Payroll: paid weeks read-only, a "Record correction" action, and owed figures read from `GET /payroll/weeks/{w}`.
+  - Commission void-and-replace flow.
+  - Void, cancel and reverse actions in the UI.
+  - Revenue categories read-only.
+  - Dashboard months and financial year label taken from the data.
+  - A Super Admin user-management screen.
+  - Manual expense attachment (backend support or remove the field; owner to choose).

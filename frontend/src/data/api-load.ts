@@ -225,6 +225,31 @@ export async function loadLabour() {
   return mapLabour(employeeRows, attendanceRows, overtimeRows, advanceRows, adjustmentRows, paymentRows)
 }
 
+function mapCommission(c: Row): CommissionArrangement {
+  keep('commission', c)
+  return {
+    id: String(c.id), projectId: String(c.projectId), recipient: c.recipient, role: c.role ?? '', rate: c.ratePct,
+    status: c.status === 'PENDING' ? 'Pending' : 'Confirmed', confirmedOn: opt(c.confirmedOn),
+  }
+}
+const mapCommissionPayment = (p: Row): CommissionPayment => ({
+  id: String(p.id), arrangementId: String(p.commissionId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
+})
+export async function loadCommissions(): Promise<{ commissions: CommissionArrangement[]; commissionPayments: CommissionPayment[] }> {
+  const [rows, payments] = await Promise.all([apiGetAll<Row>('/commissions'), apiGetAll<Row>('/commissions/payments')])
+  return {
+    commissions: rows.filter((c: Row) => c.status !== 'VOIDED').map(mapCommission),
+    commissionPayments: payments.filter((p: Row) => !p.voided).map(mapCommissionPayment),
+  }
+}
+export async function loadSettings(): Promise<Settings> {
+  return settingsFrom(await apiGet<Row>('/settings'))
+}
+// id of a list entry the user removed, or undefined when it isn't on the server
+export const findCategoryId = (group: ExpenseGroup, name: string) => categoryIds.get(`${code(group)}/${name}`)
+export const findUnitId = (name: string) => unitIds.get(name)
+export const findMethodId = (name: string) => methodIds.get(name)
+
 // the UI picks categories and units by name; the API wants ids
 const categoryIds = new Map<string, number>()
 const unitIds = new Map<string, number>()
@@ -248,6 +273,9 @@ export function methodId(name: string): number {
 }
 
 function settingsFrom(o: Row): Settings {
+  versions.set('settings:company', o.company.version)
+  versions.set('settings:commission', o.commission.version)
+  versions.set('settings:wages', o.wages.version)
   methodIds.clear()
   for (const m of o.paymentMethods) methodIds.set(m.name, m.id)
   categoryIds.clear()
@@ -350,13 +378,8 @@ export async function loadAll(): Promise<DataState> {
   const stockMovements: StockMovement[] = mapMovements(movementRows)
   const { employees, attendance, overtime, advances, payrollAdjustments, payrollPayments } =
     mapLabour(employeeRows, attendanceRows, overtimeRows, advanceRows, adjustmentRows, payrollPaymentRows)
-  const commissions: CommissionArrangement[] = commissionRows.filter((c: Row) => c.status !== 'VOIDED').map((c: Row) => ({
-    id: String(c.id), projectId: String(c.projectId), recipient: c.recipient, role: c.role ?? '', rate: c.ratePct,
-    status: c.status === 'PENDING' ? 'Pending' : 'Confirmed', confirmedOn: opt(c.confirmedOn),
-  }))
-  const commissionPayments: CommissionPayment[] = commissionPaymentRows.filter((p: Row) => !p.voided).map((p: Row) => ({
-    id: String(p.id), arrangementId: String(p.commissionId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
-  }))
+  const commissions: CommissionArrangement[] = commissionRows.filter((c: Row) => c.status !== 'VOIDED').map(mapCommission)
+  const commissionPayments: CommissionPayment[] = commissionPaymentRows.filter((p: Row) => !p.voided).map(mapCommissionPayment)
   const activity: ActivityEntry[] = activityRows.map(mapActivity)
 
   return {

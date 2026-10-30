@@ -14,6 +14,7 @@ import { useData, useStore } from '@/store/store'
 import { sum, type CommissionView, type ProjectFinance } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 
 interface Row { key: string; id?: string; recipient: string; role: string; rate: number | ''; status: 'Pending' | 'Confirmed'; confirmedOn?: string }
 let k = 0
@@ -44,10 +45,15 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
   const set = (key: string, patch: Partial<Row>) => setRows(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)))
   const paidAny = views.some((v) => v.paid > 0)
 
-  function persist(confirm: boolean) {
-    saveCommissions(p.id, rows.map((r) => ({ id: r.id, projectId: p.id, recipient: r.recipient.trim(), role: r.role.trim() || 'Commission', rate: Number(r.rate), status: r.status, confirmedOn: r.confirmedOn })), confirm)
-    toast.success(confirm ? 'Commission arrangement confirmed' : 'Saved as draft', { description: `${check.totalRate}% of ${formatLKR(p.contractValue)} = ${formatLKR(totalAmt)}` })
-    setEditing(!confirm)
+  async function persist(confirm: boolean) {
+    try {
+      // confirming over the policy is the "confirm as an exception" the dialog warns about
+      await saveCommissions(p.id, rows.map((r) => ({ id: r.id, recipient: r.recipient.trim(), role: r.role.trim() || 'Commission', rate: Number(r.rate) })), confirm, confirm && check.conflict)
+      toast.success(confirm ? 'Commission arrangement confirmed' : 'Saved as draft', { description: `${check.totalRate}% of ${formatLKR(p.contractValue)} = ${formatLKR(totalAmt)}` })
+      setEditing(!confirm)
+    } catch (e) {
+      toast.error('Commission not saved', { description: errorMessage(e) })
+    }
   }
 
   return (
@@ -167,7 +173,7 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
         title={`Pay commission — ${payFor?.arr.recipient ?? ''}`} description={payFor ? `${p.code} · ${payFor.arr.rate}% of ${formatLKR(p.contractValue)}` : undefined}
         context={payFor ? [{ label: 'Commission', value: payFor.amount }, { kind: 'less', label: 'Already paid', value: payFor.paid }, { kind: 'total', label: 'Remaining', value: payFor.remaining }] : undefined}
         outstanding={payFor?.remaining ?? 0}
-        onSubmit={(x) => payFor && recordCommissionPayment({ arrangementId: payFor.arr.id, date: x.date, amount: x.amount, method: x.method, reference: x.reference })}
+        onSubmit={(x) => (payFor ? recordCommissionPayment({ arrangementId: payFor.arr.id, ...x }) : undefined)}
       />
     </div>
   )

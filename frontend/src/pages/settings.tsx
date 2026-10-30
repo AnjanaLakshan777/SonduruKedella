@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/app/page-header'
 import { AmountInput, Field, SelectField } from '@/components/app/form'
 import { StatusBadge } from '@/components/app/status-badge'
 import { useStore } from '@/store/store'
+import { errorMessage } from '@/lib/api'
 import type { ExpenseGroup, Settings } from '@/data/types'
 import { formatLKR } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -52,7 +53,10 @@ export default function SettingsPage() {
 
 function useSave() {
   const update = useStore((s) => s.updateSettings)
-  return (patch: Partial<Settings>, what: string) => { update(patch); toast.success(`${what} saved`) }
+  return (patch: Partial<Settings>, what: string) =>
+    update(patch)
+      .then(() => toast.success(`${what} saved`))
+      .catch((e) => toast.error(`${what} not saved`, { description: errorMessage(e) }))
 }
 
 function CompanySection({ s }: { s: Settings }) {

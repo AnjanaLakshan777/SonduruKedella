@@ -127,7 +127,7 @@ export default function CommissionsPage() {
         title={`Pay commission — ${payFor?.arr.recipient ?? ''}`} description={payFor ? `${payFor.project.code} · ${payFor.arr.rate}% of ${formatLKR(payFor.project.contractValue)}` : undefined}
         context={payFor ? [{ label: 'Commission', value: payFor.amount, note: `${formatLKR(payFor.project.contractValue, { decimals: 0 })} × ${payFor.arr.rate}%` }, { kind: 'less', label: 'Already paid', value: payFor.paid }, { kind: 'total', label: 'Remaining', value: payFor.remaining }] : undefined}
         outstanding={payFor?.remaining ?? 0}
-        onSubmit={(x) => payFor && recordCommissionPayment({ arrangementId: payFor.arr.id, date: x.date, amount: x.amount, method: x.method, reference: x.reference })}
+        onSubmit={(x) => (payFor ? recordCommissionPayment({ arrangementId: payFor.arr.id, ...x }) : undefined)}
       />
     </>
   )
