@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { toast } from 'sonner'
 import { FilePlus2, Plus, Truck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useCrumbs } from '@/components/app/app-layout'
 import { PageHeader } from '@/components/app/page-header'
 import { KpiStrip } from '@/components/app/kpi-strip'
@@ -15,12 +12,11 @@ import { Money } from '@/components/app/money'
 import { CellMain } from '@/components/app/data-table'
 import { ALL, FilterBar, FilterSelect, SearchInput } from '@/components/app/filters'
 import { InvoiceTable } from '@/components/app/invoice-table'
+import { SupplierDialog } from '@/components/app/supplier-dialog'
 import { EmptyState } from '@/components/app/empty-state'
-import { Field } from '@/components/app/form'
-import { useData, useStore } from '@/store/store'
+import { useData } from '@/store/store'
 import { sum } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
-import { errorMessage } from '@/lib/api'
 
 export default function SuppliersPage() {
   const d = useData()
@@ -89,47 +85,5 @@ export default function SuppliersPage() {
       </Tabs>
       <SupplierDialog open={addOpen} onOpenChange={setAddOpen} />
     </>
-  )
-}
-
-function SupplierDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { addSupplier, settings } = useStore()
-  const [f, setF] = useState({ name: '', contactPerson: '', phone: '', email: '', address: '', supplies: '', creditDays: settings.supplierCreditDays })
-  const [tried, setTried] = useState(false)
-  const [busy, setBusy] = useState(false)
-  useEffect(() => { if (open) { setTried(false); setF({ name: '', contactPerson: '', phone: '', email: '', address: '', supplies: '', creditDays: settings.supplierCreditDays }) } }, [open, settings.supplierCreditDays])
-  const err = { name: !f.name.trim() ? 'Enter the supplier name.' : undefined, phone: !f.phone.trim() ? 'Enter a phone number.' : undefined }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Add supplier</DialogTitle><DialogDescription>The credit period sets the default due date on new invoices.</DialogDescription></DialogHeader>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Supplier name" required error={tried ? err.name : undefined} className="sm:col-span-2"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-          <Field label="Contact person" optional><Input value={f.contactPerson} onChange={(e) => setF({ ...f, contactPerson: e.target.value })} /></Field>
-          <Field label="Phone" required error={tried ? err.phone : undefined}><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
-          <Field label="Email" optional><Input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
-          <Field label="Credit period"><div className="flex items-center gap-2"><Input type="number" min={0} className="w-24 text-right" value={f.creditDays} onChange={(e) => setF({ ...f, creditDays: Number(e.target.value) })} /><span className="text-muted-foreground text-sm">days</span></div></Field>
-          <Field label="What they supply" optional className="sm:col-span-2"><Input value={f.supplies} onChange={(e) => setF({ ...f, supplies: e.target.value })} placeholder="e.g. Bricks, sand, cement" /></Field>
-          <Field label="Address" optional className="sm:col-span-2"><Input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={busy} onClick={async () => {
-            setTried(true)
-            if (err.name || err.phone) return
-            setBusy(true)
-            try {
-              await addSupplier({ ...f, email: f.email || undefined })
-              toast.success('Supplier added', { description: f.name })
-              onOpenChange(false)
-            } catch (e) {
-              toast.error('Supplier not added', { description: errorMessage(e) })
-            } finally {
-              setBusy(false)
-            }
-          }}>Add supplier</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }

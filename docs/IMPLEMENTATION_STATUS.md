@@ -1479,3 +1479,8 @@ For each completed task, record the date, files or migrations changed, verificat
 - Tests: `lib/finance.test.ts` (2) covers newest first, a later recording first within a day, other projects left out, and the numeric id tie-break.
   - Against the development data, PRJ-2026-001 shows 46 entries for 46 log rows, from the delay deduction and the status change at the top down to "Project created" at the bottom.
   - Frontend: `tsc -b` is clean and the Vitest suite passes (24 tests). No backend change.
+
+### 2026-10-31: Add a new supplier from the expense form
+- In the Record Expense dialog, the Supplier select (shown for a materials line) now has a "New" button. It opens the same "Add supplier" dialog as the Suppliers page. The supplier is saved through `POST /suppliers` and selected in the expense straight away, so a purchase from a shop that isn't on the list no longer means leaving the form.
+- `components/app/supplier-dialog.tsx`: the dialog moved out of `suppliers-page.tsx` so both places use the same one. It gained `onCreated(id)` and an optional `defaultName`. The Suppliers page uses it unchanged.
+- Tests: no backend change. Frontend: `tsc -b` is clean and the 24 Vitest tests pass. Not tried in a browser.

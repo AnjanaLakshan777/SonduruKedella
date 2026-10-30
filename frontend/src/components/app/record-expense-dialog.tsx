@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Info, Paperclip, X } from 'lucide-react'
+import { Info, Paperclip, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,7 @@ import { TODAY } from '@/lib/dates'
 import { formatBytes, formatLKR } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
 import { AmountInput, DatePicker, Field, SelectField } from './form'
+import { SupplierDialog } from './supplier-dialog'
 
 const AUTO: Record<string, string> = {
   Labour: 'Labour costs come from attendance and overtime in Labour & Payroll — they are added to projects automatically.',
@@ -47,6 +48,7 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
   const [file, setFile] = useState<{ fileName: string; size: number; file?: File } | undefined>()
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [newSupplierOpen, setNewSupplierOpen] = useState(false)
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -168,7 +170,11 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
           {isMaterials ? (
             <>
               <Field label="Supplier" optional={!!payee} hint="Credit purchases with many lines are easier as a supplier invoice.">
-                <SelectField value={supplierId} onChange={setSupplierId} placeholder="Select supplier" options={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
+                <div className="flex gap-2">
+                  <SelectField value={supplierId} onChange={setSupplierId} placeholder="Select supplier" className="min-w-0 flex-1" options={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
+                  {/* a shop that isn't on the list yet: add it here and it's selected straight away */}
+                  <Button type="button" variant="outline" onClick={() => setNewSupplierOpen(true)}><Plus />New</Button>
+                </div>
               </Field>
               <Field label="Quantity" required>
                 <div className="flex gap-2">
@@ -222,6 +228,7 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
           )}
           <Field label="Notes" optional className="sm:col-span-2"><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         </div>
+        <SupplierDialog open={newSupplierOpen} onOpenChange={setNewSupplierOpen} onCreated={setSupplierId} />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={save} disabled={!!AUTO[category] || busy}>{edit ? 'Save changes' : `Record Expense${total ? ` · ${formatLKR(total)}` : ''}`}</Button>
