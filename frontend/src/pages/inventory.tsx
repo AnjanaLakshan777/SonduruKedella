@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ArrowLeftRight, Ellipsis, FilePlus2, Info, Package, Plus, TriangleAlert } from 'lucide-react'
+import { ArrowLeftRight, Ellipsis, FilePlus2, Info, Package, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -36,11 +36,10 @@ export default function InventoryPage() {
   const d = useData()
   const [q, setQ] = useState('')
   const [cat, setCat] = useState(ALL)
-  const [status, setStatus] = useState(ALL)
   const [move, setMove] = useState<{ open: boolean; materialId?: string; type?: MovementType }>({ open: false })
   const [view, setView] = useState<MaterialView | undefined>()
   const [addOpen, setAddOpen] = useState(false)
-  const rows = d.materials.filter((m) => (cat === ALL || m.material.category === cat) && (status === ALL || m.status === status) && (!q || `${m.material.name} ${m.material.sku}`.toLowerCase().includes(q.toLowerCase())))
+  const rows = d.materials.filter((m) => (cat === ALL || m.material.category === cat) && (!q || `${m.material.name} ${m.material.sku}`.toLowerCase().includes(q.toLowerCase())))
   const issuedOct = d.s.stockMovements.filter((m) => m.type === 'Issued' && m.date >= '2026-10-01')
   const moves = useMemo(() => d.s.stockMovements.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)), [d])
   const paged = usePaged(moves, 15)
@@ -56,15 +55,8 @@ export default function InventoryPage() {
       <KpiStrip items={[
         { label: 'Stock value', unit: 'LKR', value: <Money value={d.totals.stockValue} decimals={0} currency={false} />, caption: 'FIFO cost of stock on hand' },
         { label: 'Materials tracked', value: d.materials.length, caption: `${new Set(d.materials.map((m) => m.material.category)).size} categories` },
-        { label: 'Low or out of stock', value: d.materials.filter((m) => m.status !== 'In Stock').length, tone: d.materials.some((m) => m.status === 'Out of Stock') ? 'destructive' : 'default', caption: 'At or below reorder level' },
         { label: 'Issued to projects (Oct)', unit: 'LKR', value: <Money value={sum(issuedOct, (m) => -(d.stockCost.get(m.id)?.totalCost ?? 0))} decimals={0} currency={false} />, basis: 'Recorded', caption: `${issuedOct.length} issues — charged to projects` },
       ]} />
-      {d.materials.some((m) => m.status !== 'In Stock') && (
-        <div className="bg-warning-soft text-warning flex items-start gap-3 rounded-lg border border-current/20 px-4 py-3 text-sm">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-          <div><span className="font-medium">Reorder soon: </span>{d.materials.filter((m) => m.status !== 'In Stock').map((m) => `${m.material.name} (${formatQty(m.qty, m.material.unit)} left)`).join(' · ')}</div>
-        </div>
-      )}
       <Tabs defaultValue="stock" className="gap-4">
         <TabsList variant="line"><TabsTrigger value="stock">Materials</TabsTrigger><TabsTrigger value="movements">Stock movements</TabsTrigger></TabsList>
         <TabsContent value="stock" className="grid gap-4">
@@ -72,20 +64,18 @@ export default function InventoryPage() {
             <FilterBar>
               <SearchInput value={q} onChange={setQ} placeholder="Search material or SKU…" />
               <FilterSelect label="Categories" value={cat} onChange={setCat} options={[...new Set(d.materials.map((m) => m.material.category))]} />
-              <FilterSelect label="Stock levels" value={status} onChange={setStatus} options={['In Stock', 'Low Stock', 'Out of Stock']} />
             </FilterBar>
             <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}><Plus />Add material</Button>
           </div>
           <Card className="gap-0 py-0">
             <Table>
-              <TableHeader><TableRow><TableHead className="pl-6">Material</TableHead><TableHead className="hidden md:table-cell">Category</TableHead><TableHead className="text-right">In stock</TableHead><TableHead className="hidden text-right sm:table-cell">Reorder level</TableHead><TableHead className="hidden text-right lg:table-cell" title="Reference price that pre-fills a purchase. Stock is valued FIFO, not at this.">Default unit cost (LKR)</TableHead><TableHead className="hidden text-right md:table-cell" title="FIFO: what is left of each purchase, at its own price">Value (LKR)</TableHead><TableHead>Status</TableHead><TableHead className="w-12 pr-4" /></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="pl-6">Material</TableHead><TableHead className="hidden md:table-cell">Category</TableHead><TableHead className="text-right">In stock</TableHead><TableHead className="hidden text-right lg:table-cell" title="Reference price that pre-fills a purchase. Stock is valued FIFO, not at this.">Default unit cost (LKR)</TableHead><TableHead className="hidden text-right md:table-cell" title="FIFO: what is left of each purchase, at its own price">Value (LKR)</TableHead><TableHead>Status</TableHead><TableHead className="w-12 pr-4" /></TableRow></TableHeader>
               <TableBody>
                 {rows.map((m) => (
                   <TableRow key={m.material.id} className="cursor-pointer" onClick={() => setView(m)}>
                     <TableCell className="pl-6"><CellMain title={m.material.name} sub={<Mono>{m.material.sku}</Mono>} /></TableCell>
                     <TableCell className="hidden md:table-cell">{m.material.category}</TableCell>
                     <TableCell className={cn('tabular text-right font-medium', m.status !== 'In Stock' && 'text-destructive-soft-foreground')}>{formatQty(m.qty, m.material.unit)}</TableCell>
-                    <TableCell className="tabular text-muted-foreground hidden text-right sm:table-cell">{formatQty(m.material.reorderLevel, m.material.unit)}</TableCell>
                     <TableCell className="hidden text-right lg:table-cell"><Money value={m.material.unitCost} currency={false} /></TableCell>
                     <TableCell className="hidden text-right md:table-cell"><Money value={m.value} currency={false} /></TableCell>
                     <TableCell><StatusBadge status={m.status} /></TableCell>
@@ -323,10 +313,10 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
 
 function AddMaterialDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { addMaterial, settings, materials } = useStore()
-  const [f, setF] = useState({ name: '', sku: '', category: '', unit: 'nos', reorderLevel: '' as number | '', unitCost: '' as number | '' })
+  const [f, setF] = useState({ name: '', sku: '', category: '', unit: 'nos', unitCost: '' as number | '' })
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { if (open) { setTried(false); setF({ name: '', sku: '', category: '', unit: 'nos', reorderLevel: '', unitCost: '' }) } }, [open])
+  useEffect(() => { if (open) { setTried(false); setF({ name: '', sku: '', category: '', unit: 'nos', unitCost: '' }) } }, [open])
   const err = { name: !f.name.trim() ? 'Enter a name.' : undefined, sku: !f.sku.trim() ? 'Enter an item code.' : materials.some((m) => m.sku.toLowerCase() === f.sku.trim().toLowerCase()) ? 'This code is already used.' : undefined, category: !f.category.trim() ? 'Enter a category.' : undefined }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -337,7 +327,6 @@ function AddMaterialDialog({ open, onOpenChange }: { open: boolean; onOpenChange
           <Field label="SKU / item code" required error={tried ? err.sku : undefined}><Input value={f.sku} onChange={(e) => setF({ ...f, sku: e.target.value.toUpperCase() })} className="font-mono" /></Field>
           <Field label="Category" required error={tried ? err.category : undefined}><Input value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} list="mat-cats" /><datalist id="mat-cats">{[...new Set(materials.map((m) => m.category))].map((c) => <option key={c} value={c} />)}</datalist></Field>
           <Field label="Unit of measurement" required><SelectField value={f.unit} onChange={(v) => setF({ ...f, unit: v })} options={settings.units} /></Field>
-          <Field label="Reorder level" optional><Input type="number" min={0} className="text-right" value={f.reorderLevel} onChange={(e) => setF({ ...f, reorderLevel: e.target.value === '' ? '' : Number(e.target.value) })} /></Field>
           <Field label="Default unit cost" optional className="sm:col-span-2"><AmountInput value={f.unitCost} onChange={(v) => setF({ ...f, unitCost: v })} /></Field>
         </div>
         <DialogFooter>
@@ -347,7 +336,7 @@ function AddMaterialDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             if (Object.values(err).some(Boolean)) return
             setBusy(true)
             try {
-              await addMaterial({ name: f.name.trim(), sku: f.sku.trim(), category: f.category.trim(), unit: f.unit, reorderLevel: Number(f.reorderLevel) || 0, unitCost: Number(f.unitCost) || 0 })
+              await addMaterial({ name: f.name.trim(), sku: f.sku.trim(), category: f.category.trim(), unit: f.unit, unitCost: Number(f.unitCost) || 0 })
               toast.success('Material added', { description: f.name })
               onOpenChange(false)
             } catch (e) {

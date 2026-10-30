@@ -212,13 +212,13 @@ const suppliers: Supplier[] = [
 ]
 
 const materials: Material[] = [
-  { id: 'm1', sku: 'CEM-50', name: 'Cement (50 kg bag)', category: 'Cement', unit: 'bag', reorderLevel: 150, unitCost: 2450 },
-  { id: 'm2', sku: 'STL-12', name: 'Steel bar 12 mm (tor)', category: 'Steel', unit: 'kg', reorderLevel: 500, unitCost: 310 },
-  { id: 'm3', sku: 'STL-10', name: 'Steel bar 10 mm (tor)', category: 'Steel', unit: 'kg', reorderLevel: 200, unitCost: 305 },
-  { id: 'm4', sku: 'WIR-BD', name: 'Binding wire', category: 'Steel', unit: 'kg', reorderLevel: 20, unitCost: 480 },
-  { id: 'm5', sku: 'BLK-06', name: 'Cement block 6"', category: 'Blocks & Bricks', unit: 'nos', reorderLevel: 1500, unitCost: 95 },
-  { id: 'm6', sku: 'BRK-ST', name: 'Clay brick (standard)', category: 'Blocks & Bricks', unit: 'nos', reorderLevel: 2000, unitCost: 33 },
-  { id: 'm7', sku: 'PVC-04', name: 'PVC pipe 4" (6 m length)', category: 'Plumbing', unit: 'length', reorderLevel: 20, unitCost: 2950 },
+  { id: 'm1', sku: 'CEM-50', name: 'Cement (50 kg bag)', category: 'Cement', unit: 'bag', unitCost: 2450 },
+  { id: 'm2', sku: 'STL-12', name: 'Steel bar 12 mm (tor)', category: 'Steel', unit: 'kg', unitCost: 310 },
+  { id: 'm3', sku: 'STL-10', name: 'Steel bar 10 mm (tor)', category: 'Steel', unit: 'kg', unitCost: 305 },
+  { id: 'm4', sku: 'WIR-BD', name: 'Binding wire', category: 'Steel', unit: 'kg', unitCost: 480 },
+  { id: 'm5', sku: 'BLK-06', name: 'Cement block 6"', category: 'Blocks & Bricks', unit: 'nos', unitCost: 95 },
+  { id: 'm6', sku: 'BRK-ST', name: 'Clay brick (standard)', category: 'Blocks & Bricks', unit: 'nos', unitCost: 33 },
+  { id: 'm7', sku: 'PVC-04', name: 'PVC pipe 4" (6 m length)', category: 'Plumbing', unit: 'length', unitCost: 2950 },
 ]
 
 const L = (id: string, description: string, qty: number, unit: string, unitPrice: number, materialId?: string) => ({ id, description, qty, unit, unitPrice, materialId })

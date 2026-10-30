@@ -150,8 +150,6 @@ const mapInvoicePayments = ({ payments }: Row): SupplierPayment[] => payments.fi
 }))
 const mapMaterial = (m: Row): Material => ({
   id: String(m.id), sku: m.sku, name: m.name, category: m.category, unit: m.unit, unitCost: m.defaultUnitCost,
-  // the owner dropped reorder levels; 0 keeps the old low-stock maths quiet until that UI is removed
-  reorderLevel: 0,
 })
 // FIFO runs in posting order (id), not by date - a backdated issue still takes the oldest layers left
 const mapMovements = (rows: Row[]): StockMovement[] => rows

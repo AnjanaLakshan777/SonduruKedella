@@ -196,7 +196,6 @@ export interface Material {
   name: string
   category: string
   unit: string
-  reorderLevel: number
   /** Default unit cost: a reference price that pre-fills a purchase. Stock is valued FIFO (lib/fifo.ts), never at this. */
   unitCost: number
 }

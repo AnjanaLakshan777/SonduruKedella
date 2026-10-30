@@ -31,10 +31,10 @@ This document must be updated as implementation progresses. Mark work complete o
 ## Planned Frontend Changes
 Required by the owner's decisions. Unticked items are not yet made. See docs/DATABASE.md, "Frontend alignment".
 - [x] Inventory: "Return from project" action linked to the original issue, with returned movements in the history (2026-10-24, local store only; see "Inventory frontend aligned with FIFO").
-- [ ] Inventory: remove the low-stock KPI, the stock-level filter, the "Reorder soon" banner, the reorder level column and field, and `Material.reorderLevel`.
+- [x] Inventory: remove the low-stock KPI, the stock-level filter, the "Reorder soon" banner, the reorder level column and field, and `Material.reorderLevel` (2026-10-30, phase 3d).
 - [x] Inventory (FIFO) (2026-10-24, local store only): the FIFO stock value, the `q × unitCost` preview replaced, a unit cost field for positive adjustments. It still has to be wired to the API.
-- [ ] Payroll: paid employee-weeks read-only in attendance, overtime and adjustments, plus a "Record correction" action on paid lines.
-- [ ] Settings: revenue categories shown read-only.
+- [x] Payroll: paid employee-weeks read-only in attendance, overtime and adjustments, plus a "Record correction" action on paid lines (2026-10-30, phase 3a).
+- [x] Settings: revenue categories shown read-only (2026-10-30, phase 3d).
 
 ## Backend Foundation
 - [x] Modular package structure established (2026-10-24).
@@ -1383,4 +1383,18 @@ For each completed task, record the date, files or migrations changed, verificat
   - Voiding uses the shared `VoidDialog`. It sends the arrangement's version, then reloads the commissions and the activity feed.
   - The server's refusal is shown, for example "Void its payments first".
 - Store: `voidCommission` → `POST /commissions/{id}/void` `{reason, version}`.
+- Tests: no backend change. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. Not tried in a browser.
+
+### 2026-10-30: Phase 3d, low-stock UI removed, revenue categories read-only
+- Owner decision (2026-10-24): no reorder levels. Removed:
+  - `Material.reorderLevel` from the type, the loader and the demo data;
+  - the "Low or out of stock" KPI;
+  - the "Reorder soon" banner;
+  - the "Stock levels" filter;
+  - the "Reorder level" column;
+  - the "Reorder level" field in Add material;
+  - the inventory count in the sidebar.
+- A material's status is now "In Stock" or "Out of Stock" (`lib/finance.ts`); "Low Stock" is gone from the badge map.
+- Settings → Categories: revenue categories are shown as fixed chips (they follow the project types, plus Other Income). The section saves only the expense categories. The project statuses note now says they are fixed instead of "come with the backend".
+- The "Planned Frontend Changes" checklist is ticked for these two items and for the payroll freeze (3a).
 - Tests: no backend change. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. Not tried in a browser.

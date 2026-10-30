@@ -22,8 +22,7 @@ export function AppLayout() {
   const d = useData()
   useEffect(() => { window.scrollTo(0, 0) }, [pathname])
   const overdueClients = new Set(d.installments.filter((i) => i.status === 'Overdue').map((i) => i.client.id)).size
-  const lowStock = d.materials.filter((m) => m.status !== 'In Stock').length
-  const counts = { '/clients': { n: overdueClients, alert: true }, '/inventory': { n: lowStock } }
+  const counts = { '/clients': { n: overdueClients, alert: true } }
 
   function toggle() {
     if (window.matchMedia('(max-width: 767px)').matches) setMobile(true)

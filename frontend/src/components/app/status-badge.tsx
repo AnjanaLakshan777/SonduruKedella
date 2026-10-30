@@ -5,7 +5,7 @@ type Tone = 'secondary' | 'primary' | 'success' | 'warning' | 'destructive' | 'o
 export const STATUS_TONES: Record<string, Tone> = {
   Upcoming: 'secondary', Unpaid: 'secondary', Planning: 'secondary', Draft: 'secondary', Frozen: 'secondary', 'Nothing to Pay': 'secondary', Pending: 'secondary', Absent: 'secondary', Outstanding: 'primary',
   Due: 'primary', 'In Progress': 'primary', 'Ready to Pay': 'primary', Confirmed: 'primary', Scheduled: 'primary', Received: 'success',
-  'Partially Paid': 'warning', 'On Hold': 'warning', 'Low Stock': 'warning', 'Half Day': 'warning', Estimated: 'warning', 'Partly Deducted': 'warning', 'Awaiting Approval': 'warning',
+  'Partially Paid': 'warning', 'On Hold': 'warning', 'Half Day': 'warning', Estimated: 'warning', 'Partly Deducted': 'warning', 'Awaiting Approval': 'warning',
   Paid: 'success', Completed: 'success', 'In Stock': 'success', Present: 'success', Deducted: 'success', Approved: 'success', Active: 'success',
   Overdue: 'destructive', 'Out of Stock': 'destructive',
   'Written Off': 'outline', 'Bad Debt': 'outline', Cancelled: 'outline', 'From Stock': 'outline', Inactive: 'outline', Recorded: 'outline',

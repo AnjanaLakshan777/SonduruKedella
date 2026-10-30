@@ -242,7 +242,7 @@ export interface MaterialView {
   issued: number
   returned: number
   adjusted: number
-  status: 'In Stock' | 'Low Stock' | 'Out of Stock'
+  status: 'In Stock' | 'Out of Stock'
   movements: StockMovement[]
   /** open FIFO cost layers, next to be used first */
   layers: CostLayer[]
@@ -387,7 +387,8 @@ export function derive(s: DataState) {
     const issued = -sum(movements.filter((m) => m.type === 'Issued'), (m) => m.qty)
     const returned = sum(movements.filter((m) => m.type === 'Returned'), (m) => m.qty)
     const adjusted = sum(movements.filter((m) => m.type === 'Adjustment'), (m) => m.qty)
-    const status: MaterialView['status'] = qty <= 0 ? 'Out of Stock' : qty <= material.reorderLevel ? 'Low Stock' : 'In Stock'
+    // no reorder levels (owner decision): a material either has stock or it doesn't
+    const status: MaterialView['status'] = qty <= 0 ? 'Out of Stock' : 'In Stock'
     const layers = (layersByMat.get(material.id) ?? []).filter((l) => l.remainingQty > 0)
     return { material, qty, value, received, issued, returned, adjusted, status, movements, layers, lastReceived: movements.find((m) => m.type === 'Received')?.date }
   })
