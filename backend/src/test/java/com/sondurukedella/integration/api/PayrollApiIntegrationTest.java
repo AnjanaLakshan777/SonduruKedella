@@ -234,6 +234,11 @@ class PayrollApiIntegrationTest {
                 .andExpect(jsonPath("$[?(@.id == %d)].weekStart".formatted(payment)).value(hasItem(W1.toString())));
         mockMvc.perform(get(URL + "/payments").param("from", W1.plusWeeks(1).toString()))
                 .andExpect(jsonPath("$[?(@.id == %d)]".formatted(payment)).isEmpty());
+        // voiding the payment doesn't unfreeze the week, so the UI keeps it locked
+        mockMvc.perform(get(URL + "/frozen-weeks").param("from", W1.toString()).param("to", W1.toString())).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.employeeId == %d)].weekStart".formatted(kamal)).value(hasItem(W1.toString())));
+        mockMvc.perform(get(URL + "/frozen-weeks").param("from", W1.plusWeeks(1).toString()))
+                .andExpect(jsonPath("$[?(@.employeeId == %d)]".formatted(kamal)).isEmpty());
         // last: the database refusal aborts the test transaction
         mark(W1, kamal, "ABSENT", null).andExpect(status().isConflict());
     }

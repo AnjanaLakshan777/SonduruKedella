@@ -56,6 +56,12 @@ interface Actions {
   setPayrollAdjustment: (a: PayrollAdjustment) => Promise<void>
   // one payment per worker-week; the first payment freezes that week on the server
   recordPayrollPayments: (rows: (PaymentInput & { weekStart: string; employeeId: string })[]) => Promise<void>
+  // a paid week changes only through corrections (+/-, with a reason); a wrong one is voided, not edited
+  recordPayrollCorrection: (weekStart: string, employeeId: string, c: { requestId: string; correctionDate: string; wageDelta: number; projectId?: string; reason: string }) => Promise<void>
+  voidPayrollCorrection: (weekStart: string, employeeId: string, correctionId: string, version: number, reason: string) => Promise<void>
+  voidPayrollPayment: (weekStart: string, employeeId: string, paymentId: string, version: number, reason: string) => Promise<void>
+  // a week the advance recovery swallows (nothing to pay) is closed instead of paid
+  closePayrollWeek: (weekStart: string, employeeId: string) => Promise<void>
   // the project's whole set; drafts left out are removed, confirmed ones can't be changed (void them instead)
   saveCommissions: (projectId: string, rows: { id?: string; recipient: string; role: string; rate: number }[], confirm: boolean, acceptPolicyException?: boolean) => Promise<void>
   recordCommissionPayment: (p: PaymentInput & { arrangementId: string }) => Promise<void>
@@ -66,7 +72,8 @@ interface Actions {
   reset: () => void
 }
 
-export type Store = DataState & Actions & { loaded: boolean }
+// frozenWeeks: "weekStart:employeeId" for worker-weeks already paid or closed - their inputs are locked
+export type Store = DataState & Actions & { loaded: boolean; frozenWeeks: Set<string> }
 
 export interface ClientInput {
   name: string
@@ -179,6 +186,7 @@ export const useStore = create<Store>()((set, get) => {
   return {
     ...emptyState(),
     loaded: false,
+    frozenWeeks: new Set<string>(),
     load: async () => set({ ...(await loadAll()), loaded: true }),
     addClient: async (c) => {
       const saved = mapClient(await apiPost('/clients', clientBody(c)))
@@ -355,6 +363,22 @@ export const useStore = create<Store>()((set, get) => {
         advanceDeduction: a.advanceDeduction, otherDeduction: a.otherDeduction, otherNote: a.otherNote,
         version: versionOf('adjustment', adjustmentKey(a.weekStart, a.employeeId)) ?? null,
       })
+      await refreshLabour()
+    },
+    recordPayrollCorrection: async (ws, emp, c) => {
+      await apiPost(`/payroll/weeks/${ws}/employees/${emp}/corrections`, c)
+      await refreshLabour()
+    },
+    voidPayrollCorrection: async (ws, emp, id, version, reason) => {
+      await apiPost(`/payroll/weeks/${ws}/employees/${emp}/corrections/${id}/void`, { reason, version })
+      await refreshLabour()
+    },
+    voidPayrollPayment: async (ws, emp, id, version, reason) => {
+      await apiPost(`/payroll/weeks/${ws}/employees/${emp}/payments/${id}/void`, { reason, version })
+      await refreshLabour()
+    },
+    closePayrollWeek: async (ws, emp) => {
+      await apiPost(`/payroll/weeks/${ws}/employees/${emp}/close`)
       await refreshLabour()
     },
     recordPayrollPayments: async (rows) => {

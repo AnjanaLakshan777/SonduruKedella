@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { CheckCheck, ChevronLeft, ChevronRight, Save } from 'lucide-react'
+import { CheckCheck, ChevronLeft, ChevronRight, LockKeyhole, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,7 @@ import { useData, useStore } from '@/store/store'
 import { errorMessage } from '@/lib/api'
 import type { Attendance, AttendanceStatus } from '@/data/types'
 import { addDays, dayName, formatDate, formatLongToday, TODAY, weekday, weekStart } from '@/lib/dates'
+import { adjustmentKey } from '@/data/api-load'
 import { cn } from '@/lib/utils'
 
 const STATES: AttendanceStatus[] = ['Present', 'Half Day', 'Absent']
@@ -22,11 +23,14 @@ const NONE = '__none'
 export function AttendanceView() {
   const d = useData()
   const saveAttendance = useStore((s) => s.saveAttendance)
+  const frozenWeeks = useStore((s) => s.frozenWeeks)
   const [busy, setBusy] = useState(false)
   const [date, setDate] = useState(TODAY)
   const [rows, setRows] = useState<Record<string, Attendance & { marked: boolean }>>({})
   const [dirty, setDirty] = useState(false)
   const active = d.s.employees.filter((e) => e.status === 'Active' && e.joinedOn <= date)
+  // a worker whose week is already paid is frozen: that row is read-only
+  const isFrozen = (employeeId: string) => frozenWeeks.has(adjustmentKey(weekStart(date), employeeId))
 
   useEffect(() => {
     const prevDay = (() => { let x = addDays(date, -1); while (weekday(x) === 0) x = addDays(x, -1); return x })()
@@ -49,7 +53,7 @@ export function AttendanceView() {
   async function save() {
     setBusy(true)
     try {
-      await saveAttendance(date, list.map((x) => ({ date, employeeId: x.e.id, status: x.a.status, projectId: x.a.projectId, notes: x.a.notes || undefined })))
+      await saveAttendance(date, list.filter((x) => !isFrozen(x.e.id) || x.a.marked).map((x) => ({ date, employeeId: x.e.id, status: x.a.status, projectId: x.a.projectId, notes: x.a.notes || undefined })))
       setDirty(false)
       toast.success(`Attendance saved for ${formatDate(date)}`, { description: `${list.filter((x) => x.a.status === 'Present').length} present · ${list.filter((x) => x.a.status === 'Half Day').length} half day · ${list.filter((x) => x.a.status === 'Absent').length} absent` })
     } catch (e) {
@@ -77,7 +81,7 @@ export function AttendanceView() {
           {isSunday ? <CardContent className="text-muted-foreground pb-6 text-sm">Sunday — no work day. Choose another date.</CardContent> : date > TODAY ? <CardContent className="text-muted-foreground pb-6 text-sm">Attendance can't be recorded for future dates.</CardContent> : (
             <>
               <CardContent className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => { const n = { ...rows }; for (const k of Object.keys(n)) n[k] = { ...n[k], status: 'Present', marked: true }; setRows(n); setDirty(true) }}><CheckCheck />Mark all present</Button>
+                <Button variant="outline" size="sm" onClick={() => { const n = { ...rows }; for (const k of Object.keys(n)) if (!isFrozen(k)) n[k] = { ...n[k], status: 'Present', marked: true }; setRows(n); setDirty(true) }}><CheckCheck />Mark all present</Button>
                 <span className="text-muted-foreground text-sm">Today is {formatLongToday()}</span>
               </CardContent>
               <Table>
@@ -85,21 +89,21 @@ export function AttendanceView() {
                 <TableBody>
                   {list.map((x) => (
                     <TableRow key={x.e.id} className={cn(!x.a.marked && 'text-muted-foreground')}>
-                      <TableCell className="min-w-44 pl-6"><CellMain title={x.e.name} sub={x.e.role} /></TableCell>
+                      <TableCell className="min-w-44 pl-6"><CellMain title={<span className="flex items-center gap-1.5">{x.e.name}{isFrozen(x.e.id) && <LockKeyhole className="text-muted-foreground size-3.5" aria-label="Week paid - locked" />}</span>} sub={x.e.role} /></TableCell>
                       <TableCell>
                         <div role="radiogroup" aria-label={`Attendance for ${x.e.name}`} className="bg-muted inline-flex rounded-md p-0.5">
                           {STATES.map((s) => (
-                            <button key={s} type="button" role="radio" aria-checked={x.a.status === s} onClick={() => set(x.e.id, { status: s })}
+                            <button key={s} type="button" role="radio" aria-checked={x.a.status === s} disabled={isFrozen(x.e.id)} onClick={() => set(x.e.id, { status: s })}
                               className={cn('focus-visible:ring-ring/50 rounded-[5px] px-2.5 py-1 text-xs font-medium whitespace-nowrap outline-none focus-visible:ring-[3px]', x.a.status === s ? (s === 'Present' ? 'bg-success-soft text-success shadow-sm' : s === 'Half Day' ? 'bg-warning-soft text-warning shadow-sm' : 'bg-card text-foreground shadow-sm') : 'text-muted-foreground hover:text-foreground')}>
                               {s}
                             </button>
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell><SelectField size="sm" value={x.a.projectId ?? NONE} onChange={(v) => set(x.e.id, { projectId: v === NONE ? undefined : v })} options={[{ value: NONE, label: 'General / yard work' }, ...projects.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} /></TableCell>
+                      <TableCell><SelectField size="sm" disabled={isFrozen(x.e.id)} value={x.a.projectId ?? NONE} onChange={(v) => set(x.e.id, { projectId: v === NONE ? undefined : v })} options={[{ value: NONE, label: 'General / yard work' }, ...projects.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} /></TableCell>
                       <TableCell className="hidden text-right md:table-cell"><Money value={x.e.dailyRate} currency={false} tone="muted" /></TableCell>
                       <TableCell className="text-right font-medium"><Money value={wage(x)} currency={false} /></TableCell>
-                      <TableCell className="hidden pr-6 lg:table-cell"><Input className="h-8" value={x.a.notes ?? ''} onChange={(e) => set(x.e.id, { notes: e.target.value })} placeholder="Optional" aria-label={`Notes for ${x.e.name}`} /></TableCell>
+                      <TableCell className="hidden pr-6 lg:table-cell"><Input className="h-8" disabled={isFrozen(x.e.id)} value={x.a.notes ?? ''} onChange={(e) => set(x.e.id, { notes: e.target.value })} placeholder="Optional" aria-label={`Notes for ${x.e.name}`} /></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

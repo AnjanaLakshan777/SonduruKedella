@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Clock, Plus, X } from 'lucide-react'
+import { Check, Clock, LockKeyhole, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -10,7 +10,8 @@ import { StatusBadge } from '@/components/app/status-badge'
 import { CellMain, Mono } from '@/components/app/data-table'
 import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/form'
 import { useData, useStore } from '@/store/store'
-import { formatDate, TODAY } from '@/lib/dates'
+import { formatDate, TODAY, weekStart } from '@/lib/dates'
+import { adjustmentKey } from '@/data/api-load'
 import { formatLKR } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
 import { useAuth } from '@/store/auth'
@@ -21,6 +22,8 @@ export function OvertimeView() {
   const d = useData()
   const { addOvertime, approveOvertime } = useStore()
   const me = useAuth((s) => s.user)
+  const frozenWeeks = useStore((s) => s.frozenWeeks)
+  const isFrozen = (date: string, employeeId: string) => frozenWeeks.has(adjustmentKey(weekStart(date), employeeId))
   const [busy, setBusy] = useState(false)
   const [employeeId, setEmployeeId] = useState('')
   const [date, setDate] = useState(TODAY)
@@ -39,7 +42,7 @@ export function OvertimeView() {
   const h = typeof hours === 'number' ? hours : 0
   const r = typeof rate === 'number' ? rate : 0
   const att = emp ? d.s.attendance.find((x) => x.employeeId === emp.id && x.date === date) : undefined
-  const err = { emp: !employeeId ? 'Choose the worker.' : undefined, hours: !(h > 0 && h <= 8) ? 'Enter 0.5 to 8 hours.' : undefined, rate: !(r > 0) ? 'Enter the hourly rate.' : undefined }
+  const err = { emp: !employeeId ? 'Choose the worker.' : isFrozen(date, employeeId) ? 'This worker\x27s week is already paid. Change it with a payroll correction.' : undefined, hours: !(h > 0 && h <= 8) ? 'Enter 0.5 to 8 hours.' : undefined, rate: !(r > 0) ? 'Enter the hourly rate.' : undefined }
   const list = useMemo(() => d.s.overtime.slice().sort((a, b) => Number(a.approved) - Number(b.approved) || b.date.localeCompare(a.date)), [d])
 
   async function save() {
@@ -100,7 +103,8 @@ export function OvertimeView() {
                   <TableCell className="text-right font-medium"><Money value={o.hours * o.rate} currency={false} /></TableCell>
                   <TableCell><StatusBadge status={o.approved ? 'Approved' : 'Awaiting Approval'} /></TableCell>
                   <TableCell className="pr-4">
-                    {o.approved ? <Button variant="ghost" size="sm" onClick={() => approve(o, e.name, false)}><X />Undo</Button>
+                    {isFrozen(o.date, o.employeeId) ? <span className="text-muted-foreground flex items-center gap-1 text-xs" title="The week is paid; change it with a payroll correction"><LockKeyhole className="size-3.5" />Week paid</span>
+                      : o.approved ? <Button variant="ghost" size="sm" onClick={() => approve(o, e.name, false)}><X />Undo</Button>
                       : <Button variant="outline" size="sm" onClick={() => approve(o, e.name, true)}><Check />Approve</Button>}
                   </TableCell>
                 </TableRow>

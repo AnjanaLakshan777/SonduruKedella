@@ -15,6 +15,7 @@ import com.sondurukedella.payroll.dto.PayrollLineDetail;
 import com.sondurukedella.payroll.dto.PayrollLineResponse;
 import com.sondurukedella.payroll.dto.PayrollLineStatus;
 import com.sondurukedella.payroll.dto.PayrollPaymentRequest;
+import com.sondurukedella.payroll.dto.FrozenWeek;
 import com.sondurukedella.payroll.dto.PayrollAdjustmentResponse;
 import com.sondurukedella.payroll.dto.PayrollPaymentResponse;
 import com.sondurukedella.payroll.dto.PayrollWeekResponse;
@@ -150,6 +151,12 @@ public class PayrollService {
             PayrollLine line = byId.get(p.getPayrollLineId());
             return mapper.toResponse(p, line.getEmployeeId(), line.getWeekStart(), names.get(p.getPaymentMethodId()));
         }).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<FrozenWeek> frozenWeeks(LocalDate from, LocalDate to) {
+        return lines.findByWeekStartBetween(orMin(from), orMax(to)).stream()
+                .map(l -> new FrozenWeek(l.getEmployeeId(), l.getWeekStart())).toList();
     }
 
     @Transactional(readOnly = true)

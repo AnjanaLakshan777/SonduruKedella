@@ -5,6 +5,7 @@ import com.sondurukedella.payroll.dto.EmployeePayrollHistory;
 import com.sondurukedella.payroll.dto.PayrollAdjustmentRequest;
 import com.sondurukedella.payroll.dto.PayrollCorrectionRequest;
 import com.sondurukedella.payroll.dto.PayrollCorrectionResponse;
+import com.sondurukedella.payroll.dto.FrozenWeek;
 import com.sondurukedella.payroll.dto.PayrollAdjustmentResponse;
 import com.sondurukedella.payroll.dto.PayrollLineDetail;
 import com.sondurukedella.payroll.dto.PayrollPaymentRequest;
@@ -118,6 +119,13 @@ public class PayrollController {
     public List<PayrollPaymentResponse> payments(@RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate to) {
         return payroll.payments(from, to);
+    }
+
+    // worker-weeks already paid or closed (frozen), so the UI can lock them
+    @GetMapping("/frozen-weeks")
+    public List<FrozenWeek> frozenWeeks(@RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate to) {
+        return payroll.frozenWeeks(from, to);
     }
 
     @GetMapping("/adjustments")

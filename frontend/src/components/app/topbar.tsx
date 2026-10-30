@@ -166,7 +166,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
             <DropdownMenuItem onSelect={() => navigate('/settings')}>Company settings</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => { load().then(() => toast.success('Data reloaded')).catch((e) => toast.error('Could not reload', { description: e.message })) }}><RotateCcw />Reload data</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { logout().finally(() => useStore.setState({ ...emptyState(), loaded: false })) }}>Sign out</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { logout().finally(() => useStore.setState({ ...emptyState(), loaded: false, frozenWeeks: new Set() })) }}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

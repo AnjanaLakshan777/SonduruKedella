@@ -1333,3 +1333,21 @@ For each completed task, record the date, files or migrations changed, verificat
   - Dashboard months and financial year label taken from the data.
   - A Super Admin user-management screen.
   - Manual expense attachment (backend support or remove the field; owner to choose).
+
+### 2026-10-30: Phase 3a, payroll figures from the backend, frozen weeks and corrections in the UI
+- Backend: `GET /api/v1/payroll/frozen-weeks?from&to` lists the worker-weeks already paid or closed (`{employeeId, weekStart}`), new `FrozenWeek` DTO. A voided payment leaves its week frozen, and the list says so. Covered in `PayrollApiIntegrationTest`.
+- Payroll page (`pages/labour/payroll.tsx`):
+  - The selected week's figures come from `GET /payroll/weeks/{w}`: KPIs, the table, and each worker's gross, deductions, corrections, owed, paid, remaining and status. A paid week is frozen on the server with the rates of the day, so the page no longer works these out in the browser. Which weeks exist still comes from the local attendance.
+  - The week is read again after any labour save.
+  - Frozen workers show a lock. Their sheet offers "Record correction" instead of "Adjust deductions".
+  - The correction dialog takes owed more or owed less, an amount, a date, the project (or company) the labour cost goes to, and a reason. One `requestId` per opening.
+  - The worker sheet (`GET .../employees/{e}`) lists payments and corrections, each with a Void action that asks for a reason. Voided ones stay, struck through.
+  - "Close" or "Close week" appears for a week the advance recovery swallows (nothing to pay).
+  - Pay and "Pay remaining" respect the server's `payable` and `blockedReason`.
+  - The labour cost by project comes from the server's split, with the company share shown as "Company (no project)".
+- Attendance: a frozen worker's row is read-only (lock icon). "Mark all present" skips frozen rows. A frozen row with no mark is not sent, because the server would read that as a change.
+- Overtime: entries in a frozen week show "Week paid" instead of Approve or Undo. Recording overtime in a frozen week is blocked with a message pointing to corrections.
+- Store: `frozenWeeks` (loaded with the labour bundle and the first load), plus `recordPayrollCorrection`, `voidPayrollCorrection`, `voidPayrollPayment` and `closePayrollWeek`.
+- Hooks subscribe to several store slices through `useShallow`, so zustand v5 doesn't loop on a new array each render.
+- Verified against the development backend (read-only): the week response has every field the page maps, 251 frozen worker-weeks are listed, the worker detail returns payments and corrections, and the full load still works. The development backend was rebuilt for the new endpoint. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. Not tried in a browser.
+- Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 686 tests, 0 failures, 0 errors, 0 skipped. The frozen-weeks checks were added to an existing test, so the count didn't change.

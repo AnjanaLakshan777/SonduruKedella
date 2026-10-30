@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 type Tone = 'secondary' | 'primary' | 'success' | 'warning' | 'destructive' | 'outline'
 export const STATUS_TONES: Record<string, Tone> = {
-  Upcoming: 'secondary', Unpaid: 'secondary', Planning: 'secondary', Draft: 'secondary', Pending: 'secondary', Absent: 'secondary', Outstanding: 'primary',
+  Upcoming: 'secondary', Unpaid: 'secondary', Planning: 'secondary', Draft: 'secondary', Frozen: 'secondary', 'Nothing to Pay': 'secondary', Pending: 'secondary', Absent: 'secondary', Outstanding: 'primary',
   Due: 'primary', 'In Progress': 'primary', 'Ready to Pay': 'primary', Confirmed: 'primary', Scheduled: 'primary', Received: 'success',
   'Partially Paid': 'warning', 'On Hold': 'warning', 'Low Stock': 'warning', 'Half Day': 'warning', Estimated: 'warning', 'Partly Deducted': 'warning', 'Awaiting Approval': 'warning',
   Paid: 'success', Completed: 'success', 'In Stock': 'success', Present: 'success', Deducted: 'success', Approved: 'success', Active: 'success',

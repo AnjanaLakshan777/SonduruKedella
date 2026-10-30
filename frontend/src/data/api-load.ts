@@ -217,13 +217,17 @@ function mapLabour(employeeRows: Row[], attendanceRows: Row[], overtimeRows: Row
 
 // everything labour and payroll: one save can change attendance, recoveries and what each week owes
 export async function loadLabour() {
-  const [employeeRows, advanceRows, adjustmentRows, paymentRows] = await Promise.all([
+  const [employeeRows, advanceRows, adjustmentRows, paymentRows, frozenRows] = await Promise.all([
     apiGetAll<Row>('/employees'), apiGetAll<Row>('/payroll/advances'), apiGet<Row[]>('/payroll/adjustments'), apiGet<Row[]>('/payroll/payments'),
+    apiGet<Row[]>('/payroll/frozen-weeks'),
   ])
   const firstDay = employeeRows.reduce((m: string, e: Row) => (e.joinedOn < m ? e.joinedOn : m), TODAY)
   const [attendanceRows, overtimeRows] = await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay)])
-  return mapLabour(employeeRows, attendanceRows, overtimeRows, advanceRows, adjustmentRows, paymentRows)
+  return { ...mapLabour(employeeRows, attendanceRows, overtimeRows, advanceRows, adjustmentRows, paymentRows), frozenWeeks: frozenSet(frozenRows) }
 }
+
+// worker-weeks already paid or closed, keyed like adjustments
+const frozenSet = (rows: Row[]) => new Set<string>(rows.map((r: Row) => adjustmentKey(r.weekStart, String(r.employeeId))))
 
 function mapCommission(c: Row): CommissionArrangement {
   keep('commission', c)
@@ -330,9 +334,9 @@ async function inWindows(path: string, from: string): Promise<Row[]> {
   return out
 }
 
-export async function loadAll(): Promise<DataState> {
+export async function loadAll(): Promise<DataState & { frozenWeeks: Set<string> }> {
   const [overview, clientRows, projectRows, otherIncomeRows, expenseRows, expensePaymentRows, supplierRows, invoiceRows, materialRows,
-    movementRows, employeeRows, advanceRows, adjustmentRows, payrollPaymentRows, commissionRows, commissionPaymentRows, activityRows] =
+    movementRows, employeeRows, advanceRows, adjustmentRows, payrollPaymentRows, commissionRows, commissionPaymentRows, activityRows, frozenRows] =
     await Promise.all([
       apiGet<Row>('/settings'),
       apiGetAll<Row>('/clients'),
@@ -351,6 +355,7 @@ export async function loadAll(): Promise<DataState> {
       apiGetAll<Row>('/commissions'),
       apiGetAll<Row>('/commissions/payments'),
       apiGetAll<Row>('/activity'),
+      apiGet<Row[]>('/payroll/frozen-weeks'),
     ])
 
   const perProject = await Promise.all(projectRows.map(projectBundle))
@@ -386,6 +391,7 @@ export async function loadAll(): Promise<DataState> {
     clients, projects, installments, clientPayments, writeOffs, otherIncome, otherIncomeReceipts, expenses, expensePayments, suppliers,
     supplierInvoices, supplierPayments, materials, stockMovements, employees, attendance, overtime, advances, payrollAdjustments,
     payrollPayments, commissions, commissionPayments, activity, settings: settingsFrom(overview),
+    frozenWeeks: frozenSet(frozenRows),
   }
 }
 
