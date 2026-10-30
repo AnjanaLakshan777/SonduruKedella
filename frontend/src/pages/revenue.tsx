@@ -148,7 +148,7 @@ export default function RevenuePage() {
         open={!!receiptRow} onOpenChange={(o) => !o && setReceiptFor(undefined)} title={`Record receipt — ${receiptRow?.income.description ?? ''}`}
         context={receiptRow ? [{ label: 'Amount', value: receiptRow.income.amount }, { kind: 'less', label: 'Received', value: receiptRow.received }, { kind: 'total', label: 'Outstanding', value: receiptRow.remaining }] : undefined}
         outstanding={receiptRow?.remaining ?? 0}
-        onSubmit={(p) => receiptRow && recordOtherIncomeReceipt({ incomeId: receiptRow.income.id, date: p.date, amount: p.amount, method: p.method, reference: p.reference })}
+        onSubmit={(p) => receiptRow ? recordOtherIncomeReceipt({ incomeId: receiptRow.income.id, ...p }) : undefined}
       />
     </>
   )
@@ -170,8 +170,10 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const [notes, setNotes] = useState('')
   const [receivedNow, setReceivedNow] = useState<number | ''>('')
   const [method, setMethod] = useState('Cash')
+  const [busy, setBusy] = useState(false)
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
   const [tried, setTried] = useState(false)
-  useEffect(() => { if (open) { setCategory('Construction'); setMode('bill'); setProjectId(''); setInstId(''); setDescription(''); setPayer(''); setAmount(''); setDate(TODAY); setDue(addDays(TODAY, 14)); setReference(''); setNotes(''); setReceivedNow(''); setTried(false) } }, [open])
+  useEffect(() => { if (open) { setRequestId(crypto.randomUUID()); setCategory('Construction'); setMode('bill'); setProjectId(''); setInstId(''); setDescription(''); setPayer(''); setAmount(''); setDate(TODAY); setDue(addDays(TODAY, 14)); setReference(''); setNotes(''); setReceivedNow(''); setTried(false) } }, [open])
   const isProject = category !== 'Other Income'
   const projects = d.projects.filter((p) => p.project.type === category && p.project.status !== 'Cancelled')
   const pf = d.projectFinById.get(projectId)
@@ -188,22 +190,27 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   async function save() {
     setTried(true)
     if (Object.values(err).some(Boolean)) return
-    if (isProject && mode === 'bill' && inst) {
-      billInstallment(inst.inst.id, date)
-      toast.success('Revenue recorded', { description: `${formatLKR(inst.net)} billed to ${pf!.client.name} — ${inst.inst.description}. Record payments as they arrive.` })
-    } else if (isProject && pf) {
-      try {
+    setBusy(true)
+    try {
+      if (isProject && mode === 'bill' && inst) {
+        await billInstallment(inst.inst.id, date)
+        toast.success('Revenue recorded', { description: `${formatLKR(inst.net)} billed to ${pf!.client.name} — ${inst.inst.description}. Record payments as they arrive.` })
+      } else if (isProject && pf) {
         await addVariation(pf.project.id, { description: `Variation: ${description.trim()}`, amount: amt, dueDate: due!, billedOn: date })
-      } catch (e) {
-        toast.error('Variation not saved', { description: errorMessage(e) })
-        return
+        toast.success('Additional work billed', { description: `${formatLKR(amt)} added to ${pf.project.code} as a variation. The original contract value is unchanged.` })
+      } else {
+        await addOtherIncome(
+          { date, description: description.trim(), payer: payer || undefined, amount: amt, dueDate: due, reference: reference || undefined, notes: notes || undefined },
+          typeof receivedNow === 'number' && receivedNow > 0 ? { requestId, amount: receivedNow, method, date } : undefined,
+        )
+        toast.success('Other income recorded', { description: `${formatLKR(amt)} · ${description.trim()}` })
       }
-      toast.success('Additional work billed', { description: `${formatLKR(amt)} added to ${pf.project.code} as a variation. The original contract value is unchanged.` })
-    } else {
-      addOtherIncome({ date, description: description.trim(), payer: payer || undefined, amount: amt, dueDate: due, reference: reference || undefined, notes: notes || undefined }, typeof receivedNow === 'number' && receivedNow > 0 ? { amount: receivedNow, method, date } : undefined)
-      toast.success('Other income recorded', { description: `${formatLKR(amt)} · ${description.trim()}` })
+      onOpenChange(false)
+    } catch (e) {
+      toast.error('Not saved', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
     }
-    onOpenChange(false)
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -254,7 +261,7 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <Field label="Revenue date" required><DatePicker value={date} onChange={setDate} /></Field>
           <Field label="Notes" optional className="sm:col-span-2"><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save}>Record revenue</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} disabled={busy}>Record revenue</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )

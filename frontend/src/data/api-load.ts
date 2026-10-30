@@ -97,7 +97,30 @@ export async function loadActivity(): Promise<ActivityEntry[]> {
   return (await apiGetAll<Row>('/activity')).map(mapActivity)
 }
 
+const mapOtherIncome = (o: Row): OtherIncome => ({
+  id: String(o.id), date: o.date, description: o.description, payer: opt(o.payer), amount: o.amount, dueDate: opt(o.dueDate),
+  reference: opt(o.reference), notes: opt(o.notes),
+})
+const mapIncomeReceipt = (r: Row): OtherIncomeReceipt => ({
+  id: String(r.id), incomeId: String(r.incomeId), date: r.paymentDate, amount: r.amount, method: r.method, reference: opt(r.reference),
+})
+export async function loadOtherIncome(): Promise<{ otherIncome: OtherIncome[]; otherIncomeReceipts: OtherIncomeReceipt[] }> {
+  const rows = await apiGetAll<Row>('/other-income')
+  const receipts = await Promise.all(rows.map((o: Row) => apiGet<Row[]>(`/other-income/${o.id}/receipts`)))
+  return { otherIncome: rows.map(mapOtherIncome), otherIncomeReceipts: receipts.flat().filter((r: Row) => !r.voided).map(mapIncomeReceipt) }
+}
+
+// the UI picks payment methods by name; the API wants the id
+const methodIds = new Map<string, number>()
+export function methodId(name: string): number {
+  const found = methodIds.get(name)
+  if (found == null) throw new Error(`Unknown payment method "${name}". Reload the data and try again.`)
+  return found
+}
+
 function settingsFrom(o: Row): Settings {
+  methodIds.clear()
+  for (const m of o.paymentMethods) methodIds.set(m.name, m.id)
   const groups: Record<ExpenseGroup, string[]> = { Design: [], Construction: [], Consultation: [], Company: [] }
   for (const c of o.expenseCategories) if (c.active) groups[label(c.group) as ExpenseGroup].push(c.name)
   // the backend keeps only the month; the year is whichever puts the start on or before today
@@ -183,13 +206,8 @@ export async function loadAll(): Promise<DataState> {
   const clientPayments: ClientPayment[] = perProject.flatMap((b) => b.clientPayments)
   const writeOffs: WriteOff[] = perProject.flatMap((b) => b.writeOffs)
   const clients: Client[] = clientRows.map(mapClient)
-  const otherIncome: OtherIncome[] = otherIncomeRows.map((o: Row) => ({
-    id: String(o.id), date: o.date, description: o.description, payer: opt(o.payer), amount: o.amount, dueDate: opt(o.dueDate),
-    reference: opt(o.reference), notes: opt(o.notes),
-  }))
-  const otherIncomeReceipts: OtherIncomeReceipt[] = incomeReceipts.flat().filter((r: Row) => !r.voided).map((r: Row) => ({
-    id: String(r.id), incomeId: String(r.incomeId), date: r.paymentDate, amount: r.amount, method: r.method, reference: opt(r.reference),
-  }))
+  const otherIncome: OtherIncome[] = otherIncomeRows.map(mapOtherIncome)
+  const otherIncomeReceipts: OtherIncomeReceipt[] = incomeReceipts.flat().filter((r: Row) => !r.voided).map(mapIncomeReceipt)
   const expenses: Expense[] = expenseRows.map((e: Row) => {
     const details: Record<string, string> = {}
     if (e.machineType) details.Machine = e.machineType

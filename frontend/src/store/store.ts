@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { useMemo } from 'react'
 import { createSeed } from '@/data/seed'
-import { code, emptyState, loadActivity, loadAll, loadClients, loadProject, mapClient, versionOf } from '@/data/api-load'
+import { code, emptyState, loadActivity, loadAll, loadClients, loadOtherIncome, loadProject, mapClient, methodId, versionOf } from '@/data/api-load'
+import type { PaymentInput } from '@/components/app/payment-dialog'
 import { api, apiPost, apiPut } from '@/lib/api'
 import type {
-  Advance, Attendance, Client, ClientPayment, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
-  Expense, ExpensePayment, Material, OtherIncome, OtherIncomeReceipt, Overtime, PayrollAdjustment, PayrollPayment, ProjectStatus, ProjectType,
+  Advance, Attendance, Client, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
+  Expense, ExpensePayment, Material, OtherIncome, Overtime, PayrollAdjustment, PayrollPayment, ProjectStatus, ProjectType,
   Settings, StockMovement, Supplier, SupplierInvoice, SupplierPayment, WriteOff, ActivityEntry,
 } from '@/data/types'
 import { derive } from '@/lib/finance'
@@ -29,11 +30,11 @@ interface Actions {
   reverseDelayDeduction: (projectId: string) => Promise<void>
   reviseSchedule: (projectId: string, rows: { id?: string; description: string; dueDate: string; amount: number }[]) => Promise<void>
   addVariation: (projectId: string, v: { description: string; amount: number; dueDate: string; billedOn: string }) => Promise<void>
-  billInstallment: (id: string, date: string) => void
-  recordClientPayment: (p: New<ClientPayment>) => void
-  writeOff: (w: New<WriteOff>) => void
-  addOtherIncome: (i: New<OtherIncome>, received?: { amount: number; method: string; date: string }) => void
-  recordOtherIncomeReceipt: (r: New<OtherIncomeReceipt>) => void
+  billInstallment: (id: string, date: string) => Promise<void>
+  recordClientPayment: (p: PaymentInput & { installmentId: string }) => Promise<void>
+  writeOff: (w: New<WriteOff>) => Promise<void>
+  addOtherIncome: (i: New<OtherIncome>, received?: PaymentInput) => Promise<void>
+  recordOtherIncomeReceipt: (r: PaymentInput & { incomeId: string }) => Promise<void>
   addExpense: (e: New<Expense>, payment?: New<ExpensePayment> & { expenseId?: string }) => string
   updateExpense: (id: string, patch: Partial<Expense>) => void
   recordExpensePayment: (p: New<ExpensePayment>) => void
@@ -91,6 +92,10 @@ export interface ProjectInput {
 }
 
 const clientBody = (c: ClientInput) => ({ ...c, kind: code(c.kind) })
+// same shape for every kind of payment and receipt on the backend
+const paymentBody = (p: PaymentInput) => ({
+  requestId: p.requestId, paymentDate: p.date, amount: p.amount, paymentMethodId: methodId(p.method), reference: p.reference, notes: p.notes,
+})
 const delayBody = (d: DelayTerms) => ({
   contractDeadline: d.contractDeadline, rule: code(d.rule), ratePerDay: d.ratePerDay, percentPerWeek: d.percentPerWeek,
   fixedAmount: d.fixedAmount, graceDays: d.graceDays, maxDeduction: d.maxDeduction, notes: d.notes,
@@ -113,6 +118,12 @@ export const useStore = create<Store>()((set, get) => {
     })
   }
   const refreshClients = async () => set({ clients: await loadClients() })
+  const refreshOtherIncome = async () => set(await loadOtherIncome())
+  const projectOf = (installmentId: string) => {
+    const inst = get().installments.find((i) => i.id === installmentId)
+    if (!inst) throw new Error('That installment is no longer there. Reload the data.')
+    return inst.projectId
+  }
   const refreshActivity = async () => set({ activity: await loadActivity() })
   return {
     ...emptyState(),
@@ -173,21 +184,31 @@ export const useStore = create<Store>()((set, get) => {
       await apiPost(`/projects/${projectId}/variations`, v)
       await Promise.all([refreshProject(projectId), refreshActivity()])
     },
-    billInstallment: (id, date) => set((s) => ({ installments: s.installments.map((i) => (i.id === id ? { ...i, billed: true, billedOn: date } : i)) })),
-    recordClientPayment: (p) => set((s) => ({ clientPayments: [...s.clientPayments, { ...p, id: uid('cp') }] })),
-    writeOff: (w) => {
-      set((s) => ({ writeOffs: [...s.writeOffs, { ...w, id: uid('wo') }] }))
-      const inst = get().installments.find((i) => i.id === w.installmentId)
-      if (inst) log(inst.projectId, 'writeoff', `Bad debt written off: ${w.reason}`)
+    billInstallment: async (id, date) => {
+      const projectId = projectOf(id)
+      await apiPost(`/projects/${projectId}/installments/${id}/bill`, { billedOn: date, version: versionOf('installment', id) })
+      await Promise.all([refreshProject(projectId), refreshActivity()])
     },
-    addOtherIncome: (i, received) => {
-      const id = uid('oi')
-      set((s) => ({
-        otherIncome: [...s.otherIncome, { ...i, id }],
-        otherIncomeReceipts: received && received.amount > 0 ? [...s.otherIncomeReceipts, { id: uid('oir'), incomeId: id, ...received }] : s.otherIncomeReceipts,
-      }))
+    recordClientPayment: async (p) => {
+      const projectId = projectOf(p.installmentId)
+      await apiPost(`/projects/${projectId}/installments/${p.installmentId}/receipts`, paymentBody(p))
+      await Promise.all([refreshProject(projectId), refreshActivity()])
     },
-    recordOtherIncomeReceipt: (r) => set((s) => ({ otherIncomeReceipts: [...s.otherIncomeReceipts, { ...r, id: uid('oir') }] })),
+    writeOff: async (w) => {
+      const projectId = projectOf(w.installmentId)
+      await apiPost(`/projects/${projectId}/installments/${w.installmentId}/write-offs`, { date: w.date, amount: w.amount, reason: w.reason })
+      await Promise.all([refreshProject(projectId), refreshActivity()])
+    },
+    addOtherIncome: async (i, received) => {
+      const saved = await apiPost<{ id: number }>('/other-income', i)
+      // "received now" is a separate receipt; if it fails the income itself is still recorded
+      if (received && received.amount > 0) await apiPost(`/other-income/${saved.id}/receipts`, paymentBody(received))
+      await refreshOtherIncome()
+    },
+    recordOtherIncomeReceipt: async (r) => {
+      await apiPost(`/other-income/${r.incomeId}/receipts`, paymentBody(r))
+      await refreshOtherIncome()
+    },
     addExpense: (e, payment) => {
       const id = uid('e')
       set((s) => ({

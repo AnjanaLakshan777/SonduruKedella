@@ -7,10 +7,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { useStore } from '@/store/store'
 import { TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 import { AmountInput, DatePicker, Field, SelectField } from './form'
 import { FigureList, type FigureRow } from './figure-list'
 
-export interface PaymentInput { date: string; amount: number; method: string; reference?: string; notes?: string }
+// requestId is made once per opening of the dialog, so a double click or a retry is saved only once
+export interface PaymentInput { requestId: string; date: string; amount: number; method: string; reference?: string; notes?: string }
 
 /**
  * Records money moving against one record (installment, invoice, expense, commission…).
@@ -26,7 +28,7 @@ export function PaymentDialog({
   context?: FigureRow[]
   outstanding: number
   verb?: string
-  onSubmit: (p: PaymentInput) => void
+  onSubmit: (p: PaymentInput) => void | Promise<void>
   successTitle?: string
   allowNotes?: boolean
   direction?: 'in' | 'out'
@@ -38,16 +40,25 @@ export function PaymentDialog({
   const [reference, setReference] = useState('')
   const [notes, setNotes] = useState('')
   const [tried, setTried] = useState(false)
-  useEffect(() => { if (open) { setDate(TODAY); setAmount(outstanding > 0 ? outstanding : ''); setMethod('Bank Transfer'); setReference(''); setNotes(''); setTried(false) } }, [open, outstanding])
+  const [busy, setBusy] = useState(false)
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  useEffect(() => { if (open) { setRequestId(crypto.randomUUID()); setDate(TODAY); setAmount(outstanding > 0 ? outstanding : ''); setMethod('Bank Transfer'); setReference(''); setNotes(''); setTried(false) } }, [open, outstanding])
 
   const amountError = amount === '' || !(amount > 0) ? 'Enter the amount received.' : amount > outstanding + 0.001 ? `More than the remaining ${formatLKR(outstanding)}. Record only what is owed.` : undefined
   const after = typeof amount === 'number' ? Math.max(0, outstanding - amount) : outstanding
-  function submit() {
+  async function submit() {
     setTried(true)
     if (amountError || !method || !date) return
-    onSubmit({ date, amount: amount as number, method, reference: reference || undefined, notes: notes || undefined })
-    toast.success(successTitle, { description: `${formatLKR(amount as number)} ${direction === 'in' ? 'received' : 'paid'}. Remaining ${formatLKR(after)}.` })
-    onOpenChange(false)
+    setBusy(true)
+    try {
+      await onSubmit({ requestId, date, amount: amount as number, method, reference: reference || undefined, notes: notes || undefined })
+      toast.success(successTitle, { description: `${formatLKR(amount as number)} ${direction === 'in' ? 'received' : 'paid'}. Remaining ${formatLKR(after)}.` })
+      onOpenChange(false)
+    } catch (e) {
+      toast.error('Not saved', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -72,7 +83,7 @@ export function PaymentDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit}>{verb}{typeof amount === 'number' && amount > 0 ? ` · ${formatLKR(amount)}` : ''}</Button>
+          <Button onClick={submit} disabled={busy}>{verb}{typeof amount === 'number' && amount > 0 ? ` · ${formatLKR(amount)}` : ''}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

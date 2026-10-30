@@ -81,7 +81,7 @@ export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { r
         title={`Record payment — ${payFor?.client.name ?? ''}`} description={payFor ? `${payFor.project.code} · ${payFor.inst.description}` : undefined}
         context={payFor ? [{ label: 'Amount due', value: payFor.net }, { kind: 'less', label: 'Already received', value: payFor.paid }, ...(payFor.writtenOff ? [{ kind: 'less' as const, label: 'Written off', value: payFor.writtenOff }] : []), { kind: 'total', label: 'Outstanding', value: payFor.remaining }] : undefined}
         outstanding={payFor?.remaining ?? 0}
-        onSubmit={(p) => payFor && recordClientPayment({ installmentId: payFor.inst.id, ...p })}
+        onSubmit={(p) => (payFor ? recordClientPayment({ installmentId: payFor.inst.id, ...p }) : undefined)}
       />
       <WriteOffDialog view={woFor} open={!!woFor} onOpenChange={(o) => !o && setWoFor(undefined)} />
     </>

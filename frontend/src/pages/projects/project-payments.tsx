@@ -141,7 +141,7 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
           { kind: 'total', label: 'Outstanding', value: payView.remaining },
         ] : undefined}
         outstanding={payView?.remaining ?? 0}
-        onSubmit={(p) => payView && recordClientPayment({ installmentId: payView.inst.id, ...p })}
+        onSubmit={(p) => (payView ? recordClientPayment({ installmentId: payView.inst.id, ...p }) : undefined)}
       />
       <WriteOffDialog view={woFor} open={!!woFor} onOpenChange={(o) => !o && setWoFor(undefined)} />
       <AlertDialog open={!!billFor} onOpenChange={(o) => !o && setBillFor(undefined)}>
@@ -154,7 +154,12 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { billInstallment(billFor!.inst.id, TODAY); toast.success('Revenue recorded', { description: `${formatLKR(billFor!.net)} billed to ${pf.client.name}.` }) }}>Record revenue</AlertDialogAction>
+            <AlertDialogAction onClick={() => {
+              const view = billFor!
+              billInstallment(view.inst.id, TODAY)
+                .then(() => toast.success('Revenue recorded', { description: `${formatLKR(view.net)} billed to ${pf.client.name}.` }))
+                .catch((e) => toast.error('Not billed', { description: errorMessage(e) }))
+            }}>Record revenue</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

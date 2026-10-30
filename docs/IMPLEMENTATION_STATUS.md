@@ -1251,3 +1251,18 @@ For each completed task, record the date, files or migrations changed, verificat
   - Tests in `ScheduleAndWriteOffIntegrationTest`: add, stale version, rule change clearing the old value, blocked while applied, switch off, the activity log, design project 400, unknown project 404. `DelayTermsServiceTest` constructor updated.
 - Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 686 tests, 0 failures, 0 errors, 0 skipped. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. The development backend was rebuilt, and loading after sign-in was checked against it. Saving was not tried in a browser.
 - Still local until later phases: billing, receipts, write-offs, other income (2b); expenses (2c); suppliers and inventory (2d); labour and payroll (2e); commissions and settings (2f).
+
+### 2026-10-30: Frontend connected, phase 2b (revenue saves to the backend)
+- Store actions that now call the API (`async`; the server's message is shown when it refuses):
+  - `billInstallment`: `POST /projects/{p}/installments/{i}/bill` (with the installment's version).
+  - `recordClientPayment`: `POST .../installments/{i}/receipts`.
+  - `writeOff`: `POST .../installments/{i}/write-offs`.
+  - `addOtherIncome`: `POST /other-income`, then "received now" as a receipt (`POST /other-income/{id}/receipts`).
+  - `recordOtherIncomeReceipt`: `POST /other-income/{id}/receipts`.
+- After a save, the store reads the project (or the other income list) and the activity feed back from the server.
+- `PaymentDialog` (shared by every module) awaits the save, stays open with an error toast if it fails, and disables its button while saving.
+  - It makes a `requestId` each time it opens; the backend uses it so a double click or a retry is recorded once. The "Add Revenue" dialog does the same for "received now".
+- Payment methods are chosen by name in the UI and sent by id; `methodId()` maps them from the settings the loader read.
+- Write-off dialog and the "Bill now" confirmation are async with error toasts.
+- Tests: no backend change in this step. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the production build succeeds. Not tried in a browser.
+- The other modules still use `PaymentDialog` with their local actions until phases 2c to 2f.

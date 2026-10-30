@@ -9,6 +9,7 @@ import { useStore } from '@/store/store'
 import type { InstallmentView } from '@/lib/finance'
 import { TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { errorMessage } from '@/lib/api'
 import { AmountInput, DatePicker, Field } from './form'
 import { FigureList } from './figure-list'
 
@@ -20,17 +21,25 @@ export function WriteOffDialog({ view, open, onOpenChange }: { view?: Installmen
   const [reason, setReason] = useState('')
   const [ack, setAck] = useState(false)
   const [tried, setTried] = useState(false)
+  const [busy, setBusy] = useState(false)
   useEffect(() => { if (open && view) { setAmount(view.remaining); setDate(TODAY); setReason(''); setAck(false); setTried(false) } }, [open, view])
   if (!view) return null
   const amt = typeof amount === 'number' ? amount : 0
   const amountError = !(amt > 0) ? 'Enter the amount to write off.' : amt > view.remaining + 0.001 ? `Cannot exceed the remaining ${formatLKR(view.remaining)}.` : undefined
   const reasonError = reason.trim().length < 10 ? 'Give the reason the amount cannot be collected (at least a sentence).' : undefined
-  function submit() {
+  async function submit() {
     setTried(true)
     if (amountError || reasonError || !ack) return
-    writeOff({ installmentId: view!.inst.id, date, amount: amt, reason: reason.trim() })
-    toast.success('Bad debt written off', { description: `${formatLKR(amt)} for ${view!.client.name}. It is recorded as a write-off, not as a payment.` })
-    onOpenChange(false)
+    setBusy(true)
+    try {
+      await writeOff({ installmentId: view!.inst.id, date, amount: amt, reason: reason.trim() })
+      toast.success('Bad debt written off', { description: `${formatLKR(amt)} for ${view!.client.name}. It is recorded as a write-off, not as a payment.` })
+      onOpenChange(false)
+    } catch (e) {
+      toast.error('Not written off', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -64,7 +73,7 @@ export function WriteOffDialog({ view, open, onOpenChange }: { view?: Installmen
         </label>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" onClick={submit}>Write off {formatLKR(amt)}</Button>
+          <Button variant="destructive" onClick={submit} disabled={busy}>Write off {formatLKR(amt)}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
