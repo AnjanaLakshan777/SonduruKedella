@@ -1178,7 +1178,7 @@ For each completed task, record the date, files or migrations changed, verificat
 - Tests:
   - `UserAdministrationApiIntegrationTest`: email normalised, unique ignoring case, rejected when invalid, optional, searchable, changed, cleared, and visible on `/me`.
   - `SecuritySchemaIntegrationTest`: `ck_app_users_email` and `uq_app_users_email`.
-  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 681 tests, 0 failures, 0 errors, 0 skipped.
+  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 660 tests (first written as 681, see the correction of 2026-10-30 below), 0 failures, 0 errors, 0 skipped.
 
 ### 2026-10-30: Email required, sign-in with email
 - Migration `V9__app_users_email_required.sql`: `app_users.email` is now required (see DATABASE.md).
@@ -1195,7 +1195,7 @@ For each completed task, record the date, files or migrations changed, verificat
   - `SecuritySchemaIntegrationTest`: NOT NULL email.
   - `SuperAdminBootstrapIntegrationTest`: email missing, invalid or already used.
   - `TestUsers` and the SQL fixtures now set an email.
-  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 683 tests, 0 failures, 0 errors, 0 skipped.
+  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 662 tests (first written as 683), 0 failures, 0 errors, 0 skipped.
 - `frontend/tsconfig.scripts.json` (referenced from `tsconfig.json`) type-checks `scripts/` with the Node types, so the editor no longer reports `process`, `Buffer` and `node:crypto` as unknown.
 
 ### 2026-10-30: Frontend connected to the backend, phase 1 (sign-in and reading)
@@ -1229,7 +1229,7 @@ For each completed task, record the date, files or migrations changed, verificat
   - Materials get `reorderLevel: 0`, so the low-stock UI stays quiet until it is removed (owner decision).
 - Seed script fix: a re-run caps an issue at the stock on hand on that date, not at today's stock. An earlier re-run had posted one backdated issue (movement 61, 800 kg steel dated 2026-09-14) against stock received on 2026-10-13. It is valid under the backend's posting-order FIFO and is left as it is.
 - Tests: the new list endpoints are covered in `PayrollApiIntegrationTest` (payments, adjustments), `ExpenseApiIntegrationTest` and `ScheduleAndWriteOffIntegrationTest`. Frontend: `tsc -b` is clean, and the 19 Vitest tests pass.
-  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 684 tests, 0 failures, 0 errors, 0 skipped.
+  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 663 tests (first written as 684), 0 failures, 0 errors, 0 skipped.
 
 ### 2026-10-30: Frontend connected, phase 2a (clients and projects save to the backend)
 - Store actions that now call the API. They are `async` and throw `ApiError` with the server's message. After a save the store reads back what the server has (`loadProject`, `loadClients`, `loadActivity`); nothing is guessed locally.
@@ -1249,7 +1249,7 @@ For each completed task, record the date, files or migrations changed, verificat
   - It writes activity entries: added, updated, removed.
   - `DelayTermsService.fill` keeps only the value of the chosen rule, for both create and edit.
   - Tests in `ScheduleAndWriteOffIntegrationTest`: add, stale version, rule change clearing the old value, blocked while applied, switch off, the activity log, design project 400, unknown project 404. `DelayTermsServiceTest` constructor updated.
-- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 686 tests, 0 failures, 0 errors, 0 skipped. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. The development backend was rebuilt, and loading after sign-in was checked against it. Saving was not tried in a browser.
+- Tests: full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 665 tests (first written as 686), 0 failures, 0 errors, 0 skipped. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. The development backend was rebuilt, and loading after sign-in was checked against it. Saving was not tried in a browser.
 - Still local until later phases: billing, receipts, write-offs, other income (2b); expenses (2c); suppliers and inventory (2d); labour and payroll (2e); commissions and settings (2f).
 
 ### 2026-10-30: Frontend connected, phase 2b (revenue saves to the backend)
@@ -1350,7 +1350,7 @@ For each completed task, record the date, files or migrations changed, verificat
 - Store: `frozenWeeks` (loaded with the labour bundle and the first load), plus `recordPayrollCorrection`, `voidPayrollCorrection`, `voidPayrollPayment` and `closePayrollWeek`.
 - Hooks subscribe to several store slices through `useShallow`, so zustand v5 doesn't loop on a new array each render.
 - Verified against the development backend (read-only): the week response has every field the page maps, 251 frozen worker-weeks are listed, the worker detail returns payments and corrections, and the full load still works. The development backend was rebuilt for the new endpoint. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. Not tried in a browser.
-- Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 686 tests, 0 failures, 0 errors, 0 skipped. The frozen-weeks checks were added to an existing test, so the count didn't change.
+- Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 665 tests (first written as 686), 0 failures, 0 errors, 0 skipped. The frozen-weeks checks were added to an existing test, so the count didn't change.
 
 ### 2026-10-30: Phase 3b, void, reverse and cancel actions in the UI
 - Shared `components/app/void-dialog.tsx`, moved from the payroll page. It asks for a reason; the record stays in the history and stops counting. The verb and description change for Reverse and Cancel.
@@ -1426,3 +1426,25 @@ For each completed task, record the date, files or migrations changed, verificat
 - `StatusBadge` gained "Super Admin" and "Admin".
 - Verified against the development backend (read-only): `GET /users?sort=displayName` lists both users with name, username, email, role, status and version. Frontend: `tsc -b` is clean and the 22 Vitest tests pass. Not tried in a browser.
 - Phase 3 is complete except the manual expense attachment, which waits for the owner's choice (backend support or remove the field).
+
+### 2026-10-30: Manual expense attachments (owner's choice: keep the field and store the file)
+- The "Receipt or invoice" field of the expense dialog was never saved. The owner chose to keep it and store the file. V1 already had the columns (`expenses.attachment_storage_key`, `attachment_filename`, `attachment_size`), so no migration was needed.
+- Backend:
+  - New `ExpenseAttachmentService`, the same pattern as supplier invoice attachments: the private document store, the agreement upload checks, the file stored first and then the row, and the old file deleted only once the new one is saved.
+  - `PUT /api/v1/expenses/{id}/attachment` takes a multipart PDF in `file`, replaces any earlier one, returns the expense detail and writes a `DOCUMENT` activity entry.
+  - `GET /api/v1/expenses/{id}/attachment/download` always serves an attachment (404 when there is none).
+  - `Expense.attach(...)`. `ExpenseResponse` gained `attachmentFilename` and `attachmentSize`.
+  - PDF only, like agreements and supplier invoices: the store checks the `%PDF-` signature. Accepting phone photos (JPEG/PNG) would mean changing the shared store, which was not done.
+- Frontend:
+  - The dialog keeps the picked `File` and uploads it after the expense is saved (new or edited). If only the upload fails, the expense stays saved and a warning says so.
+  - An already saved attachment can be replaced, but not removed (there is no remove endpoint). The picker accepts PDF only.
+  - The expense details show the file name as a Download link. The loader maps the attachment.
+  - Store action `uploadExpenseAttachment`.
+- Tests:
+  - `AgreementStorageIntegrationTest.anExpenseCanCarryAPrivateReceiptPdf`: no file gives 404; a non-PDF gives 400; then upload, download, the activity entry, replacing removes the old file, and an unknown expense gives 404.
+  - `ExpenseControllerWebTest` mocks the new service.
+  - Frontend: `tsc -b` is clean and the 22 Vitest tests pass.
+- Tests, backend: full suite (2026-10-30), run on a copy of `backend/` outside the workspace on a throwaway PostgreSQL 17: **666 tests, 0 failures, 0 errors, 0 skipped**.
+  - Two runs in `backend/` itself failed with `NoClassDefFoundError` (`PayrollCalculator$1`, `CommissionCalculator$1`, `DelayTermsRules$1`, `DelayDeductionCalculator$1`). VS Code's Java builder (Eclipse compiler) writes to the same `target/classes` and deletes the `$1` classes javac makes for enum switches, even right after `mvn clean`. It is an environment clash, not a code fault.
+  - Keep VS Code's Java auto-build off while running Maven tests (`"java.autobuild.enabled": false`), or run them on a copy.
+- **Correction of earlier counts:** the totals recorded today (681, 683, 684 and 686) were too high by 21. They summed every report file in `backend/target/surefire-reports`, including two stale reports from tests that no longer exist under those names: `clients.validation.OptionalEmailValidatorTest`, moved to `common.validation` (13), and `inventory.service.StockCostingTest`, removed earlier (8). Those entries now carry the corrected numbers. Every class in those runs passed, so the pass/fail result is unchanged.

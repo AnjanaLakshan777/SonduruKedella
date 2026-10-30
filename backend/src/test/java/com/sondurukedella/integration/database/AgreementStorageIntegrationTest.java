@@ -10,6 +10,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -38,6 +39,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -155,6 +157,39 @@ class AgreementStorageIntegrationTest {
                 .andExpect(status().isOk());
         assertThat(STORAGE.resolve(firstKey)).doesNotExist();
         mockMvc.perform(get(attachment + "/download")).andExpect(content().bytes(PDF_V2));
+    }
+
+    @Test
+    void anExpenseCanCarryAPrivateReceiptPdf() throws Exception {
+        long category = jdbc.queryForObject("SELECT id FROM expense_categories WHERE expense_group = 'COMPANY' AND name = 'Marketing'", Long.class);
+        String created = mockMvc.perform(post("/api/v1/expenses").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"date":"2026-10-20","scope":"COMPANY","categoryId":%d,"description":"Banner print","payee":"Sign Arts","amount":5000}"""
+                        .formatted(category)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.attachmentFilename").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+        long expense = ((Number) com.jayway.jsonpath.JsonPath.read(created, "$.id")).longValue();
+        String attachment = "/api/v1/expenses/" + expense + "/attachment";
+
+        mockMvc.perform(get(attachment + "/download")).andExpect(status().isNotFound());
+        // the same PDF-only checks as agreements
+        mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "receipt.txt", "text/plain", "hello".getBytes()))
+                .with(csrf())).andExpect(status().isBadRequest());
+        mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "receipt.pdf", "application/pdf", PDF_V1)).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.expense.attachmentFilename").value("receipt.pdf"))
+                .andExpect(jsonPath("$.expense.attachmentSize").value(PDF_V1.length));
+        String firstKey = jdbc.queryForObject("SELECT attachment_storage_key FROM expenses WHERE id = ?", String.class, expense);
+        mockMvc.perform(get(attachment + "/download")).andExpect(status().isOk()).andExpect(content().bytes(PDF_V1))
+                .andExpect(header().string("Content-Disposition", containsString("attachment")));
+        assertThat(jdbc.queryForList("SELECT message FROM activity_log WHERE kind = 'DOCUMENT'", String.class))
+                .anyMatch(m -> m.contains("Banner print") && m.contains("receipt.pdf"));
+
+        // replacing it removes the old file
+        mockMvc.perform(multipart(HttpMethod.PUT, attachment).file(new MockMultipartFile("file", "receipt2.pdf", "application/pdf", PDF_V2)).with(csrf()))
+                .andExpect(status().isOk());
+        assertThat(STORAGE.resolve(firstKey)).doesNotExist();
+        mockMvc.perform(get(attachment + "/download")).andExpect(content().bytes(PDF_V2));
+        mockMvc.perform(multipart(HttpMethod.PUT, "/api/v1/expenses/999999999/attachment")
+                .file(new MockMultipartFile("file", "receipt.pdf", "application/pdf", PDF_V1)).with(csrf())).andExpect(status().isNotFound());
     }
 
     @Test

@@ -36,6 +36,8 @@ public class ExpenseMapper {
                 expense.getUsageFrom(),
                 expense.getUsageTo(),
                 expense.getBillingPeriod(),
+                expense.getAttachmentFilename(),
+                expense.getAttachmentSize(),
                 balance.paid(),
                 balance.outstanding(),
                 balance.status(),

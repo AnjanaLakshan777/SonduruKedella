@@ -38,6 +38,8 @@ interface Actions {
   addExpense: (e: ExpenseInput, payment?: PaymentInput) => Promise<{ id: string; warning?: string }>
   updateExpense: (id: string, e: ExpenseInput) => Promise<{ warning?: string }>
   recordExpensePayment: (p: PaymentInput & { expenseId: string }) => Promise<void>
+  // the receipt or bill PDF; replaces any earlier one
+  uploadExpenseAttachment: (expenseId: string, file: File) => Promise<void>
   addSupplier: (x: New<Supplier>) => Promise<string>
   // the attachment is uploaded after the invoice is saved; if only the upload fails, the invoice stays
   addSupplierInvoice: (inv: New<SupplierInvoice>, payment?: PaymentInput, file?: File, onSaved?: () => void) => Promise<string>
@@ -290,6 +292,12 @@ export const useStore = create<Store>()((set, get) => {
       const saved = await apiPut<{ warning?: string }>(`/expenses/${id}`, { ...expenseBody(e), version: versionOf('expense', id) })
       await Promise.all([refreshExpenses(), refreshActivity()])
       return { warning: saved.warning ?? undefined }
+    },
+    uploadExpenseAttachment: async (expenseId, file) => {
+      const form = new FormData()
+      form.append('file', file)
+      await api('PUT', `/expenses/${expenseId}/attachment`, form)
+      await Promise.all([refreshExpenses(), refreshActivity()])
     },
     recordExpensePayment: async (p) => {
       await apiPost(`/expenses/${p.expenseId}/payments`, paymentBody(p))

@@ -22,6 +22,7 @@ import com.sondurukedella.common.web.PageResponse;
 import com.sondurukedella.expenses.dto.ExpensePaymentResponse;
 import com.sondurukedella.expenses.dto.ExpensePaymentStatus;
 import com.sondurukedella.expenses.entity.ExpenseScope;
+import com.sondurukedella.expenses.service.ExpenseAttachmentService;
 import com.sondurukedella.expenses.service.ExpensePaymentService;
 import com.sondurukedella.expenses.service.ExpensePaymentService.PaymentResult;
 import com.sondurukedella.expenses.service.ExpenseService;
@@ -57,6 +58,8 @@ class ExpenseControllerWebTest {
     private ExpenseService service;
     @MockitoBean
     private ExpensePaymentService paymentService;
+    @MockitoBean
+    private ExpenseAttachmentService attachmentService;
 
     @Test
     void anonymousUsersAreRejected() throws Exception {

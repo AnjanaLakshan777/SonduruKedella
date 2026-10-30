@@ -106,7 +106,7 @@ public class Expense extends AuditableEntity {
     @Column(name = "billing_period", length = 50)
     private String billingPeriod;
 
-    // mapped so schema validation sees them; uploading a receipt image isn't built yet
+    // the receipt or bill PDF, kept in the private document store (ExpenseAttachmentService)
     @Setter(AccessLevel.NONE)
     @Column(name = "attachment_storage_key", length = 500)
     private String attachmentStorageKey;
@@ -122,4 +122,10 @@ public class Expense extends AuditableEntity {
     @Version
     @Setter(AccessLevel.NONE)
     private Long version;
+
+    public void attach(String storageKey, String filename, long size) {
+        this.attachmentStorageKey = storageKey;
+        this.attachmentFilename = filename;
+        this.attachmentSize = size;
+    }
 }

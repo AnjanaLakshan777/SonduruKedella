@@ -125,6 +125,7 @@ function mapExpense(e: Row): Expense {
     invoiceNo: opt(e.invoiceNo), notes: opt(e.notes), details: Object.keys(details).length ? details : undefined,
     quantity: opt(e.quantity), unit: opt(e.unit), unitPrice: opt(e.unitPrice), machineType: opt(e.machineType), usageFrom: opt(e.usageFrom),
     usageTo: opt(e.usageTo), billingPeriod: opt(e.billingPeriod),
+    attachment: e.attachmentFilename ? { fileName: e.attachmentFilename, size: e.attachmentSize } : undefined,
   }
 }
 const mapExpensePayment = (p: Row): ExpensePayment => (keep('expensePayment', p), {

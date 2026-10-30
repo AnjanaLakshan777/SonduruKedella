@@ -33,6 +33,9 @@ public record ExpenseResponse(
         LocalDate usageFrom,
         LocalDate usageTo,
         String billingPeriod,
+        // the receipt or bill PDF, if one was uploaded (download it from /expenses/{id}/attachment/download)
+        String attachmentFilename,
+        Long attachmentSize,
         BigDecimal paid,
         BigDecimal outstanding,
         ExpensePaymentStatus status,
@@ -45,7 +48,7 @@ public record ExpenseResponse(
 
     public ExpenseResponse withWarning(String warning) {
         return new ExpenseResponse(id, date, scope, projectId, group, categoryId, category, description, payee, supplierId, supplier,
-                amount, dueDate, invoiceNo, notes, quantity, unitId, unit, unitPrice, machineType, usageFrom, usageTo, billingPeriod, paid,
+                amount, dueDate, invoiceNo, notes, quantity, unitId, unit, unitPrice, machineType, usageFrom, usageTo, billingPeriod, attachmentFilename, attachmentSize, paid,
                 outstanding, status, createdAt, updatedAt, version, warning);
     }
 }

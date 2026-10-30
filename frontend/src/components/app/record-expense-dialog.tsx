@@ -21,7 +21,7 @@ const AUTO: Record<string, string> = {
 
 /** Context-sensitive expense form: fields change with the category. */
 export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { open: boolean; onOpenChange: (o: boolean) => void; projectId?: string; edit?: Expense }) {
-  const { projects, suppliers, settings, addExpense, updateExpense } = useStore()
+  const { projects, suppliers, settings, addExpense, updateExpense, uploadExpenseAttachment } = useStore()
   const [scope, setScope] = useState<ExpenseScope>('Project')
   const [pid, setPid] = useState('')
   const [category, setCategory] = useState('')
@@ -43,7 +43,8 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
   const [paid, setPaid] = useState<number | ''>('')
   const [method, setMethod] = useState('Cash')
   const [notes, setNotes] = useState('')
-  const [file, setFile] = useState<{ fileName: string; size: number } | undefined>()
+  // an attachment already saved (edit) or a newly picked file, which is uploaded after the expense is saved
+  const [file, setFile] = useState<{ fileName: string; size: number; file?: File } | undefined>()
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
@@ -106,16 +107,24 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
     setBusy(true)
     try {
       let warning: string | undefined
+      let savedId: string
       if (edit) {
         warning = (await updateExpense(edit.id, rec)).warning
+        savedId = edit.id
         toast.success('Expense updated', { description: `${rec.description} · ${formatLKR(total)}` })
       } else {
         const payAmt = pay === 'full' ? total : pay === 'part' ? (paid as number) : 0
-        warning = (await addExpense(rec, payAmt ? { requestId, date, amount: payAmt, method } : undefined)).warning
+        const added = await addExpense(rec, payAmt ? { requestId, date, amount: payAmt, method } : undefined)
+        warning = added.warning
+        savedId = added.id
         toast.success('Expense recorded', { description: `${formatLKR(total)} · ${scope === 'Project' ? project?.code : 'Company-level'} · ${pay === 'full' ? 'paid' : pay === 'part' ? `${formatLKR(payAmt)} paid` : 'unpaid'}` })
       }
       // saved anyway; the server only points out it may already be on a supplier invoice
       if (warning) toast.warning('Check for a duplicate', { description: warning })
+      if (file?.file) {
+        // the expense is in; if only the upload fails, say so and keep it
+        await uploadExpenseAttachment(savedId, file.file).catch((e) => toast.warning('Expense saved, receipt not uploaded', { description: errorMessage(e) }))
+      }
       onOpenChange(false)
     } catch (e) {
       toast.error('Expense not saved', { description: errorMessage(e) })
@@ -189,10 +198,11 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
           <Field label="Invoice / bill no." optional><Input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} /></Field>
           <Field label="Payment due" optional hint="For credit purchases and unpaid bills."><DatePicker value={dueDate} onChange={setDueDate} placeholder="No due date" /></Field>
           <Field label="Receipt or invoice" optional>
-            <input ref={fileRef} type="file" hidden accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ fileName: f.name, size: f.size }); e.target.value = '' }} />
+            <input ref={fileRef} type="file" hidden accept="application/pdf,.pdf" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ fileName: f.name, size: f.size, file: f }); e.target.value = '' }} />
             {file ? (
-              <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm"><Paperclip className="text-muted-foreground size-4" /><span className="flex-1 truncate">{file.fileName}</span><span className="text-muted-foreground text-xs">{formatBytes(file.size)}</span><button type="button" aria-label="Remove attachment" onClick={() => setFile(undefined)}><X className="size-4" /></button></div>
-            ) : <Button variant="outline" onClick={() => fileRef.current?.click()}><Paperclip />Attach file</Button>}
+              <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm"><Paperclip className="text-muted-foreground size-4" /><span className="flex-1 truncate">{file.fileName}</span><span className="text-muted-foreground text-xs">{formatBytes(file.size)}</span>{file.file && <button type="button" aria-label="Remove attachment" onClick={() => setFile(edit?.attachment)}><X className="size-4" /></button>}</div>
+            ) : <Button variant="outline" onClick={() => fileRef.current?.click()}><Paperclip />Attach PDF</Button>}
+            {file && !file.file && <Button variant="link" size="sm" className="h-auto justify-self-start px-0" onClick={() => fileRef.current?.click()}>Replace PDF</Button>}
           </Field>
 
           {!edit && (

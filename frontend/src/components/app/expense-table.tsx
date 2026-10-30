@@ -10,6 +10,7 @@ import { useData, useStore } from '@/store/store'
 import { sum, type ExpenseLine } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { apiUrl } from '@/lib/api'
 import { Money } from './money'
 import { StatusBadge } from './status-badge'
 import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from './data-table'
@@ -130,9 +131,11 @@ export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }
                   { kind: 'highlight', label: view.status === 'From Stock' ? 'Paid through the stock purchase' : 'Unpaid', value: view.remaining },
                 ]} />
                 <dl className="grid gap-2 text-sm">
-                  {[['Paid to', view.payee], ['Due date', view.dueDate ? formatDate(view.dueDate) : '—'], ['Invoice / bill', view.expense?.invoiceNo ?? '—'],
+                  {([['Paid to', view.payee], ['Due date', view.dueDate ? formatDate(view.dueDate) : '—'], ['Invoice / bill', view.expense?.invoiceNo ?? '—'],
                     ...Object.entries(view.expense?.details ?? {}).map(([k, v]) => [k, String(v)]),
-                    ['Attachment', view.expense?.attachment ? view.expense.attachment.fileName : '—'], ['Notes', view.expense?.notes ?? '—']].map(([k, v]) => (
+                    ['Attachment', view.expense?.attachment
+                      ? <a href={apiUrl(`/expenses/${view.refId}/attachment/download`)} className="text-primary-text inline-flex items-center gap-1 underline-offset-4 hover:underline"><Paperclip className="size-3.5" />{view.expense.attachment.fileName}</a>
+                      : '—'], ['Notes', view.expense?.notes ?? '—']] as [string, React.ReactNode][]).map(([k, v]) => (
                     <div key={k} className="grid grid-cols-[120px_1fr] gap-3"><dt className="text-muted-foreground">{k}</dt><dd className="min-w-0 break-words">{v}</dd></div>
                   ))}
                 </dl>
