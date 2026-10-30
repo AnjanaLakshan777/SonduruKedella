@@ -8,8 +8,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
-// requestId is generated once per submission (crypto.randomUUID()); sending it again returns the
-// first payment instead of paying twice.
+// requestId comes from the browser, so a double click doesn't pay twice
 public record CommissionPaymentRequest(
         @NotNull UUID requestId,
         @NotNull(message = "Choose the payment date.") LocalDate paymentDate,

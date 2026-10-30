@@ -9,11 +9,11 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-// Problem details for the sign-in endpoints only; everything else goes through GlobalExceptionHandler.
+// error mapping just for AuthController
 @RestControllerAdvice(assignableTypes = AuthController.class)
 class AuthExceptionHandler {
 
-    // always the same text, whatever actually failed
+    // same message whatever actually went wrong
     @ExceptionHandler(BadCredentialsException.class)
     ProblemDetail handleBadCredentials(BadCredentialsException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, AuthService.INVALID_LOGIN);
@@ -27,7 +27,7 @@ class AuthExceptionHandler {
                 .body(ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage()));
     }
 
-    // 400 rather than 401, so the app doesn't treat it as "your session ended"
+    // 400 not 401 - a 401 would make the frontend think the session expired
     @ExceptionHandler(UserAccountService.WrongPasswordException.class)
     ProblemDetail handleWrongPassword(UserAccountService.WrongPasswordException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());

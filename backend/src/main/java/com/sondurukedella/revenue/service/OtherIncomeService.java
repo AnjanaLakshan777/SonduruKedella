@@ -37,10 +37,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Other income (revenue category "Other Income", not tied to a project). Editable, and deletable while
-// nothing was received against it. Recognised on its income
-// date; receipts settle it and are never more income. Receipts lock the income row (no receiving more
-// than is owed under concurrency), use request_id idempotency, and are voided, never deleted.
+// Other income (not from a project). Counts on its income date, receipts only settle it.
+// Receipts lock the income row, use requestId so a resend is harmless, and get voided instead of deleted.
 @Service
 @RequiredArgsConstructor
 public class OtherIncomeService {
@@ -62,7 +60,7 @@ public class OtherIncomeService {
         return toResponse(saved, BigDecimal.ZERO, today());
     }
 
-    // Locked like a receipt, so an edit and a receipt can't cross.
+    // locked so an edit and a receipt can't cross
     @Transactional
     public OtherIncomeResponse update(long id, OtherIncomeUpdateRequest request) {
         OtherIncome income = incomes.findByIdForUpdate(id).orElseThrow(OtherIncomeService::notFound);
@@ -79,7 +77,7 @@ public class OtherIncomeService {
         return toResponse(incomes.saveAndFlush(income), received, today());
     }
 
-    // Only a record nothing was received against (not even a voided receipt, which keeps its history).
+    // even a voided receipt blocks the delete - we keep its history
     @Transactional
     public void delete(long id) {
         OtherIncome income = incomes.findByIdForUpdate(id).orElseThrow(OtherIncomeService::notFound);
@@ -95,7 +93,7 @@ public class OtherIncomeService {
         return toResponse(income, receipts.sumActive(id), today());
     }
 
-    // newest first; status is worked out from the receipts, so it is filtered after loading
+    // status depends on receipts so it's filtered after loading
     @Transactional(readOnly = true)
     public PageResponse<OtherIncomeResponse> search(Status status, LocalDate from, LocalDate to, Pageable pageable) {
         if (pageable.getPageSize() > MAX_PAGE_SIZE) {
@@ -158,7 +156,7 @@ public class OtherIncomeService {
         return toResponse(receipt, methodName(receipt.getPaymentMethodId()));
     }
 
-    // voided receipts included, oldest first
+    // includes voided, oldest first
     @Transactional(readOnly = true)
     public List<OtherIncomeReceiptResponse> listReceipts(long id) {
         if (!incomes.existsById(id)) {
@@ -230,7 +228,7 @@ public class OtherIncomeService {
         return new NotFoundException("Other income not found.");
     }
 
-    // created is false when an earlier receipt with the same requestId was returned instead
+    // created=false when the requestId was already used
     public record ReceiptResult(OtherIncomeReceiptResponse receipt, boolean created) {
     }
 }

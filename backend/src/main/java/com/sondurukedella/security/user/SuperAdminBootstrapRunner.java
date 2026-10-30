@@ -6,7 +6,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-// Runs the one-time Super Admin bootstrap at startup (after Flyway has migrated the schema).
+// runs after Flyway, on startup
 @Component
 @RequiredArgsConstructor
 @EnableConfigurationProperties(SuperAdminBootstrapProperties.class)

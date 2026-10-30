@@ -9,9 +9,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-// CORS for the React app when it runs on another origin (locally Vite on :5173 calls :8080).
-// Spring Security picks this bean up through http.cors(). Only the configured origins get
-// credentialed access; with none configured, no cross-origin request is allowed at all.
+// Needed locally because Vite (:5173) calls the API on :8080 with cookies.
+// No origins configured = no cross-origin calls at all.
 @Configuration
 @EnableConfigurationProperties(CorsProperties.class)
 public class CorsConfig {

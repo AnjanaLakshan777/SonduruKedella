@@ -89,7 +89,7 @@ public class PayrollController {
         return payroll.close(weekStart, employeeId);
     }
 
-    // 201 for a new correction, 200 when the same requestId was already recorded
+    // 201 = new, 200 = same requestId sent again
     @PostMapping("/weeks/{weekStart}/employees/{employeeId}/corrections")
     public ResponseEntity<PayrollCorrectionResponse> correct(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate weekStart,
             @PathVariable long employeeId, @Valid @RequestBody PayrollCorrectionRequest request) {
@@ -97,7 +97,7 @@ public class PayrollController {
         return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).body(result.correction());
     }
 
-    // a wrong correction is voided (kept, with the reason) and a new one recorded
+    // wrong correction? void it and record a new one
     @PostMapping("/weeks/{weekStart}/employees/{employeeId}/corrections/{correctionId}/void")
     public PayrollCorrectionResponse voidCorrection(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate weekStart,
             @PathVariable long employeeId, @PathVariable long correctionId, @Valid @RequestBody VoidRequest request) {

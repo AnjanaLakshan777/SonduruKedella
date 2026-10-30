@@ -3,8 +3,7 @@ package com.sondurukedella.common.audit;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-// The app_users id behind the current request, for created_by. Null when nobody signed in through
-// the login endpoint, e.g. startup work or tests that call services directly.
+// user id for created_by, or null when nobody is logged in (startup jobs, service-level tests)
 public final class CurrentUser {
 
     private CurrentUser() {

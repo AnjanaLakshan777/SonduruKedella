@@ -64,14 +64,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
-// Supplier invoices (payables) and their payments.
-// - STOCK: each line goes into stock as its own FIFO receipt (StockMovementService.receiveInvoiceLine),
-//   in the same transaction. Stock value, not a cost: cost happens when stock is issued to a project.
-// - PROJECT: goods delivered straight to a construction project. The invoice total is that project's
-//   material cost; no stock movement.
-// - Payments settle the payable, never a cost. Lock the invoice row, request_id idempotency, void only.
-// Invoices are not edited or deleted (a STOCK invoice is already in the ledger); the unique
-// (supplier, invoice no) key makes a resent invoice a 409 instead of a second payable.
+// Supplier invoices and payments.
+// Stock invoice lines go into stock as FIFO receipts in the same transaction - they only become a cost
+// when issued. Project invoices are a cost for that project straight away, no stock involved.
+// Payments lock the invoice, use requestId so a resend is harmless, and are voided rather than deleted.
 @Service
 @RequiredArgsConstructor
 public class SupplierInvoiceService {
@@ -139,9 +135,8 @@ public class SupplierInvoiceService {
         return detail(invoices.findById(id).orElseThrow(SupplierInvoiceService::notFound));
     }
 
-    // Due date and notes can always change. The rest (number, date, project, lines and so the total) only
-    // on a PROJECT invoice with no active payments: a STOCK invoice is already in the stock ledger, and a
-    // paid one has money against its total. Locked like a payment, so the two can't cross.
+    // Due date/notes always. Everything else only on an unpaid project invoice - a stock invoice is already
+    // in the ledger. Locked like payments so an edit and a payment can't cross.
     @Transactional
     public SupplierInvoiceDetail update(long id, SupplierInvoiceUpdateRequest request) {
         SupplierInvoice invoice = invoices.findByIdForUpdate(id).orElseThrow(SupplierInvoiceService::notFound);
@@ -185,8 +180,7 @@ public class SupplierInvoiceService {
         return detail(invoice);
     }
 
-    // Only a PROJECT invoice with no active payments: it stops being a payable and the project's cost.
-    // The row stays, with the reason; its number can then be entered again.
+    // only unpaid project invoices; the row stays and the number can be used again
     @Transactional
     public SupplierInvoiceDetail cancel(long id, SupplierInvoiceCancelRequest request) {
         SupplierInvoice invoice = invoices.findByIdForUpdate(id).orElseThrow(SupplierInvoiceService::notFound);
@@ -207,9 +201,8 @@ public class SupplierInvoiceService {
         return detail(invoice);
     }
 
-    // The scanned invoice, as a PDF in the same private document store as agreements (same checks: PDF
-    // signature, size limit, server-made key). Like agreements, the file is written first and the row
-    // updated after; a replaced file is deleted once the new one is saved.
+    // Same private store and checks as agreements. File first, then the row; the old file is deleted
+    // once the new one is saved.
     public SupplierInvoiceDetail attach(long id, MultipartFile file) {
         if (!invoices.existsById(id)) {
             throw notFound();
@@ -254,7 +247,7 @@ public class SupplierInvoiceService {
         return new AttachmentDownload(invoice.getAttachmentFilename(), invoice.getAttachmentSize(), fileStore.open(invoice.getAttachmentStorageKey()));
     }
 
-    // the caller must close content (Spring does when it writes the response)
+    // caller closes the stream (Spring does it when writing the response)
     public record AttachmentDownload(String fileName, long size, InputStream content) {
     }
 
@@ -275,8 +268,7 @@ public class SupplierInvoiceService {
         return true;
     }
 
-    // Newest invoice first. The status needs the payment totals, so it is filtered after loading the
-    // rows that match the stored fields (a company's invoices are counted in hundreds or thousands).
+    // status needs the paid totals so it's filtered in memory - fine for this many invoices
     @Transactional(readOnly = true)
     public PageResponse<SupplierInvoiceResponse> search(SupplierInvoiceFilter filter, Pageable pageable) {
         if (pageable.getPageSize() > MAX_PAGE_SIZE) {
@@ -294,7 +286,6 @@ public class SupplierInvoiceService {
 
     @Transactional(readOnly = true)
     public SupplierInvoiceSummary summary(SupplierInvoiceFilter filter) {
-        // cancelled invoices are neither payables nor costs
         List<SupplierInvoiceResponse> rows = rows(filter).stream().filter(r -> r.status() != InvoiceStatus.CANCELLED).toList();
         return new SupplierInvoiceSummary(rows.size(), sum(rows, SupplierInvoiceResponse::total),
                 sum(rows.stream().filter(r -> r.allocation() == InvoiceAllocation.STOCK).toList(), SupplierInvoiceResponse::total),
@@ -303,27 +294,25 @@ public class SupplierInvoiceService {
                 sum(rows.stream().filter(r -> r.status() == InvoiceStatus.OVERDUE).toList(), SupplierInvoiceResponse::outstanding));
     }
 
-    // For the expenses module's duplicate warning: is this supplier's invoice number recorded (not cancelled)?
+    // used by expenses to warn about entering the same purchase twice
     @Transactional(readOnly = true)
     public boolean existsActive(long supplierId, String invoiceNo) {
         return invoices.existsBySupplierIdAndInvoiceNoAndCancelledAtIsNull(supplierId, invoiceNo.strip());
     }
 
-    // The contract the reports use: a project's PROJECT invoices (its direct material cost).
+    // used by the reports (project material cost)
     @Transactional(readOnly = true)
     public List<SupplierInvoiceResponse> forProject(long projectId) {
         return rows(new SupplierInvoiceFilter(null, projectId, InvoiceAllocation.PROJECT, null, null, null)).stream()
                 .filter(r -> r.status() != InvoiceStatus.CANCELLED).toList();
     }
 
-    // Locks the invoice first: concurrent payments queue and can't overpay, and a resent request
-    // finds the payment the first one saved.
     @Transactional
     public PaymentResult recordPayment(long invoiceId, SupplierPaymentRequest request) {
         return recordOn(invoices.findByIdForUpdate(invoiceId).orElseThrow(SupplierInvoiceService::notFound), request);
     }
 
-    // The only correction a payment allows. The row stays and stops counting.
+    // the row stays, it just stops counting
     @Transactional
     public SupplierPaymentResponse voidPayment(long invoiceId, long paymentId, SupplierPaymentVoidRequest request) {
         SupplierInvoice invoice = invoices.findByIdForUpdate(invoiceId).orElseThrow(SupplierInvoiceService::notFound);
@@ -524,7 +513,7 @@ public class SupplierInvoiceService {
             BigDecimal amount) {
     }
 
-    // created is false when an earlier payment with the same requestId was returned instead
+    // created=false when the requestId was already used
     public record PaymentResult(SupplierPaymentResponse payment, boolean created) {
     }
 }

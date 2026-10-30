@@ -13,10 +13,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-// Re-checks a signed-in session against the database on every request (one primary-key lookup).
-// When the account was deactivated, or its role or password changed since this session signed in,
-// the session is invalidated and the request continues as anonymous, so protected endpoints answer
-// 401. Not a bean on purpose: Spring Boot would also register a Filter bean outside the chain.
+// Checks every logged-in request against the db, so deactivating a user or changing their role
+// or password kicks them out straight away instead of when the session times out.
+// Not a @Component on purpose - Boot would register it a second time outside the security chain.
 final class SessionUserFilter extends OncePerRequestFilter {
 
     private final UserAccountService accounts;

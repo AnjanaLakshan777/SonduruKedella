@@ -56,20 +56,10 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Commission arrangements on Design and Construction projects.
-//
-// Rules (DATABASE.md "Commission", the project's Commissions tab):
-// - amount = agreed contract value × recipient's rate, rounded half-up to the cent; never what was
-//   billed or collected. Contract value is fixed once the project exists, so the amount is reproducible.
-// - Drafts (PENDING) are free to edit or remove and are not a cost. Confirming stores the amount and
-//   confirmed date; from then on the row is frozen (also by the V6 trigger) and is the project's
-//   commission cost. A wrong confirmed row is voided with a reason and a corrected one added.
-// - Total rates above the design pool, or the optional construction level, are a warning. Confirming
-//   anyway needs acceptPolicyException, and the rows confirmed then are marked policyException.
-// - Payments (CommissionPaymentService) settle the cost; they are never a second cost.
-//
-// It reads projects only through ProjectService and the policy through CommissionPolicyService.
-// Nothing imports this module.
+// Commissions on design and construction projects.
+// Amount = contract value x rate. Drafts can change freely; confirming stores the amount and freezes
+// the row. To fix a confirmed one, void it and add it again. Going over the design pool (or the
+// construction level) is just a warning unless they confirm it as an exception.
 @Service
 @RequiredArgsConstructor
 public class CommissionService {
@@ -92,9 +82,7 @@ public class CommissionService {
         return projectView(project, repository.findByProjectIdOrderByIdAsc(projectId));
     }
 
-    // Save draft / Review & confirm. One transaction: the project's live arrangements are locked
-    // first, so two saves of the same project can't interleave, and the unique index (V6) backs up
-    // the one-row-per-recipient-and-role rule.
+    // one transaction, project's rows locked first; the V6 unique index backs up the no-duplicates rule
     @Transactional
     public ProjectCommissionsResponse saveSet(long projectId, CommissionSetRequest request) {
         ProjectResponse project = projectService.get(projectId);
@@ -133,7 +121,7 @@ public class CommissionService {
                 }
                 ConflictException.requireCurrentVersion(row.version(), target.getVersion());
             } else {
-                // a resent "new" row finds the one the first request created
+                // same request sent twice - match it to the row the first one created
                 target = liveByKey.get(key);
             }
             if (target != null) {
@@ -164,7 +152,7 @@ public class CommissionService {
             throw new BusinessRuleException(policy.warning() + " Nothing was changed. Adjust a percentage, or confirm it as an exception.");
         }
 
-        // drafts only (checked above); they were never a cost and have no payments
+        // only drafts end up here, and drafts never have payments
         repository.deleteAll(removed);
         repository.flush();
         LocalDate today = LocalDate.now(clock);
@@ -193,8 +181,7 @@ public class CommissionService {
         return projectView(project, repository.findByProjectIdOrderByIdAsc(projectId));
     }
 
-    // Takes a confirmed arrangement out of the project's cost and payables. Its payments must be
-    // voided first, so a voided commission never carries money. The row and its reason stay.
+    // payments have to be voided first, so a voided commission never has money on it
     @Transactional
     public CommissionResponse voidArrangement(long id, CommissionVoidRequest request) {
         CommissionArrangement arrangement = repository.findByIdForUpdate(id).orElseThrow(CommissionService::notFound);
@@ -225,9 +212,7 @@ public class CommissionService {
                 paymentService.forArrangement(arrangement));
     }
 
-    // Filters on stored fields run in the database; the paid-based status and the sort need the
-    // payment totals, so those are applied to the matching rows here. A company's commissions are
-    // counted in hundreds, not millions.
+    // status and sorting need the paid totals, so that part is done in memory. Fine for a few hundred rows.
     @Transactional(readOnly = true)
     public PageResponse<CommissionResponse> search(CommissionFilter filter, Pageable pageable) {
         validate(filter, pageable);
@@ -258,7 +243,7 @@ public class CommissionService {
                 paymentCount);
     }
 
-    // most owed first, as on the Commissions page
+    // most owed first
     @Transactional(readOnly = true)
     public List<RecipientSummary> recipients(ProjectType type) {
         List<CommissionResponse> confirmed = rows(new CommissionFilter(null, null, null, type, null, null, null)).stream()
@@ -328,7 +313,7 @@ public class CommissionService {
                 predicates.add(cb.equal(root.get("projectType"), filter.type().name()));
             }
             if (filter.status() != null) {
-                // narrow by the stored status; paid / partly paid are split out afterwards
+                // paid / partly paid get filtered after we have the totals
                 CommissionStatus stored = switch (filter.status()) {
                     case PENDING -> CommissionStatus.PENDING;
                     case VOIDED -> CommissionStatus.VOIDED;
@@ -337,7 +322,7 @@ public class CommissionService {
                 predicates.add(cb.equal(root.get("status"), stored));
             }
             if (filter.recipient() != null && !filter.recipient().isBlank()) {
-                // the space-collapsed name is what is stored, so lower() is enough here
+                // names are stored with spaces collapsed, so lower() is enough
                 predicates.add(cb.equal(cb.lower(root.get("recipientName")), CommissionRules.recipientKey(filter.recipient())));
             }
             if (filter.q() != null && !filter.q().isBlank()) {
@@ -370,7 +355,7 @@ public class CommissionService {
         }
     }
 
-    // most outstanding first by default (as on the Commissions page); id breaks ties so pages are stable
+    // default: most outstanding first, id as tie-breaker
     private static Comparator<CommissionResponse> comparator(Sort sort) {
         Comparator<CommissionResponse> result = null;
         if (sort.isUnsorted()) {
@@ -398,7 +383,6 @@ public class CommissionService {
                 && arrangement.getRatePct().compareTo(rate) == 0;
     }
 
-    // a confirmed arrangement (paid or not) is the commission cost; drafts and voids are not
     private static boolean isCost(CommissionResponse row) {
         return row.status() == CommissionState.CONFIRMED || row.status() == CommissionState.PARTIALLY_PAID
                 || row.status() == CommissionState.PAID;
@@ -408,7 +392,7 @@ public class CommissionService {
         return Money.amount(rows.stream().map(value).reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
-    // so "%" or "_" typed in the search box are matched literally
+    // so % and _ typed in search are matched literally
     static String escapeLike(String value) {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }

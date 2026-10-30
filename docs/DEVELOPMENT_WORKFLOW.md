@@ -25,6 +25,7 @@ Optional security settings, with defaults. `.env.example` was not changed when t
 | `LOGIN_FAILURE_WINDOW` | `15m` | The throttle window. |
 | `BOOTSTRAP_SUPER_ADMIN_USERNAME` | none | One-time first Super Admin (see below). |
 | `BOOTSTRAP_SUPER_ADMIN_PASSWORD` | none | One-time first Super Admin. Remove it after the first start. |
+| `BOOTSTRAP_SUPER_ADMIN_EMAIL` | none | One-time first Super Admin (required with the other two). |
 | `BOOTSTRAP_SUPER_ADMIN_DISPLAY_NAME` | `Super Admin` | Optional. |
 
 ## Authentication setup
@@ -32,24 +33,27 @@ The API needs a signed-in user for everything except `POST /api/v1/auth/login`, 
 
 ### First Super Admin (one time)
 No account exists after the migrations, and nothing creates one by default. To create the first Super Admin:
-1. Choose a username (3 to 50 characters: letters, digits, `.`, `-`, `_`) and a password of at least 12 characters. Don't reuse a password from elsewhere, and never write it into code, docs or commits.
-2. Add `BOOTSTRAP_SUPER_ADMIN_USERNAME` and `BOOTSTRAP_SUPER_ADMIN_PASSWORD` (optionally `BOOTSTRAP_SUPER_ADMIN_DISPLAY_NAME`) to the root `.env`, or set them as environment variables of the backend in a deployment.
+1. Choose a username (3 to 50 characters: letters, digits, `.`, `-`, `_`), an email and a password of at least 12 characters. Don't reuse a password from elsewhere, and never write it into code, docs or commits.
+2. Add `BOOTSTRAP_SUPER_ADMIN_USERNAME`, `BOOTSTRAP_SUPER_ADMIN_EMAIL` and `BOOTSTRAP_SUPER_ADMIN_PASSWORD` (optionally `BOOTSTRAP_SUPER_ADMIN_DISPLAY_NAME`) to the root `.env`, or set them as environment variables of the backend in a deployment.
 3. Start (or restart) the backend: `docker compose up -d --build backend`, or run it locally. The log says `Created the first Super Admin account "<username>"`. The password is never logged.
 4. Remove `BOOTSTRAP_SUPER_ADMIN_PASSWORD` from `.env` or the environment, and restart if you like.
 
+The variables can also be given for a single start without touching `.env`. Compose reads the shell environment first:
+`BOOTSTRAP_SUPER_ADMIN_USERNAME=… BOOTSTRAP_SUPER_ADMIN_EMAIL=… BOOTSTRAP_SUPER_ADMIN_PASSWORD=… docker compose up -d --build backend`. After the account exists, run `docker compose up -d backend` without them, so the password is no longer in the container's environment.
+
 How it behaves:
 - It only runs while no `SUPER_ADMIN` row exists at all, disabled ones included. Once one exists, the settings are ignored on every start: no second account, no password reset, nothing overwritten.
-- If only one of the two variables is set, or the username or password breaks the rules, or the username already belongs to another account, the backend refuses to start and says which. The message never contains the values.
+- If only some of the three variables are set, or the username, email or password breaks the rules, or the username or email already belongs to another account, the backend refuses to start and says which. The message never contains the values.
 - With neither set and no Super Admin, the backend starts and logs a warning that nobody can manage users.
 - Lost the only Super Admin password? Another Super Admin can reset it (`PUT /api/v1/users/{id}/password`). If there is none, an operator with database access must decide deliberately. The bootstrap will not run again, by design, and there is no reset endpoint.
 
 ### Managing accounts (Super Admin)
 Every write needs the session cookie and the `X-XSRF-TOKEN` header.
-- Create an Admin: `POST /api/v1/users` `{"username":"…","displayName":"…","password":"…"}`. `role` defaults to `ADMIN`; `"role":"SUPER_ADMIN"` creates another Super Admin. Give the person their password directly; they should change it with `PUT /api/v1/auth/me/password`.
+- Create an Admin: `POST /api/v1/users` `{"username":"…","displayName":"…","email":"…","password":"…"}` (all required). `role` defaults to `ADMIN`; `"role":"SUPER_ADMIN"` creates another Super Admin. Give the person their password directly; they should change it with `PUT /api/v1/auth/me/password`.
 - Deactivate or reactivate: `PUT /api/v1/users/{id}/status` `{"enabled":false,"version":N}`. Deactivation ends that user's sessions at once and blocks sign-in.
 - Change a role: `PUT /api/v1/users/{id}/role` `{"role":"ADMIN","version":N}`. That user's sessions end.
 - Reset a forgotten password: `PUT /api/v1/users/{id}/password` `{"newPassword":"…"}`. Returns 204; the password is never echoed. That user's sessions end.
-- Edit the display name: `PUT /api/v1/users/{id}` `{"displayName":"…","version":N}`.
+- Edit the name and email: `PUT /api/v1/users/{id}` `{"displayName":"…","email":"…","version":N}`. The email is required. A Super Admin may edit their own name and email here.
 - List and view: `GET /api/v1/users?q=&role=&enabled=&page=&size=&sort=`, and `GET /api/v1/users/{id}`.
 - Nobody can change their own role or status, or reset their own password, here. The last active Super Admin can't be demoted or deactivated.
 
@@ -58,7 +62,7 @@ Every write needs the session cookie and the `X-XSRF-TOKEN` header.
 curl -c jar -b jar http://localhost:8080/api/v1/auth/csrf
 TOKEN=$(awk '$6=="XSRF-TOKEN"{print $7}' jar)
 curl -c jar -b jar -H "X-XSRF-TOKEN: $TOKEN" -H "Content-Type: application/json" \
-     -d '{"username":"<your-username>","password":"<your-password>"}' http://localhost:8080/api/v1/auth/login
+     -d '{"username":"<your-username-or-email>","password":"<your-password>"}' http://localhost:8080/api/v1/auth/login
 curl -b jar http://localhost:8080/api/v1/auth/me
 ```
 The login response sets a new `XSRF-TOKEN` cookie. Read it from the jar again before the next POST or PUT.
@@ -104,6 +108,22 @@ Use commands appropriate to the actual project and verify the available Maven go
 Inspect frontend/package.json and use the package manager matching the existing lockfile. Do not replace the lockfile or install a second package manager without approval.
 
 From `frontend/`: `npm run build` (typecheck + production build), `npm run typecheck`, and `npm test` (Vitest, `vitest run`; unit tests next to the code as `*.test.ts`). The tests need no backend or database.
+
+### Sample data (development only)
+`frontend/scripts/seed-dev-data.ts` loads the frontend demo data (`src/data/seed.ts`) into the development database through the real REST API, so every business rule runs. It is not a migration and never runs on its own; don't point it at production.
+- It needs the backend running and a Super Admin created through the bootstrap above. It signs in as that user, sets their name and email if given, and creates one Admin if that Admin doesn't exist yet.
+- The repository is public, so the users' details come from the environment only, never from the script or the docs:
+  - required: `SEED_SUPER_ADMIN_USERNAME`, `SEED_SUPER_ADMIN_PASSWORD`, `SEED_ADMIN_USERNAME`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_EMAIL`;
+  - optional: `SEED_SUPER_ADMIN_NAME`, `SEED_SUPER_ADMIN_EMAIL`, `SEED_ADMIN_NAME`, and `SEED_API` (default `http://localhost:8080`).
+- Set those variables, then run `npx tsx scripts/seed-dev-data.ts` from `frontend/`.
+- `tsconfig.scripts.json` type-checks `scripts/` with the Node types, and `npm run typecheck` includes it.
+- It is safe to run again: it skips anything that already exists (matched by name, SKU, invoice number, date and reference).
+- Where the demo data and the backend rules differ, the backend wins:
+  - The demo issues more steel, cement and blocks than it has in stock, so those issues are capped at the stock on hand. The script prints each one.
+  - A completed project's `actualCompletion` is the day the script runs. The delay deduction still uses the demo's completion date.
+  - The "no difference" stock count isn't recorded.
+  - Activity entries are written by the modules with the run date.
+- The first load into the development database was on 2026-10-30.
 
 ## Before Every Change
 1. Inspect the relevant source and Git status.

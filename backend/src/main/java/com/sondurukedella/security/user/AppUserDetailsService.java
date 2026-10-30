@@ -7,8 +7,8 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Used only by the login check. Disabled users are returned too: the provider checks the password
-// first and the status after, so both cases cost the same and get the same generic answer.
+// Takes a username or an email. Returns disabled users too - the provider checks the password
+// first, so disabled and wrong-password take the same time and give the same error.
 @Service
 @RequiredArgsConstructor
 public class AppUserDetailsService implements UserDetailsService {
@@ -17,8 +17,9 @@ public class AppUserDetailsService implements UserDetailsService {
 
     @Override
     @Transactional(readOnly = true)
-    public UserDetails loadUserByUsername(String username) {
-        return repository.findByUsername(Usernames.normalize(username))
+    public UserDetails loadUserByUsername(String usernameOrEmail) {
+        String login = Usernames.normalize(usernameOrEmail);
+        return (Emails.looksLikeEmail(login) ? repository.findByEmail(login) : repository.findByUsername(login))
                 .map(AppUserPrincipal::withPassword)
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user"));
     }

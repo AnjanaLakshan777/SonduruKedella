@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class CommissionMapper {
 
-    // the amount is the stored one once confirmed; a draft shows what confirming would store
+    // stored amount once confirmed, otherwise a preview
     public BigDecimal amountOf(CommissionArrangement arrangement, BigDecimal contractValue) {
         return arrangement.getCommissionAmount() != null
                 ? Money.amount(arrangement.getCommissionAmount())

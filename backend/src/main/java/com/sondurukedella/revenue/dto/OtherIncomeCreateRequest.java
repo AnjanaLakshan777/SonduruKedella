@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-// Income not tied to a project. dueDate is optional (when it is owed by); without one it is never overdue.
+// dueDate is optional, no due date = never overdue
 public record OtherIncomeCreateRequest(
         @NotNull(message = "Enter the income date.") LocalDate date,
         @NotBlank(message = "Describe the income.") @Size(max = 300) String description,

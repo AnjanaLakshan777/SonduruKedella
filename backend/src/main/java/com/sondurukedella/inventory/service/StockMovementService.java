@@ -117,9 +117,8 @@ public class StockMovementService {
         return new MovementResult(toResponse(saved), true);
     }
 
-    // A STOCK supplier invoice line becomes one receipt: its own FIFO layer at the line's price, linked
-    // to the line (the V1 key allows one receipt per line, and only for STOCK lines of that material).
-    // Stock value, not a project cost. MANDATORY: only as part of saving the invoice.
+    // One STOCK invoice line = one receipt, its own FIFO layer at the line price. The V1 key allows only
+    // one receipt per line. Stock value, not a project cost. Only call this while saving the invoice.
     @Transactional(propagation = Propagation.MANDATORY)
     public StockMovementResponse receiveInvoiceLine(InvoiceLineReceipt line) {
         Material material = lock(line.materialId());

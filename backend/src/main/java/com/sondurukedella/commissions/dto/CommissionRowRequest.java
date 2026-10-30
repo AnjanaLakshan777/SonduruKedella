@@ -8,8 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
-// One recipient row of the project's Commissions tab. id and version are sent for rows that already
-// exist; a row without an id is new. role defaults to "Commission".
+// no id = new row
 public record CommissionRowRequest(
         Long id,
         Long version,

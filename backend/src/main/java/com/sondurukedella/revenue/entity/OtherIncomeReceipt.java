@@ -16,8 +16,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// Money received against other income - never more income. trg_other_income_receipts_guard (V1)
-// refuses deletes and any change except voiding.
+// settles other income, never adds to it. The V1 trigger only allows voiding.
 @Getter
 @Entity
 @Table(name = "other_income_receipts")

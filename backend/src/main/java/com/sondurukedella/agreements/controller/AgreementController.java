@@ -42,7 +42,7 @@ public class AgreementController {
         return ResponseEntity.status(upload.replaced() ? HttpStatus.OK : HttpStatus.CREATED).body(upload.agreement());
     }
 
-    // retires the current agreement (204); the PDF stays in private storage with its retired row
+    // retires the current agreement, the PDF is kept
     @DeleteMapping
     public ResponseEntity<Void> remove(@PathVariable long projectId) {
         service.remove(projectId);

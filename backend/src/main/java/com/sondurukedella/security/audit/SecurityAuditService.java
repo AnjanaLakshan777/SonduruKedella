@@ -8,9 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-// Writes the security audit trail. Joins the caller's transaction, so an account change and its
-// event commit or roll back together; a sign-in attempt (no outer transaction) commits on its own.
-// Callers must never pass a password or anything derived from one.
+// Writes security_events. Runs in the caller's transaction, so an account change and its event
+// commit together. Never pass passwords in here.
 @Service
 @RequiredArgsConstructor
 public class SecurityAuditService {
@@ -23,7 +22,7 @@ public class SecurityAuditService {
                 remoteAddress(), cut(details, SecurityEvent.DETAILS_MAX_LENGTH), OffsetDateTime.now()));
     }
 
-    // the direct peer address only; X-Forwarded-For is not trusted because anyone can send it
+    // don't trust X-Forwarded-For, anyone can set it
     private static String remoteAddress() {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             HttpServletRequest request = attributes.getRequest();

@@ -29,9 +29,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
-// The reports against a known fixture built through the real APIs of every module, so each figure can
-// be checked by hand. Company-wide figures are compared before/after the fixture (deltas), so other
-// rows in the database don't matter. Rolls back.
+// Builds a known fixture through the real APIs so every number can be checked by hand. Company-wide
+// numbers are compared as before/after deltas so other data in the db doesn't matter. Rolls back.
 //
 // Fixture, construction project P1 (contract 1,000,000), IN_PROGRESS:
 //   installments 600,000 due 2026-10-01 (billed 2026-10-20) and 400,000 due 2027-06-30 (unbilled)
@@ -41,7 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 //   stock: 100 bags bought at 1,000 (not a cost), 30 issued, 5 returned -> materials 25,000, stock +75,000
 //   labour: two present days at 3,000 in the week of 2026-10-19 (not paid, live) -> 6,000
 //   commission: Nimal 2% confirmed (20,000, 5,000 paid), Kamal 1% confirmed then voided, Sunil 1% draft
-//   costs 30,000 + 25,000 + 6,000 + 20,000 = 81,000; profit 580,000 − 100,000 − 81,000 = 399,000 (68.79%)
+//   costs 30,000 + 25,000 + 6,000 + 20,000 = 81,000; profit 580,000 - 100,000 - 81,000 = 399,000 (68.79%)
 // Design project P2 (contract 500,000, PLANNING): commission 20% confirmed (100,000), nothing billed.
 @SpringBootTest
 @AutoConfigureMockMvc

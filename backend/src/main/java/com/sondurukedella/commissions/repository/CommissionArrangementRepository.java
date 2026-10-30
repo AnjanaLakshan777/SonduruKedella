@@ -15,13 +15,12 @@ public interface CommissionArrangementRepository
 
     List<CommissionArrangement> findByProjectIdOrderByIdAsc(long projectId);
 
-    // SELECT ... FOR UPDATE on a project's live arrangements, in id order. Saving a project's set
-    // takes this first, so two saves of the same project run one after the other.
+    // locks the project's live rows so two saves of the same project can't interleave
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from CommissionArrangement a where a.projectId = :projectId and a.status <> :voided order by a.id")
     List<CommissionArrangement> lockLiveByProject(long projectId, CommissionStatus voided);
 
-    // Payments and voids lock the arrangement, so concurrent payments queue and can't overpay.
+    // payments/voids lock the row so concurrent payments can't overpay
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from CommissionArrangement a where a.id = :id")
     Optional<CommissionArrangement> findByIdForUpdate(long id);

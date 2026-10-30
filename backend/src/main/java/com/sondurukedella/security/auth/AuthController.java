@@ -17,13 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// Session sign-in for the React app. The flow:
-//   GET  /csrf        sets the XSRF-TOKEN cookie (public)
-//   POST /login       JSON {username, password} with the X-XSRF-TOKEN header (public)
-//   GET  /me          who is signed in
-//   PUT  /me/password change your own password
-//   POST /logout      handled by Spring's logout filter, 204 (see SecurityConfig)
-// There is deliberately no sign-up endpoint: accounts are created by a Super Admin.
+// Login endpoints for the React app. Flow: GET /csrf, then POST /login with the X-XSRF-TOKEN header.
+// Logout is handled by Spring's logout filter. No sign-up on purpose - a Super Admin creates accounts.
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
@@ -31,8 +26,7 @@ public class AuthController {
 
     private final AuthService service;
 
-    // Asking for the token makes the CSRF filter write the cookie; the SPA then copies the cookie
-    // value into the X-XSRF-TOKEN header on every POST/PUT/PATCH/DELETE.
+    // just reading the token makes the CSRF filter set the cookie
     @GetMapping("/csrf")
     public ResponseEntity<Void> csrf(CsrfToken token) {
         token.getToken();

@@ -3,8 +3,7 @@ package com.sondurukedella.commissions.validation;
 import com.sondurukedella.commissions.entity.CommissionArrangement;
 import java.util.Locale;
 
-// Text rules for arrangements: names are trimmed and inner runs of spaces collapsed, so
-// "Nimal  Perera " and "Nimal Perera" are one recipient. Comparison also ignores case.
+// trim + collapse spaces so "Nimal  Perera " and "Nimal Perera" are the same person
 public final class CommissionRules {
 
     private CommissionRules() {
@@ -19,7 +18,7 @@ public final class CommissionRules {
         return role.isEmpty() ? CommissionArrangement.DEFAULT_ROLE : role;
     }
 
-    // the key the unique index uses: (project, lower(recipient), lower(role))
+    // same key as the unique index
     public static String key(String recipient, String role) {
         return cleanName(recipient).toLowerCase(Locale.ROOT) + "\u0000" + cleanRole(role).toLowerCase(Locale.ROOT);
     }

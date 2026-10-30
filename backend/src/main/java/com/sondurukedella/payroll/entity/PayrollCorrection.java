@@ -16,9 +16,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// A change to a frozen week's wages: positive or negative, with a reason. It changes only what is owed,
-// never the advance deduction, so an advance can't be recovered twice. Never edited: a wrong one is voided
-// with a reason and a new one recorded (V7), so the history stays. requestId makes a resend harmless.
+// +/- change to a frozen week's wages. Only touches what's owed, not the advance deduction (otherwise
+// the advance would be taken twice). Not editable - void it and add a new one.
 @Getter
 @Entity
 @Table(name = "payroll_corrections")

@@ -25,8 +25,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-// User administration. Super Admin only: SecurityConfig restricts /api/v1/users/** to the role and
-// the service checks it again. No DELETE (users are deactivated) and no public sign-up.
+// Super Admin only (SecurityConfig + checked again in the service). No delete, users get disabled.
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
@@ -81,7 +80,7 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
-    // only a real signed-in account can change accounts
+    // mock users in tests have no AppUserPrincipal
     private static long actorId(AppUserPrincipal actor) {
         if (actor == null) {
             throw new AccessDeniedException("Sign in with a Super Admin account.");

@@ -36,10 +36,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-// Money on a project's installments. Every change is a POST that records something new (a billing,
-// a receipt, a void, a write-off or its reversal, a deduction or its reversal, a variation). The one
-// edit is revising the unbilled part of the schedule (PUT /schedule).
-// GET /{id}/schedule (ProjectController) stays the plain plan; /receivables is the money view of it.
+// Money side of a project's installments. Everything is a POST that adds a record (bill, receipt, void,
+// write-off, deduction, their reversals, variations). Only real edit is PUT /schedule for unbilled rows.
+// GET /{id}/schedule in ProjectController is the plain plan, /receivables is the money view.
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}")
 @RequiredArgsConstructor
@@ -100,13 +99,13 @@ public class ProjectRevenueController {
         return service.reverseWriteOff(projectId, writeOffId, request);
     }
 
-    // Revise the scheduled installments: billed ones stay as they are, unbilled ones can change.
+    // billed rows stay, unbilled ones can change
     @PutMapping("/schedule")
     public List<InstallmentResponse> reviseSchedule(@PathVariable long projectId, @Valid @RequestBody ScheduleRevisionRequest request) {
         return service.reviseSchedule(projectId, request);
     }
 
-    // Additional work: a new installment, billed at once; the contract value doesn't change.
+    // additional work, billed right away; contract value stays the same
     @PostMapping("/variations")
     @ResponseStatus(HttpStatus.CREATED)
     public InstallmentResponse addVariation(@PathVariable long projectId, @Valid @RequestBody VariationRequest request) {

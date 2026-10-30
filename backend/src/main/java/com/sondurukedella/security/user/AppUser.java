@@ -17,8 +17,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-// A person who can sign in. Never deleted (every created_by column points here), only deactivated.
-// No toString on purpose, so the password hash can't end up in a log line.
+// Users are never deleted (created_by everywhere points here), just disabled.
+// No toString on purpose so the hash never ends up in a log.
 @Getter
 @Setter
 @Entity
@@ -31,13 +31,16 @@ public class AppUser {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // stored lower case by the application (see Usernames); rows from before V5 may differ in case,
-    // so lookups compare lower(username)
+    // we store it lower case; older rows might not be, so lookups use lower()
     @Column(nullable = false, length = 100)
     private String username;
 
     @Column(name = "display_name", nullable = false, length = 150)
     private String displayName;
+
+    // always lower case (see Emails); you can sign in with it too
+    @Column(nullable = false, length = 254)
+    private String email;
 
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
@@ -49,7 +52,7 @@ public class AppUser {
     @Column(nullable = false)
     private boolean enabled = true;
 
-    // bumped when access changes; sessions signed in with an older value stop working
+    // bump this to kill the user's existing sessions
     @Setter(AccessLevel.NONE)
     @Column(name = "auth_version", nullable = false)
     private long authVersion;
@@ -70,7 +73,6 @@ public class AppUser {
         return enabled && role == UserRole.SUPER_ADMIN;
     }
 
-    // Ends every existing session of this user on its next request.
     public void revokeSessions() {
         authVersion++;
     }

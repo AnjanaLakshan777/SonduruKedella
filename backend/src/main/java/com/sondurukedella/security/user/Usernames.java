@@ -3,7 +3,7 @@ package com.sondurukedella.security.user;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-// Usernames are case-insensitive: stored and looked up in lower case.
+// usernames are case-insensitive, we always lower-case them
 public final class Usernames {
 
     public static final String RULE =

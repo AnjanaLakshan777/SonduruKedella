@@ -39,8 +39,8 @@ public record ExpenseResponse(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         long version,
-        // only on create/update: set when the supplier and invoice number match a recorded supplier invoice
-        // (the same purchase may be entered twice). The expense is saved anyway.
+        // only set on create/update, when a supplier invoice with the same supplier + number exists.
+        // just a warning, the expense still saves.
         String warning) {
 
     public ExpenseResponse withWarning(String warning) {

@@ -17,7 +17,6 @@ public interface OtherIncomeReceiptRepository extends JpaRepository<OtherIncomeR
 
     boolean existsByOtherIncomeId(long otherIncomeId);
 
-    // voided receipts never count
     @Query("select coalesce(sum(r.amount), 0) from OtherIncomeReceipt r where r.otherIncomeId = :id and r.voidedAt is null")
     BigDecimal sumActive(long id);
 

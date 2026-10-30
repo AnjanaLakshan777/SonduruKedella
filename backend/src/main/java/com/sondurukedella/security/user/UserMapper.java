@@ -12,6 +12,7 @@ public class UserMapper {
                 user.getId(),
                 user.getUsername(),
                 user.getDisplayName(),
+                user.getEmail(),
                 user.getRole(),
                 user.isEnabled(),
                 user.getCreatedAt(),
@@ -20,6 +21,6 @@ public class UserMapper {
     }
 
     public CurrentUserResponse toCurrentUser(AppUser user) {
-        return new CurrentUserResponse(user.getId(), user.getUsername(), user.getDisplayName(), user.getRole());
+        return new CurrentUserResponse(user.getId(), user.getUsername(), user.getDisplayName(), user.getEmail(), user.getRole());
     }
 }

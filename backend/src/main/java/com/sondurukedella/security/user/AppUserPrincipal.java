@@ -9,8 +9,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-// The signed-in user as kept in the HTTP session. The password hash is only present while the
-// login is being checked; the copy stored in the session never has it.
+// What we keep in the session. The password hash is only there during the login check.
 public final class AppUserPrincipal implements UserDetails, CredentialsContainer, AuditUser {
 
     @Serial

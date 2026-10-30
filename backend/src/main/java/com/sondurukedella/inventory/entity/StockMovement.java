@@ -62,7 +62,7 @@ public class StockMovement {
     @Column(name = "project_id", updatable = false)
     private Long projectId;
 
-    // receipts posted from a STOCK supplier invoice line (null for every other movement)
+    // only for receipts from a STOCK supplier invoice line
     @Column(name = "supplier_invoice_line_id", updatable = false)
     private Long supplierInvoiceLineId;
 
@@ -141,7 +141,6 @@ public class StockMovement {
             String reference,
             Long supplierId,
             UUID requestId,
-            // set only for a receipt posted from a STOCK supplier invoice line
             Long invoiceLineId) {
 
         // issues, returns and negative adjustments are priced from the layers once the posting exists

@@ -22,9 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-// The activity log: other modules write entries as part of their own changes; the feed reads them.
-// It never checks that a project exists, because projects depends on this module (an unknown
-// projectId just has no entries).
+// Other modules write entries along with their own changes, the feed just reads them.
+// Don't check the project exists here - projects depends on this module, so it'd be a cycle.
 @Service
 @RequiredArgsConstructor
 public class ActivityService {
@@ -42,7 +41,7 @@ public class ActivityService {
         repository.save(new ActivityEntry(projectId, LocalDate.now(clock), kind, message, OffsetDateTime.now(clock)));
     }
 
-    // Newest first. projectId narrows to one project's feed; from/to bound the activity date, inclusive.
+    // newest first; from/to are inclusive
     @Transactional(readOnly = true)
     public PageResponse<ActivityResponse> feed(Long projectId, ActivityKind kind, LocalDate from, LocalDate to, Pageable pageable) {
         if (pageable.getPageSize() > MAX_PAGE_SIZE) {

@@ -263,7 +263,7 @@ public class PayrollService {
         return detail(ledger.workerWeek(weekStart, employeeId));
     }
 
-    // created is false when an earlier correction with the same requestId was returned instead
+    // created=false when the requestId was already used
     public record CorrectionResult(PayrollCorrectionResponse correction, boolean created) {
     }
 
@@ -271,7 +271,7 @@ public class PayrollService {
     public CorrectionResult correct(LocalDate weekStart, long employeeId, PayrollCorrectionRequest request) {
         PayrollLedger.requireMonday(weekStart);
         lock(employeeId);
-        // checked after the worker lock, so concurrent resends find the first correction
+        // check after taking the worker lock so a resend at the same time finds the first one
         Optional<PayrollCorrection> previous = corrections.findByRequestId(request.requestId());
         if (previous.isPresent()) {
             PayrollCorrection p = previous.get();
@@ -306,8 +306,8 @@ public class PayrollService {
         return new CorrectionResult(mapper.toResponse(saved, employeeId, weekStart), true);
     }
 
-    // The way to change a correction: void it (with a reason, kept in the history) and record a new one.
-    // Voiding takes the delta back out, so it must pass the same checks as a correction of −delta.
+    // To change a correction you void it and add a new one. Voiding undoes the delta, so it has to pass
+    // the same checks as a correction of -delta.
     @Transactional
     public PayrollCorrectionResponse voidCorrection(LocalDate weekStart, long employeeId, long correctionId, VoidRequest request) {
         PayrollLedger.requireMonday(weekStart);
@@ -325,8 +325,8 @@ public class PayrollService {
         return mapper.toResponse(corrections.saveAndFlush(correction), employeeId, weekStart);
     }
 
-    // A change can't make the week owe less than nothing, and a reduction can't take a project (or the
-    // company share) below zero labour for the week.
+    // the week can't end up owing less than zero, and no project (or the company share) can go below
+    // zero labour for the week
     private static void requireAllowedChange(WorkerWeek week, Long projectId, BigDecimal delta) {
         if (week.owed().add(delta).signum() < 0) {
             throw new InvalidRequestException("That would make the week owe less than nothing (" + Money.format(week.owed()) + " owed now).");
@@ -438,7 +438,7 @@ public class PayrollService {
         return paymentMethods.findNames(List.of(id)).get(id);
     }
 
-    // created is false when an earlier payment with the same requestId was returned instead
+    // created=false when the requestId was already used
     public record PaymentResult(PayrollPaymentResponse payment, boolean created) {
     }
 }

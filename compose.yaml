@@ -59,6 +59,7 @@ services:
       # in .env; remove the password again once the account exists.
       BOOTSTRAP_SUPER_ADMIN_USERNAME: ${BOOTSTRAP_SUPER_ADMIN_USERNAME:-}
       BOOTSTRAP_SUPER_ADMIN_PASSWORD: ${BOOTSTRAP_SUPER_ADMIN_PASSWORD:-}
+      BOOTSTRAP_SUPER_ADMIN_EMAIL: ${BOOTSTRAP_SUPER_ADMIN_EMAIL:-}
       BOOTSTRAP_SUPER_ADMIN_DISPLAY_NAME: ${BOOTSTRAP_SUPER_ADMIN_DISPLAY_NAME:-}
     volumes:
       - agreement_files:/app/data/agreements

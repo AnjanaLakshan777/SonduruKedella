@@ -16,8 +16,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// A payment settling a confirmed commission - never a second commission cost.
-// trg_commission_payments_guard (V1) refuses deletes and any change except voiding.
+// can't be edited or deleted, only voided (V1 trigger)
 @Getter
 @Entity
 @Table(name = "commission_payments")
@@ -46,7 +45,6 @@ public class CommissionPayment extends AuditableEntity {
     @Column(columnDefinition = "text", updatable = false)
     private String notes;
 
-    // client-generated: a resent submission finds this row instead of paying twice
     @Column(name = "request_id", nullable = false, updatable = false)
     private UUID requestId;
 

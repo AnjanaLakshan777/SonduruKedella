@@ -10,7 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// What any signed-in user can do with their own account: read it, and change their password.
+// the logged-in user's own account
 @Service
 @RequiredArgsConstructor
 public class UserAccountService {
@@ -26,15 +26,13 @@ public class UserAccountService {
                 .orElseThrow(() -> new AccessDeniedException("The account is no longer active."));
     }
 
-    // Is a session signed in with this auth version still good? False once the account is
-    // disabled, or its role or password changed.
+    // false once the user is disabled or their role/password changed
     @Transactional(readOnly = true)
     public boolean isSessionCurrent(long userId, long authVersion) {
         return repository.findActiveAuthVersion(userId).map(v -> v == authVersion).orElse(false);
     }
 
-    // Returns the principal for the caller's refreshed session. Every other session of the user ends,
-    // because the auth version moves on.
+    // bumps auth_version so the user's other sessions die; returns the principal for this one
     @Transactional
     public AppUserPrincipal changeOwnPassword(long userId, String currentPassword, String newPassword) {
         AppUser user = repository.findByIdForUpdate(userId).filter(AppUser::isEnabled)

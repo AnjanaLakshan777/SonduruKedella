@@ -14,8 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-// The activity feed (Dashboard "Recent activity", the project's Activity tab with ?projectId=).
-// Read-only: entries are written only by the modules whose changes they describe.
+// Recent activity on the dashboard, and the project Activity tab (?projectId=). Read-only - the
+// modules write their own entries.
 @RestController
 @RequestMapping("/api/v1/activity")
 @RequiredArgsConstructor

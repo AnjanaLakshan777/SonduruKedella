@@ -7,9 +7,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
-// "Record correction" on a paid week: a signed change to the wages owed, with a reason, booked to a
-// project (or to none, a company cost). requestId is generated once per submission; resending it
-// returns the first correction instead of recording it twice.
+// "Record correction" on a paid week. amount is +/-, projectId null = company cost.
+// same requestId again returns the first correction.
 public record PayrollCorrectionRequest(
         @NotNull UUID requestId,
         @NotNull(message = "Choose the date.") LocalDate correctionDate,

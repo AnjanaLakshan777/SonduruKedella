@@ -60,8 +60,7 @@ public class WriteOffService {
         return mapper.toResponse(saved, projectId);
     }
 
-    // Under the same installment lock as receipts and write-offs. Reversing only raises what is owed,
-    // so no balance check is needed.
+    // same installment lock as receipts. Reversing only adds to what's owed so no balance check.
     @Transactional
     public WriteOffResponse reverse(long projectId, long writeOffId, WriteOffReversalRequest request) {
         ReceivableWriteOff writeOff = repository.findById(writeOffId).orElseThrow(() -> new NotFoundException("Write-off not found."));

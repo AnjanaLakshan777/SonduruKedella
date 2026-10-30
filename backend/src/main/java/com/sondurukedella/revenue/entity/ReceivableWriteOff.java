@@ -15,9 +15,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// Bad debt written off an installment. It reduces what is owed but is not money received.
-// A wrong write-off is reversed (V7: voided with a reason); the row stays and stops counting.
-// trg_receivable_write_offs_guard refuses deletes and any other change.
+// Bad debt. Reduces what's owed but it's not money in. A wrong one gets reversed (voided) - the row
+// stays. The db trigger blocks deletes and other changes.
 @Getter
 @Entity
 @Table(name = "receivable_write_offs")

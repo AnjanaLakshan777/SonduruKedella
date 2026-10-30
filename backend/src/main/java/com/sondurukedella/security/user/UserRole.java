@@ -1,7 +1,6 @@
 package com.sondurukedella.security.user;
 
-// The only two application roles (owner decision). SUPER_ADMIN runs the system and manages user
-// accounts; ADMIN uses the business modules. Spring authorities are "ROLE_" + name.
+// Only these two roles. Authorities are "ROLE_" + name.
 public enum UserRole {
     SUPER_ADMIN,
     ADMIN;

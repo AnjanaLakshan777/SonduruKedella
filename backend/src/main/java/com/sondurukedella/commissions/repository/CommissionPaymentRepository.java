@@ -18,7 +18,6 @@ public interface CommissionPaymentRepository extends JpaRepository<CommissionPay
 
     List<CommissionPayment> findByArrangementIdInOrderByPaymentDateAscIdAsc(Collection<Long> arrangementIds);
 
-    // voided payments never count toward what was paid
     @Query("select coalesce(sum(p.amount), 0) from CommissionPayment p where p.arrangementId = :arrangementId and p.voidedAt is null")
     BigDecimal sumActive(long arrangementId);
 

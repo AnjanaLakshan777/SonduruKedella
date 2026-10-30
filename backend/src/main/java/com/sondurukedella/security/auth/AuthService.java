@@ -24,15 +24,12 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.stereotype.Service;
 
-// Sign-in and the signed-in user's own password. Sign-out is Spring's logout filter (SecurityConfig).
-//
-// A successful sign-in gets a new session id (no session fixation) and a new CSRF token, and the
-// session only ever holds the principal without its password hash.
+// Login and change-password. Logout is Spring's logout filter (see SecurityConfig).
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
-    static final String INVALID_LOGIN = "Invalid username or password.";
+    static final String INVALID_LOGIN = "Invalid username, email or password.";
 
     private final AuthenticationManager authenticationManager;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
@@ -49,13 +46,13 @@ public class AuthService {
 
         Authentication result;
         try {
-            // BCrypt refuses passwords over 72 bytes; that's simply a wrong password here
+            // bcrypt throws on >72 bytes, just treat it as a wrong password
             if (PasswordPolicy.tooLongToHash(body.password())) {
                 throw new BadCredentialsException(INVALID_LOGIN);
             }
             result = authenticationManager.authenticate(UsernamePasswordAuthenticationToken.unauthenticated(username, body.password()));
         } catch (AuthenticationException ex) {
-            // unknown user, wrong password and disabled account all look the same from outside
+            // same answer for unknown user / wrong password / disabled, so nobody can probe usernames
             throttle.recordFailure(username, address);
             audit.record(SecurityEventType.LOGIN_FAILED, null, null, username, null);
             throw new BadCredentialsException(INVALID_LOGIN);
@@ -72,7 +69,7 @@ public class AuthService {
         return accounts.current(principal.id());
     }
 
-    // Every other session of the user ends; this one carries on under a new session id.
+    // logs out the user's other sessions, keeps this one (with a new id)
     public void changePassword(AppUserPrincipal principal, PasswordChangeRequest body, HttpServletRequest request,
             HttpServletResponse response) {
         String address = request.getRemoteAddr();
@@ -81,7 +78,7 @@ public class AuthService {
         try {
             refreshed = accounts.changeOwnPassword(principal.id(), body.currentPassword(), body.newPassword());
         } catch (UserAccountService.WrongPasswordException ex) {
-            // counts towards the same limit as sign-in, so a stolen session can't be used to guess
+            // counts against the login limit too, so a stolen session can't brute force the password
             throttle.recordFailure(principal.getUsername(), address);
             throw ex;
         }
@@ -98,13 +95,13 @@ public class AuthService {
 
     private void startSession(AppUserPrincipal principal, HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(principal, null, principal.getAuthorities());
-        // new session id and a fresh CSRF token
+        // stops session fixation
         sessionAuthenticationStrategy.onAuthentication(authentication, request, response);
         SecurityContext context = contextHolder.createEmptyContext();
         context.setAuthentication(authentication);
         contextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
-        // the token is created lazily; read it so this response already sets the new XSRF-TOKEN cookie
+        // the token is lazy, touch it so this response already sends the new XSRF-TOKEN cookie
         if (request.getAttribute(CsrfToken.class.getName()) instanceof CsrfToken csrf) {
             csrf.getToken();
         }

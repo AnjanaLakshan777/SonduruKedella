@@ -16,7 +16,6 @@ import com.sondurukedella.expenses.dto.ExpenseSummaryResponse;
 import com.sondurukedella.expenses.entity.ExpenseScope;
 import com.sondurukedella.expenses.service.ExpenseService;
 import com.sondurukedella.inventory.dto.InventoryValuationResponse;
-import com.sondurukedella.inventory.dto.MaterialResponse;
 import com.sondurukedella.inventory.dto.ProjectMaterialUsageResponse;
 import com.sondurukedella.inventory.service.MaterialService;
 import com.sondurukedella.inventory.service.StockMovementService;
@@ -78,14 +77,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
-// Read-only reports. Nothing here writes: figures with rules come from the owning modules' services
-// (receivables, FIFO usage, live payroll, commission state), and plain date-ranged sums come from
-// ReportQueries. Each report runs in one REPEATABLE READ read-only transaction, so all of its figures
-// come from the same database snapshot even while other users are posting.
-//
-// Profit rule (DATABASE.md "Profitability", the frontend's finance.ts): revenue recorded − written off −
-// project costs, where project costs = manual project expenses + FIFO materials issued less returns +
-// labour + confirmed commission. Company expenses are not project costs.
+// All reports are read-only. Anything with business rules comes from the owning module's service, simple
+// date sums come from ReportQueries. REPEATABLE READ so one report sees one consistent snapshot.
+// Profit = revenue - write-offs - project costs (same as finance.ts on the frontend).
 @Service
 @RequiredArgsConstructor
 public class ReportService {
@@ -94,8 +88,7 @@ public class ReportService {
     public static final int MAX_PAGE_SIZE = 100;
     public static final Set<String> RECEIVABLE_SORTS = Set.of("daysOverdue", "dueDate", "outstanding", "billedOn", "project");
 
-    // other income is in the schema but not built, so it can't be counted yet
-    // every source in the schema is now counted; kept so the field stays in the responses
+    // nothing left to list here now, but keep the field in the responses
     static final List<String> NOT_BUILT = List.of();
 
     private final ProjectService projectService;
@@ -118,7 +111,6 @@ public class ReportService {
         return financial(project);
     }
 
-    // A client's projects summed from their own project reports, so the figures always agree.
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ClientFinancialReport clientFinancial(long clientId) {
         ClientResponse client = clientService.get(clientId);
@@ -196,7 +188,7 @@ public class ReportService {
         ReportQueries.Billing billing = queries.billing(null, null);
         ReceivablesSummaryResponse receivables = receivableService.summary();
 
-        // every project's own report, summed, so the dashboard and the project pages always agree
+        // add up each project's own report so the dashboard always matches the project pages
         BigDecimal projectCosts = BigDecimal.ZERO;
         BigDecimal projectProfit = BigDecimal.ZERO;
         for (ReportQueries.ProjectRef p : queries.allProjects()) {
@@ -268,7 +260,7 @@ public class ReportService {
         return new PayrollReport(labour(weeks), weeks);
     }
 
-    // Billed installments only (unbilled ones are not receivables). openOnly (default) drops settled ones.
+    // unbilled installments aren't receivables; openOnly (default) hides settled ones
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ReceivablesReport receivables(Long projectId, ReceivableStatus status, AgingBucket aging, Boolean openOnly, Pageable pageable) {
         if (pageable.getPageSize() > MAX_PAGE_SIZE) {
@@ -349,7 +341,6 @@ public class ReportService {
                 NOT_BUILT);
     }
 
-    // Mondays in [from, to], newest first, through the payroll module's own week summaries.
     private List<PayrollWeekSummary> payrollWeeks(LocalDate from, LocalDate to) {
         LocalDate first = from.with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
         LocalDate last = to.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
@@ -389,7 +380,7 @@ public class ReportService {
                 : AgingBucket.DAYS_OVER_90;
     }
 
-    // most overdue first by default; installment id breaks ties so pages are stable
+    // most overdue first, id as tie-breaker
     private static Comparator<ReceivablesReport.Row> receivableOrder(Sort sort) {
         if (sort.isUnsorted()) {
             sort = Sort.by(Sort.Order.desc("daysOverdue"), Sort.Order.asc("dueDate"));

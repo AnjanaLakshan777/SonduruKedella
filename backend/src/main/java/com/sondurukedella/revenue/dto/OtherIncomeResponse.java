@@ -4,8 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
-// received counts active receipts only; outstanding = amount − received. status as the UI shows it:
-// PAID, OVERDUE (outstanding and past the due date), PARTIALLY_PAID, or DUE.
+// received = active receipts only. status: PAID, OVERDUE, PARTIALLY_PAID or DUE (same as the UI)
 public record OtherIncomeResponse(
         long id,
         LocalDate date,

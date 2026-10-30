@@ -3,8 +3,7 @@ package com.sondurukedella.security.user;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
-// One rule for every new password (created, changed, reset or bootstrapped). BCrypt only reads the
-// first 72 bytes and Spring refuses anything longer, so that is the upper limit.
+// Same rules everywhere a password gets set. Max is 72 bytes because that's all bcrypt uses.
 public final class PasswordPolicy {
 
     public static final int MIN_LENGTH = 12;
@@ -13,7 +12,7 @@ public final class PasswordPolicy {
     private PasswordPolicy() {
     }
 
-    // the reason a new password is not acceptable, or empty when it is fine
+    // empty = ok
     public static Optional<String> problem(String password) {
         if (password == null || password.isBlank()) {
             return Optional.of("Enter a password.");

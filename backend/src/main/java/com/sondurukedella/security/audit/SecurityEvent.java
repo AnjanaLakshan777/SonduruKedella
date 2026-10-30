@@ -13,8 +13,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// One row of the security audit trail. Append-only (a V5 trigger refuses updates and deletes), so
-// no setters. Never holds a password, hash or session id.
+// append-only (trigger in V5), so no setters
 @Getter
 @Entity
 @Table(name = "security_events")

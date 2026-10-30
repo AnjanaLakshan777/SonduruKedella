@@ -19,7 +19,7 @@ class CommissionCalculatorTest {
 
     @Test
     void theDocumentedDesignExample() {
-        // DATABASE.md: 1,500,000 with 12% and 8% gives 180,000 and 120,000
+        // example from the docs: 1,500,000 at 12% and 8% = 180,000 and 120,000
         assertThat(CommissionCalculator.amount(bd("1500000"), bd("12"))).isEqualByComparingTo("180000.00");
         assertThat(CommissionCalculator.amount(bd("1500000"), bd("8"))).isEqualByComparingTo("120000.00");
         DesignSplit split = CommissionCalculator.designSplit(bd("1500000"), bd("20"), bd("300000"));
@@ -47,7 +47,7 @@ class CommissionCalculatorTest {
                 assertThat(split.companyShareAmount().scale()).isEqualTo(2);
             }
         }
-        // the residual cent goes to the company: 333,333.33 × 20% = 66,666.666 -> 66,666.67, company 266,666.66
+        // the residual cent goes to the company: 333,333.33 x 20% = 66,666.666 -> 66,666.67, company 266,666.66
         DesignSplit split = CommissionCalculator.designSplit(bd("333333.33"), bd("20"), BigDecimal.ZERO);
         assertThat(split.poolAmount()).isEqualTo(bd("66666.67"));
         assertThat(split.companyShareAmount()).isEqualTo(bd("266666.66"));

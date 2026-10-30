@@ -24,14 +24,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// User administration, for Super Admins only. The URL rule in SecurityConfig already demands the
-// role; every change here checks it again against the locked rows, because the actor may have been
-// demoted or deactivated by another Super Admin a moment ago.
-//
-// Rules:
-// - nobody changes their own role or status here (a slip could lock the company out);
-// - there is always at least one active Super Admin;
-// - a deactivation, role change or password reset ends that user's existing sessions.
+// Super Admin only. SecurityConfig already checks the role, but we check again against the locked
+// rows because the actor might have just been demoted by someone else.
+// Nobody can change their own role/status here, there's always one active Super Admin left, and
+// disabling/role change/password reset logs the user out everywhere.
 @Service
 @RequiredArgsConstructor
 public class UserAdministrationService {
@@ -65,9 +61,11 @@ public class UserAdministrationService {
         if (repository.existsByUsername(username)) {
             throw new ConflictException("That username is already taken.");
         }
+        String email = checkedEmail(request.email(), null);
         AppUser user = new AppUser();
         user.setUsername(username);
         user.setDisplayName(request.displayName().strip());
+        user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setRole(request.role() != null ? request.role() : UserRole.ADMIN);
         AppUser saved = repository.saveAndFlush(user);
@@ -81,13 +79,31 @@ public class UserAdministrationService {
         AppUser user = loadForUpdate(id);
         ConflictException.requireCurrentVersion(request.version(), user.getVersion());
         String displayName = request.displayName().strip();
-        if (displayName.equals(user.getDisplayName())) {
+        String email = checkedEmail(request.email(), id);
+        boolean nameChanged = !displayName.equals(user.getDisplayName());
+        boolean emailChanged = !email.equals(user.getEmail());
+        if (!nameChanged && !emailChanged) {
             return mapper.toResponse(user);
         }
         user.setDisplayName(displayName);
+        user.setEmail(email);
         AppUser saved = repository.saveAndFlush(user);
-        audit.record(SecurityEventType.USER_UPDATED, actorId, id, user.getUsername(), "display name changed");
+        String details = nameChanged && emailChanged ? "display name and email changed"
+                : nameChanged ? "display name changed" : "email changed";
+        audit.record(SecurityEventType.USER_UPDATED, actorId, id, user.getUsername(), details);
         return mapper.toResponse(saved);
+    }
+
+    // the unique index backs this up if two requests race
+    private String checkedEmail(String raw, Long userId) {
+        String email = Emails.normalize(raw);
+        if (!Emails.isValid(email)) {
+            throw new InvalidRequestException(Emails.RULE);
+        }
+        if (repository.existsByEmail(email, userId)) {
+            throw new ConflictException("Another user already has that email.");
+        }
+        return email;
     }
 
     @Transactional
@@ -136,7 +152,6 @@ public class UserAdministrationService {
         return mapper.toResponse(saved);
     }
 
-    // The new password is never echoed back or logged.
     @Transactional
     public void resetPassword(long actorId, long id, PasswordResetRequest request) {
         lockSuperAdmins(actorId);
@@ -172,7 +187,7 @@ public class UserAdministrationService {
         return new NotFoundException("User not found.");
     }
 
-    // username A-Z by default; id breaks ties so the order is stable across pages
+    // default sort username; id as tie-breaker keeps paging stable
     private static Pageable stablePage(Pageable pageable) {
         if (pageable.getPageSize() > MAX_PAGE_SIZE) {
             throw new InvalidRequestException("The page size can be at most " + MAX_PAGE_SIZE + ".");

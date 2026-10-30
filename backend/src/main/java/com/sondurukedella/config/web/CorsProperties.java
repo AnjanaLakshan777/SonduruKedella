@@ -4,9 +4,7 @@ import java.net.URI;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-// security.cors.allowed-origins (env CORS_ALLOWED_ORIGINS, comma separated): the exact frontend
-// origins allowed to call the API with the session cookie, e.g. http://localhost:5173. Empty means
-// same-origin only. A wildcard is refused, because credentials are allowed.
+// CORS_ALLOWED_ORIGINS, comma separated. Must be exact origins - "*" isn't allowed with credentials.
 @ConfigurationProperties("security.cors")
 public record CorsProperties(List<String> allowedOrigins) {
 

@@ -300,8 +300,8 @@ public class ExpenseService {
         return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
     }
 
-    // DATABASE.md: credit purchases are entered as supplier invoices; warn (don't block) when this expense
-    // names the same supplier and invoice number as a recorded one, so it isn't counted twice by mistake.
+    // Credit purchases should go in as supplier invoices. If this looks like the same one, warn but
+    // don't block, so it doesn't get counted twice by accident.
     private ExpenseResponse withDuplicateWarning(ExpenseResponse response) {
         if (response.supplierId() != null && response.invoiceNo() != null
                 && supplierInvoices.existsActive(response.supplierId(), response.invoiceNo())) {

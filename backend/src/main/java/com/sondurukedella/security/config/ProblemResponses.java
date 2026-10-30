@@ -7,9 +7,8 @@ import org.springframework.http.MediaType;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
-// 401 and 403 from the security filters, in the same RFC 9457 shape as GlobalExceptionHandler.
-// Fixed texts, so nothing from the request or the exception is echoed back. No WWW-Authenticate
-// header: the browser must not pop up a Basic login box.
+// JSON 401/403 for the security filters, same shape as GlobalExceptionHandler.
+// No WWW-Authenticate header, otherwise the browser shows its basic-auth popup.
 final class ProblemResponses {
 
     private ProblemResponses() {
@@ -20,7 +19,7 @@ final class ProblemResponses {
                 "Sign in to continue.");
     }
 
-    // also covers a missing or wrong CSRF token
+    // CSRF failures end up here too
     static AccessDeniedHandler forbidden() {
         return (request, response, ex) -> write(response, HttpServletResponse.SC_FORBIDDEN, "Forbidden",
                 "You don't have permission to do this.");

@@ -887,7 +887,7 @@ For each completed task, record the date, files or migrations changed, verificat
   | GET `/api/v1/users` | Super Admin | list (`q`, `role`, `enabled`, paging, sort `username`/`displayName`/`createdAt`/`id`) |
   | GET `/api/v1/users/{id}` | Super Admin | one user |
   | POST `/api/v1/users` | Super Admin | create (`role` defaults to `ADMIN`) → 201 + `Location` |
-  | PUT `/api/v1/users/{id}` | Super Admin | display name (`version` required) |
+  | PUT `/api/v1/users/{id}` | Super Admin | display name and email (`version` required) |
   | PUT `/api/v1/users/{id}/role` | Super Admin | change role (`version` required) |
   | PUT `/api/v1/users/{id}/status` | Super Admin | activate or deactivate (`version` required) |
   | PUT `/api/v1/users/{id}/password` | Super Admin | reset someone else's password (204, never echoed) |
@@ -896,7 +896,7 @@ For each completed task, record the date, files or migrations changed, verificat
   - Nobody changes their own role or status, or resets their own password, through user administration (422).
   - There is always at least one active Super Admin. Account changes lock the active Super Admin rows and re-check the actor.
   - Deactivation, a role change or a password reset bumps `auth_version`, so that user's sessions end on their next request.
-  - Generic 401 `Invalid username or password.` for an unknown user, a wrong password and a disabled account.
+  - Generic 401 `Invalid username, email or password.` for an unknown user, a wrong password and a disabled account.
   - New session id at sign-in. CSRF on every write, login and logout included.
   - 429 + `Retry-After` after 5 failures per username or 20 per address in 15 minutes.
   - CORS only for the configured origins.
@@ -1153,3 +1153,47 @@ For each completed task, record the date, files or migrations changed, verificat
   - New: `ScheduleAndWriteOffIntegrationTest` (3).
   - Added to existing classes: payroll idempotency and void (`PayrollApiIntegrationTest`); agreement removal and supplier invoice attachment (`AgreementStorageIntegrationTest`); edit, cancel and expense warning (`SupplierInvoiceApiIntegrationTest`); other income edit and delete; the client report.
   - Updated: `AgreementControllerWebTest` (DELETE now exists), the payroll correction helper (`requestId`), `InstallmentScheduleServiceTest` (constructor).
+
+### 2026-10-30: User email and development sample data
+- Migration `V8__app_users_email.sql`: optional `app_users.email`, lower case, unique when set (see DATABASE.md).
+- Users API:
+  - `POST /api/v1/users` and `PUT /api/v1/users/{id}` take an optional `email`. It is trimmed and lower-cased; a blank email clears it.
+  - An invalid address gets 400, and an address another user already has gets 409.
+  - The user responses and `GET /api/v1/auth/me` (and the login response) include `email`.
+  - The `q` search also matches the email.
+  - The email change is recorded in `security_events` (`USER_UPDATED`).
+- The frontend has no user-management screen yet, so nothing in the UI shows the email.
+- Development database:
+  - V2 to V8 applied on 2026-10-30 (the running backend image had only V1).
+  - The owner's Super Admin was created through the one-time bootstrap. The password was passed for that start only and isn't stored in `.env`.
+  - One Admin was created through the API. User details are not written in the repository, because it is public.
+  - Then the demo data was loaded with `frontend/scripts/seed-dev-data.ts` (DEVELOPMENT_WORKFLOW.md, "Sample data"):
+    - 8 clients and 10 projects (19 of 35 installments billed, 7 agreement PDFs);
+    - 17 client receipts and 2 other income;
+    - 22 supplier invoices and 18 supplier payments;
+    - 60 stock movements and 45 expenses;
+    - 11 employees, 1,495 attendance marks and 251 payroll payments;
+    - 11 commission arrangements and 7 commission payments.
+  - Verified: both users sign in. The Admin gets 200 on `/api/v1/projects` and 403 on `/api/v1/users`.
+- Tests:
+  - `UserAdministrationApiIntegrationTest`: email normalised, unique ignoring case, rejected when invalid, optional, searchable, changed, cleared, and visible on `/me`.
+  - `SecuritySchemaIntegrationTest`: `ck_app_users_email` and `uq_app_users_email`.
+  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 681 tests, 0 failures, 0 errors, 0 skipped.
+
+### 2026-10-30: Email required, sign-in with email
+- Migration `V9__app_users_email_required.sql`: `app_users.email` is now required (see DATABASE.md).
+- Users API: `email` is required on `POST /api/v1/users` and `PUT /api/v1/users/{id}` (400 when missing or blank). It can no longer be cleared.
+- Sign-in: `POST /api/v1/auth/login` accepts the username or the email in `username`, both case-insensitive. The failure message is now `Invalid username, email or password.`
+- Bootstrap: `BOOTSTRAP_SUPER_ADMIN_EMAIL` is required together with the username and password. It is validated and must not belong to another account. `compose.yaml` passes it through.
+- Development database:
+  - The Super Admin's username was changed to the one the owner chose, by SQL. There is no rename endpoint.
+  - The change bumped `auth_version`, so open sessions end, and wrote a `USER_UPDATED` security event.
+  - Verified: both users sign in with their username and with their email; the old username gets 401.
+- `seed-dev-data.ts` now requires `SEED_ADMIN_EMAIL`. Its comments were rewritten.
+- Tests:
+  - `UserAdministrationApiIntegrationTest`: email required and can't be cleared; sign-in by email in any case; wrong password by email gets the generic message.
+  - `SecuritySchemaIntegrationTest`: NOT NULL email.
+  - `SuperAdminBootstrapIntegrationTest`: email missing, invalid or already used.
+  - `TestUsers` and the SQL fixtures now set an email.
+  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 683 tests, 0 failures, 0 errors, 0 skipped.
+- `frontend/tsconfig.scripts.json` (referenced from `tsconfig.json`) type-checks `scripts/` with the Node types, so the editor no longer reports `process`, `Buffer` and `node:crypto` as unknown.

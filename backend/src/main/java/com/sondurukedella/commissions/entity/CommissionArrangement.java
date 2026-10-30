@@ -17,10 +17,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// One recipient's share of a Design or Construction project: agreed contract value × rate_pct.
-// PENDING is a draft (editable, deletable, not a cost). CONFIRMED stores the amount and is frozen
-// (the V6 trigger refuses changes) until it is VOIDED with a reason. The recipient is a name, as in
-// the UI; there is no recipients table (removed from the schema by owner decision).
+// contract value x rate for one recipient. PENDING = draft, CONFIRMED = stored amount and frozen
+// (V6 trigger), then optionally VOIDED. Recipient is just a name like in the UI, no recipients table.
 @Getter
 @Entity
 @Table(name = "commission_arrangements")
@@ -38,7 +36,7 @@ public class CommissionArrangement extends AuditableEntity {
     @Column(name = "project_id", nullable = false, updatable = false)
     private Long projectId;
 
-    // DESIGN or CONSTRUCTION; part of the composite FK, so consultation projects can't have one
+    // part of the composite FK - keeps consultation projects out
     @Column(name = "project_type", nullable = false, length = 20, updatable = false)
     private String projectType;
 
@@ -58,11 +56,11 @@ public class CommissionArrangement extends AuditableEntity {
     @Column(name = "confirmed_on")
     private LocalDate confirmedOn;
 
-    // stored at confirmation, so later policy or settings changes never move it
+    // stored on confirm so changing the settings later doesn't change it
     @Column(name = "commission_amount", precision = 15, scale = 2)
     private BigDecimal commissionAmount;
 
-    // confirmed although the project's rates went over the policy level
+    // they confirmed it even though it went over the policy
     @Column(name = "policy_exception", nullable = false)
     private boolean policyException;
 
@@ -91,7 +89,7 @@ public class CommissionArrangement extends AuditableEntity {
         return status == CommissionStatus.CONFIRMED;
     }
 
-    // drafts only; the service refuses this for anything else
+    // drafts only
     public void revise(String recipientName, String role, BigDecimal ratePct) {
         this.recipientName = recipientName;
         this.role = role;

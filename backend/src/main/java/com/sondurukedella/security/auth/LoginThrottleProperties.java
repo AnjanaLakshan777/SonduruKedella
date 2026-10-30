@@ -4,8 +4,7 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-// security.login.*: how many failed sign-ins are allowed per username and per client address
-// within one window before further attempts are refused until the window ends.
+// security.login.* - how many failed logins per username / per IP within the window
 @ConfigurationProperties("security.login")
 public record LoginThrottleProperties(
         @DefaultValue("5") int maxFailuresPerUsername,

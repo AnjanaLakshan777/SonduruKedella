@@ -2,14 +2,12 @@ package com.sondurukedella.security.user;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-// security.bootstrap.super-admin.* (env BOOTSTRAP_SUPER_ADMIN_USERNAME, _PASSWORD, _DISPLAY_NAME).
-// Read only while no Super Admin exists yet; there are no defaults, so nothing is created unless
-// the operator sets them.
+// BOOTSTRAP_SUPER_ADMIN_* env vars. No defaults on purpose - nothing gets created unless they're set.
 @ConfigurationProperties("security.bootstrap.super-admin")
-public record SuperAdminBootstrapProperties(String username, String password, String displayName) {
+public record SuperAdminBootstrapProperties(String username, String password, String email, String displayName) {
 
     boolean isConfigured() {
-        return hasText(username) || hasText(password);
+        return hasText(username) || hasText(password) || hasText(email);
     }
 
     static boolean hasText(String value) {

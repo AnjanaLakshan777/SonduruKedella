@@ -39,8 +39,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
-// /api/v1/users with real accounts and real sessions: Super Admin only, no privilege escalation,
-// and access changes take effect on existing sessions. Each test rolls back.
+// /api/v1/users with real accounts and sessions - Super Admin only, no privilege escalation, and
+// changes apply to sessions that are already logged in. Rolls back.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -77,7 +77,7 @@ class UserAdministrationApiIntegrationTest {
     void aSuperAdminCreatesAnAdminWhoCanSignIn() throws Exception {
         String username = "nimal-" + System.nanoTime();
         String json = create(superSession, """
-                {"username":"  %s ","displayName":" Nimal Perera ","password":"nimal-password-12"}""".formatted(username.toUpperCase()))
+                {"username":"  %s ","displayName":" Nimal Perera ","email":"%s@example.com","password":"nimal-password-12"}""".formatted(username.toUpperCase(), username))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", containsString(URL + "/")))
                 .andExpect(jsonPath("$.username").value(username))
@@ -98,7 +98,7 @@ class UserAdministrationApiIntegrationTest {
     @Test
     void aSuperAdminMayCreateAnotherSuperAdmin() throws Exception {
         create(superSession, """
-                {"username":"second-root-%d","displayName":"Second","password":"second-password-1","role":"SUPER_ADMIN"}""".formatted(System.nanoTime()))
+                {"username":"second-root-%1$d","displayName":"Second","email":"second-root-%1$d@example.com","password":"second-password-1","role":"SUPER_ADMIN"}""".formatted(System.nanoTime()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.role").value("SUPER_ADMIN"));
     }
@@ -106,18 +106,18 @@ class UserAdministrationApiIntegrationTest {
     @Test
     void invalidAccountsAreRejected() throws Exception {
         long before = jdbc.queryForObject("SELECT count(*) FROM app_users", Long.class);
-        create(superSession, "{\"username\":\"ok-name\",\"displayName\":\"X\",\"password\":\"short\"}")
+        create(superSession, "{\"username\":\"ok-name\",\"displayName\":\"X\",\"email\":\"x-" + System.nanoTime() + "@example.com\",\"password\":\"short\"}")
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors[0].field").value("password"));
-        create(superSession, "{\"username\":\"ok-name\",\"displayName\":\"X\"}")
+        create(superSession, "{\"username\":\"ok-name\",\"displayName\":\"X\",\"email\":\"ok-name@example.com\"}")
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors[0].field").value("password"));
-        create(superSession, "{\"username\":\"bad name!\",\"displayName\":\"X\",\"password\":\"long-enough-pw-1\"}")
+        create(superSession, "{\"username\":\"bad name!\",\"displayName\":\"X\",\"email\":\"x-" + System.nanoTime() + "@example.com\",\"password\":\"long-enough-pw-1\"}")
                 .andExpect(status().isBadRequest());
-        create(superSession, "{\"username\":\"ab\",\"displayName\":\"X\",\"password\":\"long-enough-pw-1\"}")
+        create(superSession, "{\"username\":\"ab\",\"displayName\":\"X\",\"email\":\"x-" + System.nanoTime() + "@example.com\",\"password\":\"long-enough-pw-1\"}")
                 .andExpect(status().isBadRequest());
         // only the two approved roles exist
-        create(superSession, "{\"username\":\"cashier-1\",\"displayName\":\"X\",\"password\":\"long-enough-pw-1\",\"role\":\"CASHIER\"}")
+        create(superSession, "{\"username\":\"cashier-1\",\"displayName\":\"X\",\"email\":\"x-" + System.nanoTime() + "@example.com\",\"password\":\"long-enough-pw-1\",\"role\":\"CASHIER\"}")
                 .andExpect(status().isBadRequest());
-        create(superSession, "{\"username\":\"" + admin.getUsername().toUpperCase() + "\",\"displayName\":\"X\",\"password\":\"long-enough-pw-1\"}")
+        create(superSession, "{\"username\":\"" + admin.getUsername().toUpperCase() + "\",\"displayName\":\"X\",\"email\":\"x-" + System.nanoTime() + "@example.com\",\"password\":\"long-enough-pw-1\"}")
                 .andExpect(status().isConflict());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM app_users", Long.class)).isEqualTo(before);
     }
@@ -176,11 +176,78 @@ class UserAdministrationApiIntegrationTest {
     void theDisplayNameCanBeEditedWithTheCurrentVersion() throws Exception {
         long version = version(admin.getId());
         mockMvc.perform(put(URL + "/" + admin.getId()).session(superSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"displayName\":\" Kamala \",\"version\":%d}".formatted(version)))
+                        .content("{\"displayName\":\" Kamala \",\"email\":\"kamala@example.com\",\"version\":%d}".formatted(version)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.displayName").value("Kamala"));
         mockMvc.perform(put(URL + "/" + admin.getId()).session(superSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"displayName\":\"Stale\",\"version\":%d}".formatted(version)))
+                        .content("{\"displayName\":\"Stale\",\"email\":\"stale@example.com\",\"version\":%d}".formatted(version)))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void emailIsRequiredStoredLowerCaseAndUnique() throws Exception {
+        String tag = Long.toString(System.nanoTime());
+        String json = create(superSession, """
+                {"username":"mail-%s","displayName":"Mail","email":"  Mail.%s@Example.COM ","password":"mail-password-123"}"""
+                .formatted(tag, tag))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.email").value("mail.%s@example.com".formatted(tag)))
+                .andReturn().getResponse().getContentAsString();
+        long id = id(json);
+
+        // same address in another case is still a duplicate
+        create(superSession, """
+                {"username":"mail2-%s","displayName":"Mail 2","email":"MAIL.%s@example.com","password":"mail-password-123"}"""
+                .formatted(tag, tag)).andExpect(status().isConflict());
+        create(superSession, """
+                {"username":"mail3-%s","displayName":"Mail 3","email":"not-an-email","password":"mail-password-123"}"""
+                .formatted(tag)).andExpect(status().isBadRequest());
+        create(superSession, """
+                {"username":"mail4-%s","displayName":"Mail 4","email":"  ","password":"mail-password-123"}"""
+                .formatted(tag)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors[0].field").value("email"));
+        create(superSession, """
+                {"username":"mail5-%s","displayName":"Mail 5","password":"mail-password-123"}"""
+                .formatted(tag)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors[0].field").value("email"));
+
+        mockMvc.perform(get(URL).param("q", "mail.%s@".formatted(tag)).session(superSession))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[*].id", hasItem((int) id)));
+    }
+
+    @Test
+    void theEmailCanBeChangedButNotClearedAndTheUserSeesItOnMe() throws Exception {
+        String tag = Long.toString(System.nanoTime());
+        mockMvc.perform(put(URL + "/" + admin.getId()).session(superSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":\"%s\",\"email\":\"Staff.%s@Example.com\",\"version\":%d}"
+                                .formatted(admin.getDisplayName(), tag, version(admin.getId()))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.email").value("staff.%s@example.com".formatted(tag)));
+        mockMvc.perform(get("/api/v1/auth/me").session(adminSession))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.email").value("staff.%s@example.com".formatted(tag)));
+        assertThat(events(admin.getId())).extracting(e -> e.get("details")).contains("email changed");
+
+        // can't take someone else's address
+        mockMvc.perform(put(URL + "/" + superAdmin.getId()).session(superSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":\"%s\",\"email\":\"staff.%s@example.com\",\"version\":%d}"
+                                .formatted(superAdmin.getDisplayName(), tag, version(superAdmin.getId()))))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(put(URL + "/" + admin.getId()).session(superSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":\"%s\",\"version\":%d}".formatted(admin.getDisplayName(), version(admin.getId()))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void aUserCanSignInWithTheirEmailInAnyCase() throws Exception {
+        String tag = Long.toString(System.nanoTime());
+        create(superSession, """
+                {"username":"bymail-%s","displayName":"By Mail","email":"bymail.%s@example.com","password":"bymail-password-1"}"""
+                .formatted(tag, tag)).andExpect(status().isCreated());
+
+        MockHttpSession session = login(mockMvc, " ByMail.%s@Example.com ".formatted(tag), "bymail-password-1");
+        mockMvc.perform(get("/api/v1/auth/me").session(session))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.username").value("bymail-" + tag));
+
+        // a wrong password by email gets the same answer as by username
+        mockMvc.perform(post("/api/v1/auth/login").with(csrf()).with(from(randomAddress())).contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("bymail.%s@example.com".formatted(tag), "wrong-password-123")))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.detail").value("Invalid username, email or password."));
     }
 
     @Test
@@ -234,7 +301,7 @@ class UserAdministrationApiIntegrationTest {
         mockMvc.perform(post("/api/v1/auth/login").with(csrf()).with(from(randomAddress())).contentType(MediaType.APPLICATION_JSON)
                         .content(loginJson(admin.getUsername(), PASSWORD)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.detail").value("Invalid username or password."));
+                .andExpect(jsonPath("$.detail").value("Invalid username, email or password."));
 
         setStatus(superSession, admin.getId(), true).andExpect(status().isOk());
         login(mockMvc, admin.getUsername());

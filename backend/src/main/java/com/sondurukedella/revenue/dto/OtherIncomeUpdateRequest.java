@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-// A full edit with the version last read. The amount can't go below what has already been received.
+// amount can't go below what's already received
 public record OtherIncomeUpdateRequest(
         @NotNull Long version,
         @NotNull(message = "Enter the income date.") LocalDate date,

@@ -1,6 +1,6 @@
 package com.sondurukedella.security.audit;
 
-// Matches ck_security_events_type (V5).
+// keep in sync with ck_security_events_type
 public enum SecurityEventType {
     LOGIN_SUCCEEDED,
     LOGIN_FAILED,

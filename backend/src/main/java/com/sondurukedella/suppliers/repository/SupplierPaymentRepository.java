@@ -15,7 +15,6 @@ public interface SupplierPaymentRepository extends JpaRepository<SupplierPayment
 
     List<SupplierPayment> findByInvoiceIdOrderByPaymentDateAscIdAsc(long invoiceId);
 
-    // voided payments never count toward what was paid
     @Query("select coalesce(sum(p.amount), 0) from SupplierPayment p where p.invoiceId = :invoiceId and p.voidedAt is null")
     BigDecimal sumActive(long invoiceId);
 

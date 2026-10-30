@@ -17,9 +17,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// A supplier's invoice (a payable). Never deleted. Editing is limited (SupplierInvoiceService): due date
-// and notes always; everything else only on a PROJECT invoice with no active payments. A PROJECT invoice
-// without payments can be cancelled (V7). A STOCK invoice is in the stock ledger, so it is never cancelled.
+// Never deleted. Stock invoices can't be cancelled since they're already in the stock ledger.
 @Getter
 @Entity
 @Table(name = "supplier_invoices")
@@ -49,11 +47,10 @@ public class SupplierInvoice extends AuditableEntity {
     @Column(name = "project_id")
     private Long projectId;
 
-    // CONSTRUCTION for PROJECT invoices (part of the composite FK), null for STOCK
+    // part of the composite FK
     @Column(name = "project_type", length = 20, updatable = false)
     private String projectType;
 
-    // the sum of the lines, worked out by the service
     @Column(name = "total_amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal totalAmount;
 
@@ -66,7 +63,7 @@ public class SupplierInvoice extends AuditableEntity {
     @Column(name = "cancel_reason", columnDefinition = "text")
     private String cancelReason;
 
-    // a PDF in the private document store (keys are server-generated); null when none was attached
+    // stored in the private document store with agreements
     @Column(name = "attachment_storage_key", length = 500)
     private String attachmentStorageKey;
 

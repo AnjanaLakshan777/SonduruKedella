@@ -5,9 +5,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
-// paid counts active payments only; outstanding = total − paid (0 once cancelled). status: UNPAID,
-// PARTIALLY_PAID, PAID, OVERDUE when something is outstanding and the due date has passed (as the UI
-// shows it), or CANCELLED. A cancelled invoice is no payable and no cost.
+// cancelled invoices show outstanding 0 and count as neither payable nor cost
 public record SupplierInvoiceResponse(
         long id,
         long supplierId,

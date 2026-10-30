@@ -33,9 +33,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-// The Commissions page (directory, by recipient, payments) and the actions on one arrangement.
-// Arrangements are created and confirmed per project: PUT /api/v1/projects/{projectId}/commissions.
-// No DELETE: a confirmed commission is voided, a payment is voided.
+// Commissions page endpoints. Arrangements themselves are saved per project (ProjectCommissionController).
+// No deletes - confirmed commissions and payments get voided.
 @RestController
 @RequestMapping("/api/v1/commissions")
 @RequiredArgsConstructor
@@ -93,7 +92,7 @@ public class CommissionController {
         return paymentService.list(id);
     }
 
-    // 201 for a new payment, 200 when the same requestId was already recorded (nothing new saved)
+    // 201 = new, 200 = same requestId sent again
     @PostMapping("/{id}/payments")
     public ResponseEntity<CommissionPaymentResponse> pay(@PathVariable long id, @Valid @RequestBody CommissionPaymentRequest request) {
         PaymentResult result = paymentService.record(id, request);

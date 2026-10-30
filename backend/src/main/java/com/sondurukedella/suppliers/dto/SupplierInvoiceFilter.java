@@ -4,7 +4,7 @@ import com.sondurukedella.suppliers.dto.SupplierInvoiceResponse.InvoiceStatus;
 import com.sondurukedella.suppliers.entity.InvoiceAllocation;
 import java.time.LocalDate;
 
-// All optional. from/to bound the invoice date, inclusive.
+// from/to = invoice date
 public record SupplierInvoiceFilter(Long supplierId, Long projectId, InvoiceAllocation allocation, InvoiceStatus status,
         LocalDate from, LocalDate to) {
 }

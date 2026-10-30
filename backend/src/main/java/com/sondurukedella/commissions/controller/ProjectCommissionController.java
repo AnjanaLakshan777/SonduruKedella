@@ -12,9 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// The project's Commissions tab: read the set, and save it as a draft or confirm it. Lives in the
-// commissions module (like the agreement endpoints in agreements) because projects must not depend
-// on commissions.
+// Sits in commissions, not projects, so projects doesn't have to depend on this module.
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/commissions")
 @RequiredArgsConstructor

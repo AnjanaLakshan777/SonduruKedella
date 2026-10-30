@@ -14,7 +14,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// lineAmount = round(quantity × unitPrice, 2), which ck_supplier_invoice_lines_amount checks too.
+// the db checks line_amount = round(quantity * unitPrice, 2) too
 @Getter
 @Entity
 @Table(name = "supplier_invoice_lines")

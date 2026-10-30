@@ -43,7 +43,7 @@ public class ActivityEntry {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    // the signed-in user, or null when there is none
+    // null if nobody's logged in
     @Column(name = "created_by", updatable = false)
     private Long createdBy;
 

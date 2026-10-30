@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-// method is the payment method's name, which is what the frontend CommissionPayment type holds
+// method = payment method name (what the frontend shows)
 public record CommissionPaymentResponse(
         long id,
         long commissionId,

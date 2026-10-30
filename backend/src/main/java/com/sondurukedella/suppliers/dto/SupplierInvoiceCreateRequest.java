@@ -12,9 +12,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-// Recording a supplier's invoice. The total is the sum of the lines (never sent). dueDate defaults to
-// invoiceDate + the supplier's credit days. projectId only for PROJECT invoices (construction projects).
-// initialPayment, when given, is recorded in the same transaction ("paid now" on the form).
+// total is worked out from the lines. dueDate defaults to invoice date + the supplier's credit days.
+// initialPayment = "paid now" on the form, saved in the same transaction.
 public record SupplierInvoiceCreateRequest(
         @NotNull(message = "Choose the supplier.") Long supplierId,
         @NotBlank(message = "Enter the invoice number.") @Size(max = 100) String invoiceNo,
@@ -26,8 +25,7 @@ public record SupplierInvoiceCreateRequest(
         @NotEmpty(message = "Add at least one line.") @Size(max = 200) @Valid List<Line> lines,
         @Valid SupplierPaymentRequest initialPayment) {
 
-    // materialId is required on STOCK lines (and the unit must be the material's own); description
-    // defaults to the material's name.
+    // stock lines need a material, in that material's unit
     public record Line(
             Long materialId,
             @Size(max = 300) String description,

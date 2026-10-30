@@ -44,8 +44,8 @@ class AgreementRecorder {
         return new AgreementUpload(mapper.toResponse(saved), current.isPresent());
     }
 
-    // Removing works like replacing without a new file: the row is retired (removed_at) and its PDF kept,
-    // because the row still points at it. Nothing is hard-deleted.
+    // Same as replace but with no new file - the row gets removed_at and the PDF stays since the row
+    // still points to it.
     @Transactional
     public void remove(long projectId) {
         ProjectAgreement current = repository.findByProjectIdAndRemovedAtIsNull(projectId)

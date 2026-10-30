@@ -8,7 +8,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
-// requestId is generated once per submission; sending it again returns the first payment.
+// same requestId again = no second payment
 public record SupplierPaymentRequest(
         @NotNull UUID requestId,
         @NotNull(message = "Choose the payment date.") LocalDate paymentDate,

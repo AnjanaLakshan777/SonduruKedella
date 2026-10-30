@@ -13,11 +13,8 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-// Read-only aggregate queries for the reports, over the columns the owning modules write. Only plain
-// sums with a clear date column live here; anything with rules (receivable status, FIFO usage, live
-// payroll, commission state) comes from the owning module's service instead. Every query is a SELECT.
-//
-// from/to are inclusive and either may be null (open-ended). Sums come back at money scale, 0 when empty.
+// Plain SQL sums for the reports. Only simple totals by date live here - anything with business
+// rules goes through the owning module's service. from/to can be null (no limit).
 @Repository
 @RequiredArgsConstructor
 public class ReportQueries {
@@ -33,15 +30,13 @@ public class ReportQueries {
     public record StatusCount(String status, String type, long count, BigDecimal contractValue) {
     }
 
-    // Billed installments: gross amount, the delay deduction applied to them, and the revenue
-    // recorded = Σ max(amount − deduction, 0), the same per-installment rule as ReceivableCalculator.
+    // same per-installment rule as ReceivableCalculator: max(amount - deduction, 0)
     public record Billing(long installments, BigDecimal billed, BigDecimal deductions, BigDecimal net) {
     }
 
     public record Total(long count, BigDecimal amount) {
     }
 
-    // stock movements booked to projects: issued cost, returned cost, net = issued − returned
     public record MaterialUse(BigDecimal issued, BigDecimal returned, BigDecimal net) {
     }
 
@@ -73,7 +68,7 @@ public class ReportQueries {
                 (rs, i) -> new StatusCount(rs.getString("status"), rs.getString("project_type"), rs.getLong("n"), money(rs, "value")));
     }
 
-    // date basis: installments.billed_on
+    // by billed_on
     public Billing billing(LocalDate from, LocalDate to) {
         return jdbc.queryForObject("""
                 SELECT count(*) AS n, coalesce(sum(i.amount), 0) AS billed,
@@ -85,26 +80,25 @@ public class ReportQueries {
                 (rs, i) -> new Billing(rs.getLong("n"), money(rs, "billed"), money(rs, "deductions"), money(rs, "net")));
     }
 
-    // date basis: client_payments.payment_date; voided receipts never count
+    // by payment_date, voided ones skipped
     public Total receipts(LocalDate from, LocalDate to) {
         return total("SELECT count(*) AS n, coalesce(sum(amount), 0) AS total FROM client_payments WHERE voided_at IS NULL"
                 + RANGE.formatted("payment_date"), from, to);
     }
 
-    // date basis: other_income_receipts.payment_date; voided receipts never count
+    // by payment_date, voided ones skipped
     public Total otherIncomeReceipts(LocalDate from, LocalDate to) {
         return total("SELECT count(*) AS n, coalesce(sum(amount), 0) AS total FROM other_income_receipts WHERE voided_at IS NULL"
                 + RANGE.formatted("payment_date"), from, to);
     }
 
-    // date basis: receivable_write_offs.write_off_date; reversed (voided) write-offs never count
+    // by write_off_date, reversed ones skipped
     public Total writeOffs(LocalDate from, LocalDate to) {
         return total("SELECT count(*) AS n, coalesce(sum(amount), 0) AS total FROM receivable_write_offs WHERE voided_at IS NULL"
                 + RANGE.formatted("write_off_date"), from, to);
     }
 
-    // date basis: stock_movements.movement_date. Issues carry a negative total_cost, returns a positive
-    // one, both at the FIFO cost fixed when posted (the same figures StockMovementService.projectUsage sums).
+    // issues are stored negative, returns positive, both at their FIFO cost (same as projectUsage)
     public MaterialUse materialUse(LocalDate from, LocalDate to) {
         return jdbc.queryForObject("""
                 SELECT coalesce(-sum(total_cost) FILTER (WHERE movement_type = 'ISSUED'), 0) AS issued,
@@ -118,13 +112,13 @@ public class ReportQueries {
                 });
     }
 
-    // date basis: confirmed_on; only arrangements that are still CONFIRMED (drafts and voids are no cost)
+    // by confirmed_on; drafts and voided ones aren't a cost
     public Total commissionConfirmed(LocalDate from, LocalDate to) {
         return total("SELECT count(*) AS n, coalesce(sum(commission_amount), 0) AS total FROM commission_arrangements "
                 + "WHERE status = 'CONFIRMED'" + RANGE.formatted("confirmed_on"), from, to);
     }
 
-    // date basis: commission_payments.payment_date; voided payments never count
+    // by payment_date, voided ones skipped
     public Total commissionPaid(LocalDate from, LocalDate to) {
         return total("SELECT count(*) AS n, coalesce(sum(amount), 0) AS total FROM commission_payments WHERE voided_at IS NULL"
                 + RANGE.formatted("payment_date"), from, to);
@@ -144,13 +138,13 @@ public class ReportQueries {
                 + "WHERE voided_at IS NULL" + RANGE.formatted("payment_date") + " GROUP BY 1", from, to);
     }
 
-    // manual expenses only (expenses are never voided; their payments are, and don't matter here)
+    // expenses can't be voided, so a plain sum is right
     public List<MonthAmount> expensesByMonth(LocalDate from, LocalDate to) {
         return months("SELECT date_trunc('month', expense_date)::date AS month, sum(amount) AS total FROM expenses "
                 + "WHERE TRUE" + RANGE.formatted("expense_date") + " GROUP BY 1", from, to);
     }
 
-    // a project's manual expenses by category (the same rows ExpenseService.summary totals)
+    // same rows ExpenseService.summary adds up
     public List<CategoryAmount> projectExpensesByCategory(long projectId) {
         return jdbc.query("""
                 SELECT c.name AS category, count(*) AS n, sum(e.amount) AS total

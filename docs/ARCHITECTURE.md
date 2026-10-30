@@ -244,9 +244,9 @@ Changing the company-wide commission policy (design pool and construction level)
 
 ### Sign-in flow (React app)
 1. `GET /api/v1/auth/csrf` sets the `XSRF-TOKEN` cookie (readable by JavaScript). Returns 204.
-2. `POST /api/v1/auth/login` with JSON `{username, password}` and the header `X-XSRF-TOKEN: <cookie value>`.
-   - On success: 200 with `{id, username, displayName, role}`. The session id is changed (no session fixation), a new CSRF token is issued, and the session (`JSESSIONID`) holds the principal without the password hash.
-   - On failure: 401 `Invalid username or password.` The same answer for an unknown user, a wrong password and a disabled account. The password is checked before the account status, so even the timing is alike.
+2. `POST /api/v1/auth/login` with JSON `{username, password}`. `username` may be the username or the email (a value with `@` is looked up as an email; usernames can't contain `@`). Both are case-insensitive. Send the header `X-XSRF-TOKEN: <cookie value>`.
+   - On success: 200 with `{id, username, displayName, email, role}` (`email` may be null). The session id is changed (no session fixation), a new CSRF token is issued, and the session (`JSESSIONID`) holds the principal without the password hash.
+   - On failure: 401 `Invalid username, email or password.` The same answer for an unknown user, a wrong password and a disabled account. The password is checked before the account status, so even the timing is alike.
 3. Later requests send the `JSESSIONID` cookie automatically (`credentials: 'include'`, or `withCredentials` in axios). Every POST, PUT, PATCH and DELETE also sends `X-XSRF-TOKEN`.
 4. `GET /api/v1/auth/me` returns the signed-in user; it returns 401 once the session has ended.
 5. `POST /api/v1/auth/logout` (with the CSRF header) invalidates the session, deletes the cookie, and returns 204.
@@ -263,7 +263,7 @@ Errors from the security layer are RFC 9457 JSON: 401 `Sign in to continue.`, 40
   - at most 5 failed sign-ins per typed username, and 20 per client address, per 15 minutes (`LOGIN_MAX_FAILURES_PER_USERNAME`, `LOGIN_MAX_FAILURES_PER_ADDRESS`, `LOGIN_FAILURE_WINDOW`);
   - past the limit, sign-in answers 429 with `Retry-After`, even with the right password;
   - wrong "current password" entries on the password change count too.
-- It is keyed by what was typed, so unknown usernames are throttled the same way and nothing reveals which accounts exist.
+- It is keyed by what was typed, so unknown usernames are throttled the same way and nothing reveals which accounts exist. Because the username and the email are separate keys, one account can take 5 failures through each, 10 per window in all. The per-address limit still applies.
 - The client address is the direct peer address. `X-Forwarded-For` is not trusted.
 - Limits: it resets on restart and isn't shared between instances. Behind a reverse proxy, every request has the proxy's address, so the per-address limit applies to everyone together until forwarded headers are configured deliberately (`server.forward-headers-strategy`).
 

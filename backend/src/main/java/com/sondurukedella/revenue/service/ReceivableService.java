@@ -71,8 +71,7 @@ public class ReceivableService {
         return receipts(projectId, ids);
     }
 
-    // Every billed installment with its money worked out, across all projects. Read by the reports
-    // module, so the receivables report uses exactly this module's formula.
+    // all billed installments with their numbers - the receivables report uses this so the math matches
     @Transactional(readOnly = true)
     public List<InstallmentReceivableResponse> billedReceivables() {
         return receivables(installments.findByBilledOnIsNotNull());

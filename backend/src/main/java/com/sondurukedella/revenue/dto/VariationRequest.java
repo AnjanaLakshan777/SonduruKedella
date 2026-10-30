@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-// "Additional work billed": a VARIATION installment billed on billedOn (default today), due on dueDate.
+// "Additional work billed" - billedOn defaults to today
 public record VariationRequest(
         @NotBlank(message = "Describe the additional work.") @Size(max = 300) String description,
         @NotNull(message = "Enter the amount.") @DecimalMin(value = "0", inclusive = false) @Digits(integer = 13, fraction = 2) BigDecimal amount,

@@ -8,9 +8,8 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
 
-// The whole editable invoice, as on the edit form. dueDate and notes can always change. invoiceNo,
-// invoiceDate, projectId and lines can change only on a PROJECT invoice with no active payments; on a
-// STOCK invoice (already in stock) or a paid one they must be sent as they are.
+// Due date and notes can always change. The rest only on a project invoice with no payments -
+// for stock or paid invoices send those fields unchanged.
 public record SupplierInvoiceUpdateRequest(
         @NotNull Long version,
         @NotBlank(message = "Enter the invoice number.") @Size(max = 100) String invoiceNo,

@@ -22,9 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-// Read-only reports: GET only, nothing here changes data. Both roles, through the central /api/v1 rule.
-// Commission views already exist under /api/v1/commissions (summary, recipients, payments) and are
-// not repeated here.
+// Read-only, GET only. Commission summaries are already under /api/v1/commissions.
 @RestController
 @RequestMapping("/api/v1/reports")
 @RequiredArgsConstructor

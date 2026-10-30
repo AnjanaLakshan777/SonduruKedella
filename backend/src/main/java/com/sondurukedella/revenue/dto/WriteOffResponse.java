@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
-// reversed write-offs (voided = true) are kept and listed but no longer reduce what is owed
+// voided = reversed. still listed, but doesn't reduce what's owed anymore
 public record WriteOffResponse(
         long id,
         long installmentId,

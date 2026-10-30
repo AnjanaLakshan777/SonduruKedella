@@ -38,19 +38,11 @@ import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 
-// The one place that decides who may call what. Authenticated by default; the role rules:
-//   public          POST /api/v1/auth/login, GET /api/v1/auth/csrf, GET /actuator/health
-//   SUPER_ADMIN     /api/v1/users/** (user administration) and the rest of /actuator
-//   SUPER_ADMIN or ADMIN  every other /api/v1 endpoint (all business modules, /auth/me, logout)
-//   anything else   denied
-// One exception to "both roles": changing the commission policy (/api/v1/settings/commission-policy,
-// any method but GET) is SUPER_ADMIN only.
-// Apart from that GET, the rules match paths only, never methods, so GET/POST/PUT/PATCH/DELETE are
-// all covered alike.
-//
-// Sign-in is a server-side session (JSESSIONID cookie, HttpOnly, SameSite=Lax). CSRF protection stays
-// on for every state-changing request, login and logout included, using the SPA cookie pattern:
-// the XSRF-TOKEN cookie is copied into the X-XSRF-TOKEN header.
+// All the access rules live here. Everything needs a login by default:
+// login/csrf/health are public, /users and actuator are Super Admin only, the rest of /api/v1 is
+// open to both roles. Only exception: changing the commission policy is Super Admin only.
+// Rules match on path, not method, so a new DELETE/PATCH can't sneak past them.
+// Session cookie auth + CSRF (XSRF-TOKEN cookie -> X-XSRF-TOKEN header), login and logout included.
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
@@ -70,21 +62,20 @@ public class SecurityConfig {
             throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
-                        // Spring's own error rendering for a request that already passed (or failed) the rules
+                        // let Spring render its error page for requests that already went through the rules
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.POST, LOGIN_URL).permitAll()
                         .requestMatchers(HttpMethod.GET, CSRF_URL).permitAll()
-                        // for container and load-balancer probes; shows UP/DOWN only, no details
+                        // for docker/LB health checks, only says UP or DOWN
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers("/actuator/**").hasRole(SUPER_ADMIN)
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole(SUPER_ADMIN)
-                        // company-wide commission policy: both roles read it, only a Super Admin changes it
-                        // (any method other than GET, so nothing slips through)
+                        // anyone can read the policy, only a Super Admin can change it
                         .requestMatchers(HttpMethod.GET, COMMISSION_POLICY_URL).hasAnyRole(SUPER_ADMIN, ADMIN)
                         .requestMatchers(COMMISSION_POLICY_URL, COMMISSION_POLICY_URL + "/**").hasRole(SUPER_ADMIN)
                         .requestMatchers("/api/v1/**").hasAnyRole(SUPER_ADMIN, ADMIN)
                         .anyRequest().denyAll())
-                // spa() first, then our repository, so the login code rotates the same token store
+                // spa() first, then our repo, so the login code rotates the same token store
                 .csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokenRepository))
                 .cors(Customizer.withDefaults())
                 .securityContext(context -> context.securityContextRepository(securityContextRepository))
@@ -99,18 +90,18 @@ public class SecurityConfig {
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint(ProblemResponses.unauthorized())
                         .accessDeniedHandler(ProblemResponses.forbidden()))
-                // an API has no page to return to, and saving one would create a session for every 401
+                // no saved requests - otherwise every 401 would create a session
                 .requestCache(cache -> cache.requestCache(new NullRequestCache()))
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .headers(headers -> headers
-                        // the API serves JSON and attachments only; nothing may run or be framed
+                        // we only serve JSON and file downloads
                         .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
                         .referrerPolicy(referrer -> referrer.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER)));
         return http.build();
     }
 
-    // BCrypt, with the {bcrypt} prefix so the algorithm can be upgraded later without a reset.
+    // {bcrypt} prefix lets us switch algorithms later without resetting passwords
     @Bean
     PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
@@ -120,8 +111,8 @@ public class SecurityConfig {
     AuthenticationManager authenticationManager(UserDetailsService userDetailsService, PasswordEncoder passwordEncoder) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder);
-        // Password first, account status after: a disabled account costs the same BCrypt work as any
-        // other attempt, and fails with the same generic answer.
+        // check the password before the account status, so a disabled account takes
+        // the same time and gets the same error as a wrong password
         provider.setPreAuthenticationChecks(user -> { });
         provider.setPostAuthenticationChecks(new AccountStatusUserDetailsChecker());
         return new ProviderManager(provider);
@@ -132,8 +123,8 @@ public class SecurityConfig {
         return new HttpSessionSecurityContextRepository();
     }
 
-    // The XSRF-TOKEN cookie must be readable by the app's JavaScript (that is how the pattern works);
-    // it is only useful together with the session cookie, which stays HttpOnly.
+    // JS has to read this cookie (that's how the SPA pattern works). It's useless without the
+    // HttpOnly session cookie anyway.
     @Bean
     CsrfTokenRepository csrfTokenRepository(@Value("${server.servlet.session.cookie.secure:true}") boolean secureCookies) {
         CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
@@ -141,7 +132,7 @@ public class SecurityConfig {
         return repository;
     }
 
-    // What the login endpoint does once the password checks out: a new session id, then a new CSRF token.
+    // after a good login: new session id, then a new CSRF token
     @Bean
     SessionAuthenticationStrategy sessionAuthenticationStrategy(CsrfTokenRepository csrfTokenRepository) {
         return new CompositeSessionAuthenticationStrategy(List.of(

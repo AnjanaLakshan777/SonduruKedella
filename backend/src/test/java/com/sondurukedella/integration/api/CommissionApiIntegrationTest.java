@@ -29,8 +29,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
-// Commissions end to end against the real schema (V1 + V6): per-project drafts and confirmation,
-// the 80/20 design split, construction, payments, voids and the company-wide views. Rolls back.
+// Commissions end to end on the real schema - drafts, confirming, the 80/20 design split,
+// construction, payments, voids and the company-wide views. Rolls back.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -411,8 +411,7 @@ class CommissionApiIntegrationTest {
         return ((Number) JsonPath.read(json, "$.id")).longValue();
     }
 
-    // through the Settings API as a Super Admin (only they may change it), so the policy the service
-    // reads in this same transaction is the new one
+    // go through the Settings API (Super Admin) so the service sees the new policy in this same transaction
     private void setPolicy(String pool, String construction) throws Exception {
         String current = mockMvc.perform(get("/api/v1/settings/commission-policy")).andReturn().getResponse().getContentAsString();
         long version = ((Number) JsonPath.read(current, "$.version")).longValue();

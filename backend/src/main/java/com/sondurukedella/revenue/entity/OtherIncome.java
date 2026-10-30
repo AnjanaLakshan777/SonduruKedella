@@ -14,8 +14,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// Income not tied to a project (revenue category "Other Income"). Recognised on income_date; receipts
-// settle it. Editable (the amount never below what was received); deletable only while it has no receipts.
+// Income that isn't from a project. Counts on income_date, receipts settle it. Can't be deleted once
+// something was received.
 @Getter
 @Entity
 @Table(name = "other_income")

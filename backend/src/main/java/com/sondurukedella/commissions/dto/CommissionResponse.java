@@ -5,10 +5,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
-// One arrangement with the numbers needed to check it:
-// amount = contractValue × ratePct / 100, rounded half-up to the cent.
-// For a confirmed or voided arrangement amount is the stored value; for a draft it's a preview.
-// paid counts active payments only; outstanding is what is still owed (0 for drafts and voids).
+// amount = contractValue * ratePct / 100. Stored once confirmed, just a preview for drafts.
+// outstanding is 0 for drafts and voided ones.
 public record CommissionResponse(
         long id,
         long projectId,

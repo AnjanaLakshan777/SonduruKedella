@@ -10,7 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface OtherIncomeRepository extends JpaRepository<OtherIncome, Long>, JpaSpecificationExecutor<OtherIncome> {
 
-    // receipts lock the income row, so concurrent receipts queue and can't exceed it
+    // locked by receipts so two at once can't go over the amount
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from OtherIncome o where o.id = :id")
     Optional<OtherIncome> findByIdForUpdate(long id);

@@ -32,8 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-// Other income and its receipts. Edit any time (amount not below what was received); delete only
-// while nothing was received. Receipts are voided, not deleted.
+// Edit any time (not below what's received), delete only if nothing was received. Receipts get voided.
 @RestController
 @RequestMapping("/api/v1/other-income")
 @RequiredArgsConstructor
@@ -75,7 +74,6 @@ public class OtherIncomeController {
         return service.update(id, request);
     }
 
-    // only while nothing was received against it
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable long id) {
         service.delete(id);
@@ -87,7 +85,7 @@ public class OtherIncomeController {
         return service.listReceipts(id);
     }
 
-    // 201 for a new receipt, 200 when the same requestId was already recorded
+    // 201 = new receipt, 200 = same requestId sent again
     @PostMapping("/{id}/receipts")
     public ResponseEntity<OtherIncomeReceiptResponse> receive(@PathVariable long id, @Valid @RequestBody ReceiptCreateRequest request) {
         ReceiptResult result = service.receive(id, request);

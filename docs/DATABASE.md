@@ -97,6 +97,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
 - **units** and **payment_methods**: editable lists (`name` unique, `active`). Seed payment methods: Cash, Bank Transfer, Cheque, Online Payment.
 - **app_users**: `username` (unique, and unique ignoring case via `uq_app_users_username_lower`), `display_name`, `password_hash` (BCrypt, `{bcrypt}` prefix; never plain text), `enabled`.
   - V5 added `role` (`SUPER_ADMIN` | `ADMIN`, no default) and `auth_version` (bumped when access changes, which ends existing sessions).
+  - V8 added `email`, and V9 made it required. It is stored lower case and unique (`uq_app_users_email`). Users can sign in with their username or their email.
   - Users are never deleted, only deactivated, because every `created_by` and `security_events` row points here.
   - The partial index `ix_app_users_active_super_admins` serves the "at least one active Super Admin" check.
 - **security_events** (V5): the security audit trail. Columns:
@@ -729,12 +730,12 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
 - `V2__suppliers_active.sql` (2026-10-24): adds `suppliers.active BOOLEAN NOT NULL DEFAULT TRUE`, so suppliers can be deactivated instead of deleted. It is additive only: existing suppliers become active, and nothing else changes.
   - Verified on a fresh PostgreSQL 17 database (V1 then V2).
   - Verified on a V1 database that already held a supplier with a linked expense: after V2 both rows were unchanged and the supplier was active.
-  - Not yet applied to the development database. Flyway applies it on the next backend start.
+  - Applied to the development database on 2026-10-30.
 - `V3__inventory_ledger_additions.sql` (2026-10-24): adds `materials.active` (default `TRUE`), plus `stock_movements.supplier_id` (nullable FK, receipts only, indexed) and `stock_movements.request_id` (nullable UUID, unique).
   - It is additive only: existing materials become active, existing movements get NULLs, and the append-only and return triggers are unchanged.
   - Verified on a fresh PostgreSQL 17 database (V1 to V3).
   - Verified on a V1 and V2 database holding a supplier, a supplier-linked expense, a material and a received, issued and returned ledger: every row was unchanged after V3, the immutability trigger still refused updates, and the new check and unique constraint worked.
-  - Not yet applied to the development database. Flyway applies it, after V2, on the next backend start.
+  - Applied to the development database on 2026-10-30.
 - `V4__inventory_fifo_cost_layers.sql` (2026-10-24): switches inventory costing to FIFO. It adds:
   - `stock_movements.costing_method` (existing rows `WAC`, new rows `FIFO`), with a check constraint and the unique key `uq_stock_movements_id_material`;
   - the tables `stock_cost_layers` and `stock_cost_allocations`, with their checks, composite FKs and indexes;
@@ -750,7 +751,7 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
     - cement got one `LEGACY_BALANCE` layer of 125 bags / 325,000.00, equal to its last `quantity_after` / `value_after`; sand (zero stock) and the unused material got none;
     - the column default was `FIFO`, and the immutability triggers still refused updates.
   - Verified on a V1 to V3 database whose ledger did not reconcile: V4 stopped with "Stock ledger running balances do not reconcile for material(s) 1", and nothing was applied (no new table or column).
-  - Not yet applied to the development database. Flyway applies it, after V2 and V3, on the next backend start. The development database holds no materials or movements.
+  - Applied to the development database on 2026-10-30.
 - `V5__users_roles_and_security_events.sql` (2026-10-25): authentication and roles.
   - It adds `app_users.role` (check `ck_app_users_role`: `SUPER_ADMIN` or `ADMIN`; existing rows become `ADMIN`, then the default is dropped) and `app_users.auth_version` (default 0).
   - It adds the index `uq_app_users_username_lower` (unique on `lower(username)`), the partial index `ix_app_users_active_super_admins`, and the table `security_events` with its check, indexes and the `trg_security_events_immutable` trigger.
@@ -763,7 +764,7 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
     - `role` had no default.
   - Verified on a database whose `app_users` held usernames that differ only in case (`Kamal` and `kamal`): V5 stopped at `uq_app_users_username_lower`, and nothing was applied (no `role` column, no `security_events`).
     - Before applying V5 anywhere with real users, check that `SELECT lower(username) FROM app_users GROUP BY 1 HAVING count(*) > 1` returns no rows.
-  - Not yet applied to the development database. Flyway applies it, after V2 to V4, on the next backend start.
+  - Applied to the development database on 2026-10-30.
 - `V6__commission_voids_and_guards.sql` (2026-10-25): commission voids and guards.
   - It widens `ck_commission_arrangements_status` to add `VOIDED`, and adds `voided_at` and `void_reason` with the checks `ck_commission_arrangements_void` and `ck_commission_arrangements_voided_confirmed`.
   - It adds the partial unique index `uq_commission_arrangements_recipient_role`, the index `ix_commission_arrangements_status`, and the trigger `trg_commission_arrangements_guard` (function `sk_guard_commission_arrangement`).
@@ -773,10 +774,19 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
   - Verified on a V5 database holding a project, a draft arrangement, a confirmed arrangement and a payment: after V6 every pre-existing arrangement and payment column was identical, and the statuses were unchanged.
   - Verified on a database with two live arrangements for the same recipient and role on one project: V6 stopped at `uq_commission_arrangements_recipient_role`, and nothing was applied (no new columns, old status check).
     - Before applying V6 where arrangements exist, check `SELECT project_id, lower(recipient_name), lower(role) FROM commission_arrangements GROUP BY 1, 2, 3 HAVING count(*) > 1`.
-  - Not yet applied to the development database. Flyway applies it after V2 to V5 on the next backend start. Nothing has ever written commission rows there.
+  - Applied to the development database on 2026-10-30.
 - `V7__reversals_corrections_and_invoice_cancel.sql` (2026-10-26): additive.
   - Write-off reversal: `receivable_write_offs.voided_at`, `void_reason`, `version` and the guard trigger.
   - Payroll corrections: `request_id` (unique, nullable for old rows), `voided_at`, `void_reason`, `version` and `trg_payroll_corrections_guard`. A wrong correction is voided and a new one recorded.
   - Supplier invoices: `cancelled_at` and `cancel_reason`. `uq_supplier_invoices_supplier_invoice_no` is now a partial unique index over non-cancelled invoices.
   - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V7, then Hibernate validation). Also verified on a V6 database holding a write-off and a supplier invoice: both rows were kept (version 0), deleting the write-off was refused, and a second live invoice with the same number was still refused.
-  - Not yet applied to the development database.
+  - Applied to the development database on 2026-10-30.
+- `V8__app_users_email.sql` (2026-10-30): an optional `app_users.email` (`VARCHAR(254)`, nullable).
+  - The check `ck_app_users_email` requires it to be trimmed, lower case and shaped like an address. The partial unique index `uq_app_users_email` makes it unique when set.
+  - It is additive only: existing users get no email.
+  - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V8, then Hibernate validation).
+  - Applied to the development database on 2026-10-30, together with V2 to V7. Flyway reports v8. The development database held no users and only the V1 reference data before that.
+- `V9__app_users_email_required.sql` (2026-10-30): makes `app_users.email` `NOT NULL` and rebuilds `uq_app_users_email` as a plain unique index (the V8 one only covered rows that had an email).
+  - It stops with a NOT NULL error, changing nothing, if any user has no email. Give those users one first.
+  - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V9).
+  - Applied to the development database on 2026-10-30. Both users had an email.

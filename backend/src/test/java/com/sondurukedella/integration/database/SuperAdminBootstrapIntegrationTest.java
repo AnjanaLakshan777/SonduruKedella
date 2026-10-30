@@ -18,8 +18,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
-// The one-time first Super Admin. Each test starts from "no Super Admin exists" (any existing ones
-// are demoted inside the test transaction) and rolls back. The passwords here are test-only.
+// First Super Admin setup. Each test demotes any existing Super Admins first (rolled back after),
+// so we start from none. Test-only passwords.
 @SpringBootTest
 @Transactional
 class SuperAdminBootstrapIntegrationTest {
@@ -46,29 +46,30 @@ class SuperAdminBootstrapIntegrationTest {
     @Test
     void withoutSettingsNothingIsCreated() {
         long before = count();
-        assertThat(provisioner.provision(new SuperAdminBootstrapProperties(null, null, null))).isEqualTo(Outcome.NOT_CONFIGURED);
-        assertThat(provisioner.provision(new SuperAdminBootstrapProperties(" ", "", null))).isEqualTo(Outcome.NOT_CONFIGURED);
+        assertThat(provisioner.provision(new SuperAdminBootstrapProperties(null, null, null, null))).isEqualTo(Outcome.NOT_CONFIGURED);
+        assertThat(provisioner.provision(new SuperAdminBootstrapProperties(" ", "", " ", null))).isEqualTo(Outcome.NOT_CONFIGURED);
         assertThat(count()).isEqualTo(before);
     }
 
     @Test
     void theFirstSuperAdminIsCreatedOnceAndNeverOverwritten() {
         String username = "Owner-" + System.nanoTime();
-        assertThat(provisioner.provision(new SuperAdminBootstrapProperties(" " + username + " ", BOOT_PASSWORD, "Owner")))
+        assertThat(provisioner.provision(new SuperAdminBootstrapProperties(" " + username + " ", BOOT_PASSWORD, " " + username + "@Example.com ", "Owner")))
                 .isEqualTo(Outcome.CREATED);
 
         AppUser created = users.findByUsername(username.toLowerCase()).orElseThrow();
         assertThat(created.getRole()).isEqualTo(UserRole.SUPER_ADMIN);
         assertThat(created.isEnabled()).isTrue();
         assertThat(created.getDisplayName()).isEqualTo("Owner");
+        assertThat(created.getEmail()).isEqualTo(username.toLowerCase() + "@example.com");
         assertThat(created.getPasswordHash()).startsWith("{bcrypt}").doesNotContain(BOOT_PASSWORD);
         assertThat(encoder.matches(BOOT_PASSWORD, created.getPasswordHash())).isTrue();
         String hash = created.getPasswordHash();
 
         // a restart with the settings still present, or changed, does nothing
-        assertThat(provisioner.provision(new SuperAdminBootstrapProperties(username, "a-different-password-9", null)))
+        assertThat(provisioner.provision(new SuperAdminBootstrapProperties(username, "a-different-password-9", "other@example.com", null)))
                 .isEqualTo(Outcome.ALREADY_EXISTS);
-        assertThat(provisioner.provision(new SuperAdminBootstrapProperties("someone-else", BOOT_PASSWORD, null)))
+        assertThat(provisioner.provision(new SuperAdminBootstrapProperties("someone-else", BOOT_PASSWORD, "someone@example.com", null)))
                 .isEqualTo(Outcome.ALREADY_EXISTS);
         assertThat(jdbc.queryForObject("SELECT password_hash FROM app_users WHERE id = ?", String.class, created.getId())).isEqualTo(hash);
         assertThat(superAdmins()).isOne();
@@ -81,20 +82,24 @@ class SuperAdminBootstrapIntegrationTest {
         AppUser existing = TestUsers.create(users, encoder, "old-root", UserRole.SUPER_ADMIN);
         existing.setEnabled(false);
         users.saveAndFlush(existing);
-        assertThat(provisioner.provision(new SuperAdminBootstrapProperties("new-root", BOOT_PASSWORD, null)))
+        assertThat(provisioner.provision(new SuperAdminBootstrapProperties("new-root", BOOT_PASSWORD, "new-root@example.com", null)))
                 .isEqualTo(Outcome.ALREADY_EXISTS);
         assertThat(users.findByUsername("new-root")).isEmpty();
     }
 
     @Test
     void halfOrInvalidSettingsStopTheStartWithoutRevealingThePassword() {
-        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("owner-1", null, null)))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("both");
-        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties(null, BOOT_PASSWORD, null)))
+        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("owner-1", null, "owner@example.com", null)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("or none");
+        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("owner-1", BOOT_PASSWORD, null, null)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("BOOTSTRAP_SUPER_ADMIN_EMAIL");
+        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("owner-1", BOOT_PASSWORD, "not-an-email", null)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("BOOTSTRAP_SUPER_ADMIN_EMAIL is not valid");
+        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties(null, BOOT_PASSWORD, "owner@example.com", null)))
                 .isInstanceOf(IllegalStateException.class).hasMessageNotContaining(BOOT_PASSWORD);
-        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("owner-1", "too-short", null)))
+        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("owner-1", "too-short", "owner@example.com", null)))
                 .isInstanceOf(IllegalStateException.class).hasMessageNotContaining("too-short");
-        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("bad name!", BOOT_PASSWORD, null)))
+        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("bad name!", BOOT_PASSWORD, "owner@example.com", null)))
                 .isInstanceOf(IllegalStateException.class).hasMessageNotContaining(BOOT_PASSWORD);
         assertThat(superAdmins()).isZero();
     }
@@ -102,8 +107,11 @@ class SuperAdminBootstrapIntegrationTest {
     @Test
     void anExistingAccountIsNeverPromotedByTheBootstrap() {
         AppUser admin = TestUsers.create(users, encoder, "taken", UserRole.ADMIN);
-        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties(admin.getUsername(), BOOT_PASSWORD, null)))
+        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties(admin.getUsername(), BOOT_PASSWORD, "fresh@example.com", null)))
                 .isInstanceOf(IllegalStateException.class);
+        // same for someone else's email
+        assertThatThrownBy(() -> provisioner.provision(new SuperAdminBootstrapProperties("fresh-root", BOOT_PASSWORD, admin.getEmail(), null)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("BOOTSTRAP_SUPER_ADMIN_EMAIL is already used");
         assertThat(users.findById(admin.getId()).orElseThrow().getRole()).isEqualTo(UserRole.ADMIN);
         assertThat(encoder.matches(TestUsers.PASSWORD, users.findById(admin.getId()).orElseThrow().getPasswordHash())).isTrue();
     }

@@ -93,7 +93,7 @@ public class ProjectRevenueService {
         return writeOffs.reverse(projectId, writeOffId, request);
     }
 
-    // the contract value comes from the project, never from the request
+    // take the contract value from the project, not the request
     public List<InstallmentResponse> reviseSchedule(long projectId, ScheduleRevisionRequest request) {
         return schedule.revise(projectId, facts(projectId).contractValue(), request);
     }

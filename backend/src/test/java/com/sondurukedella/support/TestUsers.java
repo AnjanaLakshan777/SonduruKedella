@@ -31,6 +31,7 @@ public final class TestUsers {
         AppUser user = new AppUser();
         user.setUsername(prefix + "-" + UUID.randomUUID().toString().substring(0, 8));
         user.setDisplayName("Test " + prefix);
+        user.setEmail(user.getUsername() + "@test.local");
         user.setPasswordHash(encoder.encode(PASSWORD));
         user.setRole(role);
         return repository.saveAndFlush(user);
@@ -51,8 +52,8 @@ public final class TestUsers {
         return "{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}";
     }
 
-    // every MockMvc request comes from 127.0.0.1; tests that fail sign-ins use their own address so
-    // the per-address limit isn't shared across the whole suite
+    // MockMvc always uses 127.0.0.1, so tests with failed logins use their own address and don't
+    // trip the per-address limit for everyone else
     public static RequestPostProcessor from(String address) {
         return request -> {
             request.setRemoteAddr(address);

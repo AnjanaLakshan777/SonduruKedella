@@ -40,8 +40,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// Payments settle a confirmed commission; they never add a second commission cost. Paid and
-// outstanding always come from the stored payments, never from anything the client sends.
+// payments only settle a confirmed commission, they're never an extra cost
 @Service
 @RequiredArgsConstructor
 public class CommissionPaymentService {
@@ -55,9 +54,8 @@ public class CommissionPaymentService {
     private final ActivityService activityService;
     private final Clock clock;
 
-    // The arrangement row is locked first, so concurrent payments queue: the second one sees the first
-    // in the balance and can't overpay. The same lock lets a resent request find the payment the first
-    // one saved, and keeps a payment and a void of the commission from crossing.
+    // lock the arrangement first: concurrent payments queue up (no overpaying) and a resend
+    // finds the payment the first request saved
     @Transactional
     public PaymentResult record(long commissionId, CommissionPaymentRequest request) {
         CommissionArrangement arrangement = arrangements.findByIdForUpdate(commissionId).orElseThrow(CommissionService::notFound);
@@ -91,7 +89,7 @@ public class CommissionPaymentService {
         return new PaymentResult(mapper.toResponse(saved, arrangement, method), true);
     }
 
-    // The only correction a payment allows. The row stays, with when and why, and stops counting.
+    // the row stays, it just stops counting
     @Transactional
     public CommissionPaymentResponse voidPayment(long commissionId, long paymentId, CommissionPaymentVoidRequest request) {
         CommissionArrangement arrangement = arrangements.findByIdForUpdate(commissionId).orElseThrow(CommissionService::notFound);
@@ -115,7 +113,7 @@ public class CommissionPaymentService {
         return forArrangement(arrangements.findById(commissionId).orElseThrow(CommissionService::notFound));
     }
 
-    // voided payments included, oldest first, so the history reads in order
+    // includes voided ones so the history is complete
     @Transactional(readOnly = true)
     public List<CommissionPaymentResponse> forArrangement(CommissionArrangement arrangement) {
         List<CommissionPayment> payments = repository.findByArrangementIdOrderByPaymentDateAscIdAsc(arrangement.getId());
@@ -123,7 +121,6 @@ public class CommissionPaymentService {
         return payments.stream().map(p -> mapper.toResponse(p, arrangement, names.get(p.getPaymentMethodId()))).toList();
     }
 
-    // The Payments tab: newest first.
     @Transactional(readOnly = true)
     public PageResponse<CommissionPaymentResponse> search(CommissionPaymentFilter filter, Pageable pageable) {
         if (pageable.getPageSize() > MAX_PAGE_SIZE) {
@@ -168,8 +165,7 @@ public class CommissionPaymentService {
         };
     }
 
-    // A resent submission gets the first payment back. The same id with different details is a client
-    // bug, and quietly returning the old payment would hide it.
+    // same requestId but different details = client bug, don't hide it
     private CommissionPaymentResponse replay(CommissionPayment previous, CommissionArrangement arrangement, CommissionPaymentRequest request) {
         boolean same = previous.getArrangementId().equals(arrangement.getId())
                 && previous.getAmount().compareTo(request.amount()) == 0
@@ -189,7 +185,7 @@ public class CommissionPaymentService {
         return paymentMethods.findNames(List.of(id)).get(id);
     }
 
-    // created is false when an earlier payment with the same requestId was returned instead
+    // created=false when the requestId was already used
     public record PaymentResult(CommissionPaymentResponse payment, boolean created) {
     }
 }

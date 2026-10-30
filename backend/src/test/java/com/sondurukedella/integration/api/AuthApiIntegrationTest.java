@@ -45,8 +45,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
-// Sign-in, sign-out, sessions and CSRF through the real security filter chain and real app_users
-// rows (no mock users). Each test rolls back.
+// Login, logout, sessions and CSRF through the real filter chain with real users, no mocks. Rolls back.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -54,7 +53,7 @@ class AuthApiIntegrationTest {
 
     private static final String LOGIN = "/api/v1/auth/login";
     private static final String ME = "/api/v1/auth/me";
-    private static final String GENERIC = "Invalid username or password.";
+    private static final String GENERIC = "Invalid username, email or password.";
 
     @Autowired
     private MockMvc mockMvc;
@@ -119,8 +118,8 @@ class AuthApiIntegrationTest {
     @Test
     void anAccountStoredInMixedCaseBeforeV5CanStillSignIn() throws Exception {
         String legacy = "Legacy-Owner-" + System.nanoTime();
-        jdbc.update("INSERT INTO app_users (username, display_name, password_hash, role) VALUES (?, 'Legacy', ?, 'ADMIN')",
-                legacy, encoder.encode(PASSWORD));
+        jdbc.update("INSERT INTO app_users (username, display_name, email, password_hash, role) VALUES (?, 'Legacy', lower(?) || '@test.local', ?, 'ADMIN')",
+                legacy, legacy, encoder.encode(PASSWORD));
         attempt(legacy.toLowerCase(), PASSWORD, randomAddress()).andExpect(status().isOk());
         attempt(legacy, PASSWORD, randomAddress()).andExpect(status().isOk());
     }

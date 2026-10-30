@@ -42,8 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-// Supplier invoices and payables. Never deleted: limited edits, cancellation of PROJECT invoices without
-// payments, a PDF attachment; payments are voided, not deleted.
+// No deletes. Limited edits, cancel for unpaid project invoices, payments get voided.
 @RestController
 @RequestMapping("/api/v1/supplier-invoices")
 @RequiredArgsConstructor
@@ -63,7 +62,6 @@ public class SupplierInvoiceController {
         return service.search(new SupplierInvoiceFilter(supplierId, projectId, allocation, status, from, to), pageable);
     }
 
-    // the Payables KPIs, for the same filters
     @GetMapping("/summary")
     public SupplierInvoiceSummary summary(
             @RequestParam(required = false) Long supplierId,
@@ -97,13 +95,13 @@ public class SupplierInvoiceController {
         return service.cancel(id, request);
     }
 
-    // multipart/form-data with the PDF in a part called "file"; replaces any earlier attachment
+    // PDF in a multipart part called "file"; replaces the old one
     @PutMapping(path = "/{id}/attachment", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public SupplierInvoiceDetail attach(@PathVariable long id, @RequestPart("file") MultipartFile file) {
         return service.attach(id, file);
     }
 
-    // always an attachment, never inline, like agreements
+    // always a download, never shown inline (same as agreements)
     @GetMapping("/{id}/attachment/download")
     public ResponseEntity<InputStreamResource> attachment(@PathVariable long id) {
         SupplierInvoiceService.AttachmentDownload download = service.attachment(id);
@@ -120,7 +118,7 @@ public class SupplierInvoiceController {
         return service.listPayments(id);
     }
 
-    // 201 for a new payment, 200 when the same requestId was already recorded
+    // 201 = new, 200 = same requestId sent again
     @PostMapping("/{id}/payments")
     public ResponseEntity<SupplierPaymentResponse> pay(@PathVariable long id, @Valid @RequestBody SupplierPaymentRequest request) {
         PaymentResult result = service.recordPayment(id, request);

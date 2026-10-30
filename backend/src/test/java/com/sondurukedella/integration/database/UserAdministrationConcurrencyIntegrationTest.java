@@ -23,9 +23,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-// Not @Transactional: two Super Admins really deactivating each other at the same moment. The locks
-// in UserAdministrationService must let exactly one win, so an active Super Admin always remains.
-// Users are named sectest-* and deleted afterwards. Throwaway DB only.
+// Not @Transactional on purpose - two Super Admins deactivate each other at the same time and only
+// one should win, so there's always an active Super Admin left. sectest-* users are cleaned up after.
+// Throwaway DB only.
 @SpringBootTest
 class UserAdministrationConcurrencyIntegrationTest {
 

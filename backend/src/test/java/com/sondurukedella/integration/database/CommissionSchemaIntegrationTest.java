@@ -11,8 +11,8 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-// What V1 + V6 enforce on commissions in the database itself, whatever the application does.
-// Each test rolls back; one failing statement per test, because PostgreSQL aborts the transaction.
+// Checks the db constraints/triggers for commissions directly, bypassing the app. One failing
+// statement per test since postgres aborts the transaction after an error.
 @SpringBootTest
 @Transactional
 class CommissionSchemaIntegrationTest {

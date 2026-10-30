@@ -30,8 +30,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-// The payment plan: the first schedule (with the project), revising its unbilled rows, and variations.
-// Billing, receipts and write-offs have their own services.
+// The payment plan: first schedule, revising unbilled rows, and variations. Billing, receipts and
+// write-offs are in their own services.
 @Service
 @RequiredArgsConstructor
 public class InstallmentScheduleService {
@@ -66,8 +66,8 @@ public class InstallmentScheduleService {
         return repository.saveAllAndFlush(installments);
     }
 
-    // DATABASE.md: billed installments are locked; the scheduled rows must still add up to the contract
-    // value. Each row's @Version catches a billing that happens while the plan is being revised (409).
+    // Billed rows can't change and the scheduled rows still have to match the contract value.
+    // @Version on each row gives a 409 if someone bills one while we're revising.
     @Transactional
     public List<InstallmentResponse> revise(long projectId, BigDecimal contractValue, ScheduleRevisionRequest request) {
         ScheduleRules.validateInitialSchedule(contractValue, request.installments().stream().map(ScheduleRevisionRequest.Row::installment).toList());

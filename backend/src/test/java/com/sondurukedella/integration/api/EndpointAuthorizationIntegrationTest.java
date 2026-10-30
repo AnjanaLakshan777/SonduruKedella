@@ -32,17 +32,16 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
-// Every controller endpoint that exists, read from Spring MVC itself (so a new endpoint is checked
-// without touching this test), called anonymously, as an Admin and as a Super Admin through real
-// sessions. Path variables get 999999999 (or an unparseable value for dates), so nothing is found
-// and nothing changes; only the security answer matters here. Rolls back.
+// Hits every endpoint Spring MVC knows about (so new ones get checked automatically) as anonymous,
+// Admin and Super Admin. Path ids are 999999999 so nothing is found or changed - we only care about
+// the security response. Rolls back.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
 class EndpointAuthorizationIntegrationTest {
 
     private static final Set<String> PUBLIC = Set.of("POST /api/v1/auth/login", "GET /api/v1/auth/csrf");
-    // Super Admin only although outside /api/v1/users
+    // Super Admin only even though it's not under /api/v1/users
     private static final Set<String> SUPER_ADMIN_ONLY = Set.of("PUT /api/v1/settings/commission-policy");
 
     @Autowired

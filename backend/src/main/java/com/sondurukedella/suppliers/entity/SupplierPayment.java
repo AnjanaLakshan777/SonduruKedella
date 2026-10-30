@@ -16,8 +16,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// A payment settling a supplier invoice - it changes the payable, never a cost.
-// trg_supplier_payments_guard (V1) refuses deletes and any change except voiding.
+// only voidable, never edited or deleted (V1 trigger)
 @Getter
 @Entity
 @Table(name = "supplier_payments")

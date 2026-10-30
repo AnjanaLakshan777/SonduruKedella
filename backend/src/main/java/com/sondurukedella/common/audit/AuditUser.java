@@ -1,7 +1,6 @@
 package com.sondurukedella.common.audit;
 
-// Implemented by the signed-in user's principal, so audit code can read the user id without
-// depending on the security module.
+// lets common.audit get the user id without depending on the security package
 public interface AuditUser {
 
     long userId();

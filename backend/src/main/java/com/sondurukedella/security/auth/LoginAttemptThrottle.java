@@ -7,19 +7,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-// Slows down password guessing. Counts failed sign-ins (and wrong "current password" entries) per
-// typed username and per client address in fixed windows; at the limit, further attempts are
-// refused until the window ends, whether or not the password is right.
-//
-// Keyed by the typed username, not the account, so unknown usernames are throttled the same way and
-// the answer says nothing about which accounts exist. In memory: fine for this single-instance
-// app, but it resets on restart and isn't shared between instances.
+// Simple brute-force protection: after too many failed logins for a username (or from one IP)
+// we refuse until the window runs out, even with the right password.
+// Keyed by whatever username was typed, so it doesn't leak which accounts exist.
+// In-memory only - fine for one instance, resets on restart.
 @Component
 @EnableConfigurationProperties(LoginThrottleProperties.class)
 public class LoginAttemptThrottle {
 
-    // a bound on memory if someone sprays random usernames; past it, new keys aren't tracked, but the
-    // sprayer's own address key already is
+    // cap so someone spraying random usernames can't eat memory (their IP is still tracked)
     static final int MAX_TRACKED_KEYS = 10_000;
 
     private record Window(Instant start, int failures) {
@@ -34,7 +30,7 @@ public class LoginAttemptThrottle {
         this.clock = clock;
     }
 
-    // how long until another attempt is allowed; zero when it is allowed now
+    // zero = allowed now
     public Duration blockedFor(String username, String address) {
         Instant now = clock.instant();
         Duration byUsername = blockedFor(usernameKey(username), limits.maxFailuresPerUsername(), now);
@@ -51,7 +47,7 @@ public class LoginAttemptThrottle {
         count(addressKey(address), now);
     }
 
-    // a correct password clears the username's count; the address count stays
+    // only resets the username count, not the IP
     public void recordSuccess(String username) {
         windows.remove(usernameKey(username));
     }
