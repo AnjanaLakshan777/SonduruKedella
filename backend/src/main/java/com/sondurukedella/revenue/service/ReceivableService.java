@@ -71,6 +71,16 @@ public class ReceivableService {
         return receipts(projectId, ids);
     }
 
+    // every write-off of the project, reversed ones included (flagged)
+    @Transactional(readOnly = true)
+    public List<WriteOffResponse> writeOffsForProject(long projectId) {
+        List<Long> ids = installments.findByProjectIdOrderByDueDateAscIdAsc(projectId).stream().map(Installment::getId).toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return writeOffs.findByInstallmentIdInOrderByWriteOffDateAscIdAsc(ids).stream().map(w -> mapper.toResponse(w, projectId)).toList();
+    }
+
     // all billed installments with their numbers - the receivables report uses this so the math matches
     @Transactional(readOnly = true)
     public List<InstallmentReceivableResponse> billedReceivables() {

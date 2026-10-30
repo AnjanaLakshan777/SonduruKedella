@@ -94,6 +94,11 @@ public class ExpenseController {
         return service.update(id, request);
     }
 
+    @GetMapping("/payments")
+    public List<ExpensePaymentResponse> allPayments() {
+        return paymentService.listAll();
+    }
+
     @GetMapping("/{id}/payments")
     public List<ExpensePaymentResponse> payments(@PathVariable long id) {
         return paymentService.list(id);

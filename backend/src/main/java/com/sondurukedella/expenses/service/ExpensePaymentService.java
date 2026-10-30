@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -97,6 +98,15 @@ public class ExpensePaymentService {
             throw expenseNotFound();
         }
         List<ExpensePayment> payments = repository.findByExpenseIdOrderByPaymentDateAscIdAsc(expenseId);
+        Map<Long, String> names = paymentMethods.findNames(
+                payments.stream().map(ExpensePayment::getPaymentMethodId).collect(Collectors.toSet()));
+        return payments.stream().map(p -> mapper.toResponse(p, names.get(p.getPaymentMethodId()))).toList();
+    }
+
+    // every payment of every expense, voided ones included (flagged), so the frontend doesn't need one call per expense
+    @Transactional(readOnly = true)
+    public List<ExpensePaymentResponse> listAll() {
+        List<ExpensePayment> payments = repository.findAll(Sort.by("paymentDate", "id"));
         Map<Long, String> names = paymentMethods.findNames(
                 payments.stream().map(ExpensePayment::getPaymentMethodId).collect(Collectors.toSet()));
         return payments.stream().map(p -> mapper.toResponse(p, names.get(p.getPaymentMethodId()))).toList();

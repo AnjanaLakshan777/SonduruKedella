@@ -1197,3 +1197,36 @@ For each completed task, record the date, files or migrations changed, verificat
   - `TestUsers` and the SQL fixtures now set an email.
   - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 683 tests, 0 failures, 0 errors, 0 skipped.
 - `frontend/tsconfig.scripts.json` (referenced from `tsconfig.json`) type-checks `scripts/` with the Node types, so the editor no longer reports `process`, `Buffer` and `node:crypto` as unknown.
+
+### 2026-10-30: Frontend connected to the backend, phase 1 (sign-in and reading)
+- Approach (owner's choice): the React UI and its zustand store keep their shape. The store is filled from the API instead of `data/seed.ts`, and `lib/finance.ts` `derive()` keeps working the figures out as before. Later phases turn the store's actions into API calls, one module at a time.
+- Frontend:
+  - `src/lib/api.ts`: fetch wrapper. It sends `credentials: 'include'` on every call and adds `X-XSRF-TOKEN` (from the `XSRF-TOKEN` cookie) on writes. Problem-details errors become `ApiError` (message, status, field errors). A 401 sends the user back to sign in. It also has paging helpers. The base URL is `VITE_API_BASE_URL` (default `http://localhost:8080/api/v1`).
+  - `src/store/auth.ts`: session check (`/auth/me`), sign-in with username or email, and sign-out.
+  - `src/pages/login.tsx`: the sign-in page, built from the existing card, field and button components.
+  - `src/components/app/session-gate.tsx`: shows the sign-in page, then a loading screen, then the app. An error screen offers a retry.
+  - `src/data/api-load.ts`: `loadAll()` reads every module and maps it onto `DataState`.
+    - Voided payments, receipts and advances, reversed write-offs, cancelled supplier invoices and voided commissions are left out.
+    - Stock movements are kept in posting (`id`) order, the backend's FIFO order.
+    - Attendance and overtime are read in 90-day windows.
+  - The store starts empty and gets `load()`. `reset()` (the demo data) stays for the unit tests only.
+  - The topbar shows the signed-in user and role. "Reset sample data" became "Reload data", and "Sign out" works.
+  - `lib/dates.ts` `TODAY` is now today's date in Colombo (it was fixed at 2026-10-22).
+- Backend: read-only list endpoints for the loader (both roles):
+  - `GET /api/v1/expenses/payments`;
+  - `GET /api/v1/projects/{id}/write-offs`;
+  - `GET /api/v1/payroll/payments?from&to`;
+  - `GET /api/v1/payroll/adjustments?from&to` (new `PayrollAdjustmentResponse`).
+  - Voided and reversed rows are included, flagged.
+- Verified against the development database. The real `login` + `loadAll()` + `derive()` ran under vite-node with the seeded data, and every row count matched the database.
+  - The frontend's dashboard figures equal `/api/v1/reports/dashboard`: revenue 44,119,000, received 35,313,000, project costs 24,164,400, profit 19,954,600.
+  - The frontend's receivables include other income; the backend reports that 18,000 separately.
+  - Not yet checked by hand in a browser.
+- Limits of phase 1:
+  - **Writes are still local only.** A change made in the UI shows until the next reload or sign-in, then disappears. Phase 2 connects the actions.
+  - Loading takes about 4 s for the demo data: around 90 requests, including one per project and one per supplier invoice. Bulk endpoints for those can come later if it grows.
+  - The dashboard's chart months and the "Financial year 2026/27" label are still written into `dashboard.tsx`.
+  - Materials get `reorderLevel: 0`, so the low-stock UI stays quiet until it is removed (owner decision).
+- Seed script fix: a re-run caps an issue at the stock on hand on that date, not at today's stock. An earlier re-run had posted one backdated issue (movement 61, 800 kg steel dated 2026-09-14) against stock received on 2026-10-13. It is valid under the backend's posting-order FIFO and is left as it is.
+- Tests: the new list endpoints are covered in `PayrollApiIntegrationTest` (payments, adjustments), `ExpenseApiIntegrationTest` and `ScheduleAndWriteOffIntegrationTest`. Frontend: `tsc -b` is clean, and the 19 Vitest tests pass.
+  - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 684 tests, 0 failures, 0 errors, 0 skipped.

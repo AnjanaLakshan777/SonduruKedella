@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { useMemo } from 'react'
 import { createSeed } from '@/data/seed'
+import { emptyState, loadAll } from '@/data/api-load'
 import type {
   Advance, AgreementDoc, Attendance, Client, ClientPayment, CommissionArrangement, CommissionPayment, DataState, DelayTerms, Employee,
   Expense, ExpensePayment, Installment, Material, OtherIncome, OtherIncomeReceipt, Overtime, PayrollAdjustment, PayrollPayment, Project,
@@ -49,17 +50,22 @@ interface Actions {
   recordCommissionPayment: (p: New<CommissionPayment>) => void
   updateSettings: (patch: Partial<Settings>) => void
   log: (projectId: string | undefined, kind: ActivityEntry['kind'], text: string) => void
+  // fills everything from the backend; loaded stays false until the first load finishes
+  load: () => Promise<void>
+  // the demo data, for the unit tests
   reset: () => void
 }
 
-export type Store = DataState & Actions
+export type Store = DataState & Actions & { loaded: boolean }
 
 export const useStore = create<Store>()((set, get) => {
   const log = (projectId: string | undefined, kind: ActivityEntry['kind'], text: string) =>
     set((s) => ({ activity: [...s.activity, { id: uid('a'), date: TODAY, projectId, kind, text }] }))
   return {
-    ...createSeed(),
+    ...emptyState(),
+    loaded: false,
     log,
+    load: async () => set({ ...(await loadAll()), loaded: true }),
     addClient: (c) => {
       const id = uid('c')
       set((s) => ({ clients: [...s.clients, { ...c, id }] }))

@@ -122,8 +122,12 @@ class ScheduleAndWriteOffIntegrationTest {
         String summaryAfter = mockMvc.perform(get("/api/v1/reports/financial-summary?from=2026-10-01&to=2026-10-31")).andReturn().getResponse().getContentAsString();
         assertThat(((Number) JsonPath.read(summaryBefore, "$.revenue.writtenOff")).doubleValue()
                 - ((Number) JsonPath.read(summaryAfter, "$.revenue.writtenOff")).doubleValue()).isEqualTo(100000.0);
-        // the row stays
+        // the row stays, and the project's write-off list shows it as reversed
         assertThat(jdbc.queryForObject("SELECT count(*) FROM receivable_write_offs WHERE id = ?", Long.class, writeOff)).isOne();
+        mockMvc.perform(get("/api/v1/projects/" + project + "/write-offs")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(writeOff)).andExpect(jsonPath("$[0].voided").value(true));
+        mockMvc.perform(get("/api/v1/projects/999999999/write-offs")).andExpect(status().isNotFound());
         reverse(999_999_999L, "x", 0).andExpect(status().isNotFound());
     }
 

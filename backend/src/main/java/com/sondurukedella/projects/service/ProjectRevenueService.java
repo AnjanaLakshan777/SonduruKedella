@@ -73,6 +73,11 @@ public class ProjectRevenueService {
         return receivables.receiptsForProject(projectId);
     }
 
+    public List<WriteOffResponse> writeOffs(long projectId) {
+        requireExists(projectId);
+        return receivables.writeOffsForProject(projectId);
+    }
+
     public ReceiptResponse receipt(long projectId, long receiptId) {
         requireExists(projectId);
         return receipts.get(projectId, receiptId);

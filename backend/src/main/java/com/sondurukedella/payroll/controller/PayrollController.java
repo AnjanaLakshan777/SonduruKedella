@@ -5,6 +5,7 @@ import com.sondurukedella.payroll.dto.EmployeePayrollHistory;
 import com.sondurukedella.payroll.dto.PayrollAdjustmentRequest;
 import com.sondurukedella.payroll.dto.PayrollCorrectionRequest;
 import com.sondurukedella.payroll.dto.PayrollCorrectionResponse;
+import com.sondurukedella.payroll.dto.PayrollAdjustmentResponse;
 import com.sondurukedella.payroll.dto.PayrollLineDetail;
 import com.sondurukedella.payroll.dto.PayrollPaymentRequest;
 import com.sondurukedella.payroll.dto.PayrollPaymentResponse;
@@ -110,6 +111,19 @@ public class PayrollController {
             @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate to) {
         return payroll.history(employeeId, from, to);
+    }
+
+    // all payments / adjustments for weeks starting between from and to (both optional, Mondays not required)
+    @GetMapping("/payments")
+    public List<PayrollPaymentResponse> payments(@RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate to) {
+        return payroll.payments(from, to);
+    }
+
+    @GetMapping("/adjustments")
+    public List<PayrollAdjustmentResponse> adjustments(@RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate to) {
+        return payroll.adjustments(from, to);
     }
 
     @GetMapping("/projects/{projectId}/labour")

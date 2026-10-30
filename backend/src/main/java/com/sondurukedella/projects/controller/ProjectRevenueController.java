@@ -75,6 +75,11 @@ public class ProjectRevenueController {
         return service.receipts(projectId);
     }
 
+    @GetMapping("/write-offs")
+    public List<WriteOffResponse> writeOffs(@PathVariable long projectId) {
+        return service.writeOffs(projectId);
+    }
+
     @GetMapping("/receipts/{receiptId}")
     public ReceiptResponse receipt(@PathVariable long projectId, @PathVariable long receiptId) {
         return service.receipt(projectId, receiptId);

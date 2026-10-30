@@ -3,6 +3,8 @@ package com.sondurukedella.integration.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -225,7 +227,25 @@ class PayrollApiIntegrationTest {
                 .andExpect(jsonPath("$.line.remaining").value(9000.0));
         mockMvc.perform(post(URL + "/weeks/" + W1 + "/employees/" + kamal + "/payments/" + payment + "/void").with(csrf())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Again\",\"version\":1}")).andExpect(status().isConflict());
+        // the flat list the frontend loads, voided ones flagged; outside the range it's not there
+        mockMvc.perform(get(URL + "/payments").param("from", W1.toString()).param("to", W1.toString())).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == %d)].voided".formatted(payment)).value(hasItem(true)))
+                .andExpect(jsonPath("$[?(@.id == %d)].employeeId".formatted(payment)).value(hasItem((int) kamal)))
+                .andExpect(jsonPath("$[?(@.id == %d)].weekStart".formatted(payment)).value(hasItem(W1.toString())));
+        mockMvc.perform(get(URL + "/payments").param("from", W1.plusWeeks(1).toString()))
+                .andExpect(jsonPath("$[?(@.id == %d)]".formatted(payment)).isEmpty());
+        // last: the database refusal aborts the test transaction
         mark(W1, kamal, "ABSENT", null).andExpect(status().isConflict());
+    }
+
+    @Test
+    void adjustmentsAreListedForTheFrontend() throws Exception {
+        threeDays(kamal, W1);
+        adjust(W1, kamal, "{\"otherDeduction\":500,\"otherNote\":\"Broken trowel\"}").andExpect(status().isOk());
+        mockMvc.perform(get(URL + "/adjustments").param("from", W1.toString()).param("to", W1.toString())).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.employeeId == %d)].otherDeduction".formatted(kamal)).value(hasItem(500.0)))
+                .andExpect(jsonPath("$[?(@.employeeId == %d)].otherNote".formatted(kamal)).value(hasItem("Broken trowel")))
+                .andExpect(jsonPath("$[?(@.employeeId == %d)].advanceDeduction".formatted(kamal)).value(hasItem(nullValue())));
     }
 
     @Test

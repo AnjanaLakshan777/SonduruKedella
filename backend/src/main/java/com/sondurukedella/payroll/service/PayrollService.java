@@ -15,6 +15,7 @@ import com.sondurukedella.payroll.dto.PayrollLineDetail;
 import com.sondurukedella.payroll.dto.PayrollLineResponse;
 import com.sondurukedella.payroll.dto.PayrollLineStatus;
 import com.sondurukedella.payroll.dto.PayrollPaymentRequest;
+import com.sondurukedella.payroll.dto.PayrollAdjustmentResponse;
 import com.sondurukedella.payroll.dto.PayrollPaymentResponse;
 import com.sondurukedella.payroll.dto.PayrollWeekResponse;
 import com.sondurukedella.payroll.dto.PayrollWeekSummary;
@@ -132,6 +133,39 @@ public class PayrollService {
         BigDecimal outstanding = ledger.balances(List.of(employeeId), ledger.today()).getOrDefault(employeeId, List.of()).stream()
                 .map(PayrollLedger.AdvanceBalance::outstanding).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new EmployeePayrollHistory(employeeId, employee.name(), Money.amount(outstanding), weeks);
+    }
+
+    // Every payment for weeks starting in the range (both optional), voided ones included (flagged).
+    // The frontend loads these in one go instead of one call per worker-week.
+    @Transactional(readOnly = true)
+    public List<PayrollPaymentResponse> payments(LocalDate from, LocalDate to) {
+        Map<Long, PayrollLine> byId = lines.findByWeekStartBetween(orMin(from), orMax(to)).stream()
+                .collect(Collectors.toMap(PayrollLine::getId, Function.identity()));
+        if (byId.isEmpty()) {
+            return List.of();
+        }
+        List<PayrollPayment> list = payments.findByPayrollLineIdInOrderByPaymentDateAscIdAsc(byId.keySet());
+        Map<Long, String> names = paymentMethods.findNames(list.stream().map(PayrollPayment::getPaymentMethodId).collect(Collectors.toSet()));
+        return list.stream().map(p -> {
+            PayrollLine line = byId.get(p.getPayrollLineId());
+            return mapper.toResponse(p, line.getEmployeeId(), line.getWeekStart(), names.get(p.getPaymentMethodId()));
+        }).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<PayrollAdjustmentResponse> adjustments(LocalDate from, LocalDate to) {
+        return adjustments.findByWeekStartBetweenOrderByWeekStartAscIdAsc(orMin(from), orMax(to)).stream()
+                .map(a -> new PayrollAdjustmentResponse(a.getId(), a.getEmployeeId(), a.getWeekStart(), a.getAdvanceDeduction(),
+                        a.getOtherDeduction(), a.getOtherNote(), a.getVersion()))
+                .toList();
+    }
+
+    private static LocalDate orMin(LocalDate date) {
+        return date != null ? date : LocalDate.of(2000, 1, 1);
+    }
+
+    private static LocalDate orMax(LocalDate date) {
+        return date != null ? date : LocalDate.of(2999, 12, 31);
     }
 
     // DATABASE.md "Project costs": frozen weeks from their split plus corrections; open weeks priced live.

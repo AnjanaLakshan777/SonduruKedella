@@ -196,9 +196,13 @@ async function main() {
     if (mv.type === 'Issued' && !isPosted(mv.materialId, mv.date, mv.reference)) {
       steps.push({
         date: mv.date, order: 1, run: async () => {
-          // the demo issues more than it bought in a few places and the backend won't go negative
+          // The demo issues more than it bought in a few places and the backend won't go negative.
+          // Cap at what was there on that date, otherwise a re-run would take stock bought later.
           const m = await get(`/api/v1/inventory/materials/${materialIds.get(mv.materialId)}`)
-          const quantity = Math.min(-mv.qty, m.quantityOnHand)
+          const history = await get(`/api/v1/inventory/materials/${m.id}/movements?size=100`)
+          const onTheDay = history.content.filter((h: { date: string }) => h.date <= mv.date)
+            .reduce((t: number, h: { quantityChange: number }) => t + h.quantityChange, 0)
+          const quantity = Math.min(-mv.qty, m.quantityOnHand, onTheDay)
           if (quantity < -mv.qty) console.log(`  ${mv.reference}: only ${quantity} of ${-mv.qty} ${m.unit} ${m.name} in stock, issuing that`)
           if (quantity > 0) await post('/api/v1/inventory/issues', { requestId: randomUUID(), materialId: m.id, projectId: project(mv.projectId), date: mv.date, quantity, reference: mv.reference })
         },

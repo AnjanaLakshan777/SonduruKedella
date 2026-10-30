@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -273,6 +274,10 @@ class ExpenseApiIntegrationTest {
 
         expect(id, "UNPAID", 0, 50000);
         mockMvc.perform(get(URL + "/" + id)).andExpect(jsonPath("$.payments[0].voidReason").value("Paid to the wrong supplier"));
+        // the all-payments list (what the frontend loads) has it too, flagged
+        mockMvc.perform(get(URL + "/payments")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == %d)].voided".formatted(paymentId)).value(hasItem(true)))
+                .andExpect(jsonPath("$[?(@.id == %d)].expenseId".formatted(paymentId)).value(hasItem((int) id)));
         // the V1 trigger keeps the row from being deleted, whatever the API does
         assertThatThrownBy(() -> jdbc.update("DELETE FROM expense_payments WHERE id = ?", paymentId))
                 .isInstanceOf(org.springframework.dao.DataAccessException.class);

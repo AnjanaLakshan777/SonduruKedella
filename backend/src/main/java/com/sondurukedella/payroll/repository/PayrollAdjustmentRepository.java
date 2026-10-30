@@ -11,4 +11,6 @@ public interface PayrollAdjustmentRepository extends JpaRepository<PayrollAdjust
     Optional<PayrollAdjustment> findByEmployeeIdAndWeekStart(Long employeeId, LocalDate weekStart);
 
     List<PayrollAdjustment> findByWeekStart(LocalDate weekStart);
+
+    List<PayrollAdjustment> findByWeekStartBetweenOrderByWeekStartAscIdAsc(LocalDate from, LocalDate to);
 }

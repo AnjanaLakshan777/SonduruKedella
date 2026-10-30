@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useData, useStore } from '@/store/store'
+import { useAuth } from '@/store/auth'
+import { emptyState } from '@/data/api-load'
 import { formatDate, formatLongToday } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { useTheme } from './theme'
@@ -34,7 +36,10 @@ function useSearch(q: string) {
 
 export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: () => void }) {
   const d = useData()
-  const reset = useStore((s) => s.reset)
+  const load = useStore((s) => s.load)
+  const { user, logout } = useAuth()
+  const initials = (user?.displayName ?? '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
+  const roleLabel = user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const [q, setQ] = useState('')
@@ -146,22 +151,22 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" className="hover:bg-accent focus-visible:ring-ring/50 flex items-center gap-2 rounded-md p-0.5 pr-1.5 text-left outline-none focus-visible:ring-[3px]" aria-label="Account menu">
-              <span className="bg-primary-soft text-primary-soft-foreground grid size-8 place-items-center rounded-full text-xs font-semibold">AS</span>
+              <span className="bg-primary-soft text-primary-soft-foreground grid size-8 place-items-center rounded-full text-xs font-semibold">{initials}</span>
               <span className="hidden lg:grid">
-                <span className="text-[13px] leading-4 font-medium">{d.s.settings.company.owner}</span>
-                <span className="text-muted-foreground text-xs leading-4">Owner</span>
+                <span className="text-[13px] leading-4 font-medium">{user?.displayName}</span>
+                <span className="text-muted-foreground text-xs leading-4">{roleLabel}</span>
               </span>
               <ChevronDown className="text-muted-foreground size-3.5" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="grid"><span>{d.s.settings.company.owner}</span><span className="text-muted-foreground text-xs font-normal">{d.s.settings.company.email}</span></DropdownMenuLabel>
+            <DropdownMenuLabel className="grid"><span>{user?.displayName}</span><span className="text-muted-foreground text-xs font-normal">{user?.email}</span></DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}{theme === 'dark' ? 'Light theme' : 'Dark theme'}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => navigate('/settings')}>Company settings</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => { reset(); toast.success('Sample data restored', { description: 'All changes made in this session were cleared.' }) }}><RotateCcw />Reset sample data</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => toast('Sign-in is not connected yet', { description: 'Authentication comes with the backend.' })}>Sign out</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { load().then(() => toast.success('Data reloaded')).catch((e) => toast.error('Could not reload', { description: e.message })) }}><RotateCcw />Reload data</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { logout().finally(() => useStore.setState({ ...emptyState(), loaded: false })) }}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

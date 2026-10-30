@@ -1,5 +1,6 @@
 /** Dates are ISO strings (YYYY-MM-DD) handled in UTC so arithmetic never drifts with the viewer's time zone. */
-export const TODAY = '2026-10-22'
+// today in Colombo, same as the backend's clock (en-CA formats as YYYY-MM-DD)
+export const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo' }).format(new Date())
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
