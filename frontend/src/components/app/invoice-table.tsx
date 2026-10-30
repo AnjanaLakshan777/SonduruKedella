@@ -1,21 +1,24 @@
 import { Fragment, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronRight, HandCoins, Paperclip } from 'lucide-react'
+import { Ban, ChevronDown, ChevronRight, HandCoins, Paperclip } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useStore } from '@/store/store'
 import { sum, type InvoiceView } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
-import { formatQty } from '@/lib/format'
+import { formatLKR, formatQty } from '@/lib/format'
 import { Money } from './money'
 import { StatusBadge } from './status-badge'
 import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from './data-table'
 import { PaymentDialog } from './payment-dialog'
+import { VoidDialog } from './void-dialog'
 
 export function InvoiceTable({ rows, showSupplier = true, pageSize = 12 }: { rows: InvoiceView[]; showSupplier?: boolean; pageSize?: number }) {
   const navigate = useNavigate()
   const recordSupplierPayment = useStore((s) => s.recordSupplierPayment)
+  const { voidSupplierPayment, cancelSupplierInvoice } = useStore()
+  const [undoing, setUndoing] = useState<{ kind: 'payment' | 'invoice'; invoiceId: string; id: string; label: string }>()
   const [payFor, setPayFor] = useState<InvoiceView | undefined>()
   const [openRow, setOpenRow] = useState<string | null>(null)
   const { sorted, sort, toggle } = useSort(rows, { key: 'due', dir: 'desc' }, { date: (v) => v.invoice.date, due: (v) => v.invoice.dueDate, total: (v) => v.total, remaining: (v) => v.remaining, supplier: (v) => v.supplier.name })
@@ -62,8 +65,9 @@ export function InvoiceTable({ rows, showSupplier = true, pageSize = 12 }: { row
                         {v.invoice.lines.map((l) => (
                           <div key={l.id} className="flex flex-wrap justify-between gap-3"><span>{l.description} — {formatQty(l.qty, l.unit)} × <Money value={l.unitPrice} decimals={2} /></span><Money value={l.qty * l.unitPrice} className="font-medium" /></div>
                         ))}
-                        {v.payments.map((p) => <div key={p.id} className="text-muted-foreground flex justify-between gap-3 text-xs"><span>Paid {formatDate(p.date)} · {p.method}{p.reference ? ` · ${p.reference}` : ''}</span><Money value={-p.amount} tone="muted" /></div>)}
+                        {v.payments.map((p) => <div key={p.id} className="text-muted-foreground flex items-center justify-between gap-3 text-xs"><span>Paid {formatDate(p.date)} · {p.method}{p.reference ? ` · ${p.reference}` : ''}</span><span className="flex items-center gap-1"><Money value={-p.amount} tone="muted" /><Button size="icon" variant="ghost" className="size-6" aria-label="Void payment" onClick={() => setUndoing({ kind: 'payment', invoiceId: v.invoice.id, id: p.id, label: `the ${formatLKR(p.amount)} payment of ${formatDate(p.date)}` })}><Ban /></Button></span></div>)}
                         {!v.project && <p className="text-muted-foreground text-xs">Received into stock. Project costs are recorded only when materials are issued to a project.</p>}
+                        {v.project && v.paid === 0 && <Button variant="ghost" size="sm" className="text-destructive justify-self-start px-0" onClick={() => setUndoing({ kind: 'invoice', invoiceId: v.invoice.id, id: v.invoice.id, label: `invoice ${v.invoice.invoiceNo}` })}><Ban />Cancel invoice</Button>}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -85,6 +89,13 @@ export function InvoiceTable({ rows, showSupplier = true, pageSize = 12 }: { row
         </TableFooter>
       </Table>
       {sorted.length > pageSize && <div className="border-t px-6 py-3"><Pagination {...paged} /></div>}
+      <VoidDialog
+        target={undoing}
+        verb={undoing?.kind === 'invoice' ? 'Cancel' : 'Void'}
+        description={undoing?.kind === 'invoice' ? 'It stays in the history, marked cancelled, and stops counting as a payable and as a project cost. Its number can be used again.' : undefined}
+        onClose={() => setUndoing(undefined)}
+        onVoid={(reason) => (undoing!.kind === 'invoice' ? cancelSupplierInvoice(undoing!.invoiceId, reason) : voidSupplierPayment(undoing!.invoiceId, undoing!.id, reason))}
+      />
       <PaymentDialog
         open={!!payFor} onOpenChange={(o) => !o && setPayFor(undefined)} direction="out" successTitle="Supplier payment recorded"
         title={`Pay ${payFor?.supplier.name ?? ''}`} description={payFor ? `Invoice ${payFor.invoice.invoiceNo} · due ${formatDate(payFor.invoice.dueDate)}` : undefined}

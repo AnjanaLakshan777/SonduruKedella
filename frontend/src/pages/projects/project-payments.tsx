@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { CircleAlert, Ellipsis, FilePenLine, HandCoins, Pencil, ReceiptText, Scale } from 'lucide-react'
+import { Ban, CircleAlert, Ellipsis, FilePenLine, HandCoins, Pencil, ReceiptText, Scale, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -12,6 +12,7 @@ import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
 import { FigureList } from '@/components/app/figure-list'
 import { PaymentDialog } from '@/components/app/payment-dialog'
+import { VoidDialog } from '@/components/app/void-dialog'
 import { WriteOffDialog } from '@/components/app/write-off-dialog'
 import { ScheduleEditor, newRowKey, type ScheduleRow } from '@/components/app/schedule-editor'
 import { DelayTermsForm, RULE_LABEL } from '@/components/app/delay-terms-form'
@@ -24,15 +25,16 @@ import { errorMessage } from '@/lib/api'
 import type { DelayTerms } from '@/data/types'
 
 export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance; payFor: string | null; setPayFor: (id: string | null) => void }) {
-  const { recordClientPayment, billInstallment, reviseSchedule } = useStore()
+  const { recordClientPayment, billInstallment, reviseSchedule, voidReceipt, reverseWriteOff } = useStore()
+  const [undoing, setUndoing] = useState<{ id: string; instId: string; kind: 'Payment' | 'Write-off'; amount: number; date: string }>()
   const [woFor, setWoFor] = useState<InstallmentView | undefined>()
   const [billFor, setBillFor] = useState<InstallmentView | undefined>()
   const [editOpen, setEditOpen] = useState(false)
   const payView = pf.installments.find((i) => i.inst.id === payFor)
   const overdue = pf.installments.filter((i) => i.status === 'Overdue')
   const history = pf.installments.flatMap((i) => [
-    ...i.payments.map((p) => ({ id: p.id, date: p.date, inst: i.inst.description, kind: 'Payment' as const, method: `${p.method}${p.reference ? ` · ${p.reference}` : ''}`, amount: p.amount })),
-    ...i.writeOffs.map((w) => ({ id: w.id, date: w.date, inst: i.inst.description, kind: 'Write-off' as const, method: w.reason, amount: w.amount })),
+    ...i.payments.map((p) => ({ id: p.id, instId: i.inst.id, date: p.date, inst: i.inst.description, kind: 'Payment' as const, method: `${p.method}${p.reference ? ` · ${p.reference}` : ''}`, amount: p.amount })),
+    ...i.writeOffs.map((w) => ({ id: w.id, instId: i.inst.id, date: w.date, inst: i.inst.description, kind: 'Write-off' as const, method: w.reason, amount: w.amount })),
   ]).sort((a, b) => b.date.localeCompare(a.date))
 
   return (
@@ -114,13 +116,17 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
           <CardHeader><CardTitle>Payment history</CardTitle><CardDescription>Money received and amounts written off — kept separate</CardDescription></CardHeader>
           {history.length ? (
             <Table>
-              <TableHeader><TableRow><TableHead className="pl-6">Date</TableHead><TableHead>Against</TableHead><TableHead className="pr-6 text-right">Amount (LKR)</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="pl-6">Date</TableHead><TableHead>Against</TableHead><TableHead className="text-right">Amount (LKR)</TableHead><TableHead className="w-10 pr-4"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
               <TableBody>
                 {history.map((h) => (
                   <TableRow key={h.id}>
                     <TableCell className="pl-6">{formatDate(h.date)}</TableCell>
                     <TableCell className="max-w-64"><span className="grid"><span className="flex items-center gap-2 truncate">{h.inst}{h.kind === 'Write-off' && <StatusBadge status="Written Off" />}</span><span className="text-muted-foreground truncate text-xs">{h.method}</span></span></TableCell>
-                    <TableCell className="pr-6 text-right font-medium">{h.kind === 'Payment' ? <Money value={h.amount} currency={false} signed tone="positive" /> : <span className="text-muted-foreground"><Money value={h.amount} currency={false} tone="muted" /> w/o</span>}</TableCell>
+                    <TableCell className=" text-right font-medium">{h.kind === 'Payment' ? <Money value={h.amount} currency={false} signed tone="positive" /> : <span className="text-muted-foreground"><Money value={h.amount} currency={false} tone="muted" /> w/o</span>}</TableCell>
+                    <TableCell className="pr-4">
+                      <Button size="icon" variant="ghost" className="size-7" aria-label={h.kind === 'Payment' ? 'Void receipt' : 'Reverse write-off'}
+                        onClick={() => setUndoing(h)}>{h.kind === 'Payment' ? <Ban /> : <Undo2 />}</Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -144,6 +150,13 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
         onSubmit={(p) => (payView ? recordClientPayment({ installmentId: payView.inst.id, ...p }) : undefined)}
       />
       <WriteOffDialog view={woFor} open={!!woFor} onOpenChange={(o) => !o && setWoFor(undefined)} />
+      <VoidDialog
+        target={undoing && { label: `the ${formatLKR(undoing.amount)} ${undoing.kind === 'Payment' ? 'receipt' : 'write-off'} of ${formatDate(undoing.date)}` }}
+        verb={undoing?.kind === 'Write-off' ? 'Reverse' : 'Void'}
+        description={undoing?.kind === 'Write-off' ? 'The amount goes back on what the client owes. The write-off stays in the history, marked reversed.' : undefined}
+        onClose={() => setUndoing(undefined)}
+        onVoid={(reason) => (undoing!.kind === 'Payment' ? voidReceipt(undoing!.instId, undoing!.id, reason) : reverseWriteOff(undoing!.instId, undoing!.id, reason))}
+      />
       <AlertDialog open={!!billFor} onOpenChange={(o) => !o && setBillFor(undefined)}>
         <AlertDialogContent>
           <AlertDialogHeader>

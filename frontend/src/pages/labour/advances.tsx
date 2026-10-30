@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Info, Plus } from 'lucide-react'
+import { Ban, Info, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/app/status-badge'
 import { CellMain } from '@/components/app/data-table'
 import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/form'
 import { useData, useStore } from '@/store/store'
+import { VoidDialog } from '@/components/app/void-dialog'
 import { sum } from '@/lib/finance'
 import { addDays, formatDate, formatRange, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
@@ -21,6 +22,8 @@ export function AdvancesView() {
   const d = useData()
   const [open, setOpen] = useState(false)
   const rows = d.advances
+  const voidAdvance = useStore((s) => s.voidAdvance)
+  const [voiding, setVoiding] = useState<{ id: string; label: string }>()
   return (
     <>
       <div className="bg-muted/60 text-muted-foreground flex items-start gap-3 rounded-lg px-4 py-3 text-sm">
@@ -47,7 +50,7 @@ export function AdvancesView() {
                 <TableCell className="hidden text-right sm:table-cell"><Money value={a.deducted} currency={false} />{a.allocations.filter((x) => x.settled).map((x) => <div key={x.weekStart} className="text-muted-foreground text-xs">week {formatRange(x.weekStart, addDays(x.weekStart, 5))}</div>)}</TableCell>
                 <TableCell className="hidden text-right sm:table-cell">{a.scheduled ? <Money value={a.scheduled} currency={false} /> : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell className="text-right">{a.remaining ? <Money value={a.remaining} currency={false} /> : <span className="text-muted-foreground">—</span>}</TableCell>
-                <TableCell className="pr-6"><StatusBadge status={a.status} /></TableCell>
+                <TableCell className="pr-6"><span className="flex items-center gap-1"><StatusBadge status={a.status} />{a.deducted === 0 && <Button size="icon" variant="ghost" className="size-7" aria-label="Void advance" onClick={() => setVoiding({ id: a.advance.id, label: `the ${formatLKR(a.advance.amount)} advance to ${a.employee.name}` })}><Ban /></Button>}</span></TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -55,6 +58,8 @@ export function AdvancesView() {
         </Table>
       </Card>
       <AdvanceDialog open={open} onOpenChange={setOpen} />
+      <VoidDialog target={voiding} onClose={() => setVoiding(undefined)} onVoid={(reason) => voidAdvance(voiding!.id, reason)}
+        description="Only an advance nothing has been recovered from yet can be voided. It stays in the history, marked void." />
     </>
   )
 }

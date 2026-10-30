@@ -1351,3 +1351,24 @@ For each completed task, record the date, files or migrations changed, verificat
 - Hooks subscribe to several store slices through `useShallow`, so zustand v5 doesn't loop on a new array each render.
 - Verified against the development backend (read-only): the week response has every field the page maps, 251 frozen worker-weeks are listed, the worker detail returns payments and corrections, and the full load still works. The development backend was rebuilt for the new endpoint. Frontend: `tsc -b` is clean and the 19 Vitest tests pass. Not tried in a browser.
 - Full backend suite on a throwaway PostgreSQL 17 container (2026-10-30): 686 tests, 0 failures, 0 errors, 0 skipped. The frozen-weeks checks were added to an existing test, so the count didn't change.
+
+### 2026-10-30: Phase 3b, void, reverse and cancel actions in the UI
+- Shared `components/app/void-dialog.tsx`, moved from the payroll page. It asks for a reason; the record stays in the history and stops counting. The verb and description change for Reverse and Cancel.
+- New store actions, each sending the version last read and the reason, then reloading what changed:
+  - `voidReceipt`: `POST /projects/{p}/receipts/{id}/void`.
+  - `reverseWriteOff`: `POST /projects/{p}/write-offs/{id}/reverse`.
+  - `voidExpensePayment`: `POST /expenses/{e}/payments/{id}/void`.
+  - `voidSupplierPayment`: `POST /supplier-invoices/{i}/payments/{id}/void`.
+  - `cancelSupplierInvoice`: `POST /supplier-invoices/{i}/cancel`.
+  - `voidAdvance`: `POST /payroll/advances/{id}/void`.
+  - `voidCommissionPayment`: `POST /commissions/{c}/payments/{id}/void`.
+- Where the buttons are:
+  - Project → Payments: in the payment history, Void on each receipt and Reverse on each write-off.
+  - Expense details: Void on each payment.
+  - Supplier invoice table (expanded row): Void on each payment. "Cancel invoice" on project invoices with no payments; stock invoices are already in the stock ledger.
+  - Advances: Void on advances nothing has been deducted from yet.
+  - Commissions → Payments, and the project's Commissions tab: Void on each payment.
+- The loader now keeps versions for receipts, write-offs, expense, supplier, other-income and commission payments, supplier invoices and advances.
+- The server's rules still decide; its refusal is shown. Examples: an advance already recovered, a payment in a frozen payroll week, an invoice with payments.
+- Not in the UI yet: voiding an other-income receipt (no page lists the receipts) and voiding or replacing a commission arrangement (phase 3c).
+- Tests: no backend change. Frontend: `tsc -b` is clean, the 19 Vitest tests pass, and the read-only load check against the development backend matches. Not tried in a browser.

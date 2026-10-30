@@ -17,6 +17,7 @@ import { CellMain } from '@/components/app/data-table'
 import { FigureList } from '@/components/app/figure-list'
 import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/form'
 import { PaymentDialog } from '@/components/app/payment-dialog'
+import { VoidDialog } from '@/components/app/void-dialog'
 import { useShallow } from 'zustand/react/shallow'
 import { useData, useStore } from '@/store/store'
 import { formatDate, formatRange, TODAY } from '@/lib/dates'
@@ -365,36 +366,6 @@ function LineSheet({ weekStart, weekEnd, line, payable, onClose, onPay, onAdjust
         else await voidPayrollCorrection(weekStart, line.employeeId, voiding.id, voiding.version, reason)
       }} />
     </Sheet>
-  )
-}
-
-// voiding keeps the record with its reason; it just stops counting
-function VoidDialog({ target, onClose, onVoid }: { target?: { label: string }; onClose: () => void; onVoid: (reason: string) => Promise<void> }) {
-  const [reason, setReason] = useState('')
-  const [busy, setBusy] = useState(false)
-  useEffect(() => { if (target) setReason('') }, [target])
-  return (
-    <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Void {target?.label}?</DialogTitle><DialogDescription>It stays in the history, marked void, and stops counting. Record the right one afterwards if needed.</DialogDescription></DialogHeader>
-        <Field label="Reason" required><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Paid the wrong worker" /></Field>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" disabled={busy || !reason.trim()} onClick={async () => {
-            setBusy(true)
-            try {
-              await onVoid(reason.trim())
-              toast.success('Voided')
-              onClose()
-            } catch (e) {
-              toast.error('Not voided', { description: errorMessage(e) })
-            } finally {
-              setBusy(false)
-            }
-          }}>Void</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 

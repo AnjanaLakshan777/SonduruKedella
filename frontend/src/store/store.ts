@@ -56,6 +56,16 @@ interface Actions {
   setPayrollAdjustment: (a: PayrollAdjustment) => Promise<void>
   // one payment per worker-week; the first payment freezes that week on the server
   recordPayrollPayments: (rows: (PaymentInput & { weekStart: string; employeeId: string })[]) => Promise<void>
+  // Voids, reversals and cancels: the record stays with its reason and stops counting. Each needs the
+  // version last read and a reason.
+  voidReceipt: (installmentId: string, receiptId: string, reason: string) => Promise<void>
+  reverseWriteOff: (installmentId: string, writeOffId: string, reason: string) => Promise<void>
+  voidExpensePayment: (expenseId: string, paymentId: string, reason: string) => Promise<void>
+  voidSupplierPayment: (invoiceId: string, paymentId: string, reason: string) => Promise<void>
+  // only a project invoice with no payments; a stock invoice is already in the stock ledger
+  cancelSupplierInvoice: (invoiceId: string, reason: string) => Promise<void>
+  voidAdvance: (advanceId: string, reason: string) => Promise<void>
+  voidCommissionPayment: (commissionId: string, paymentId: string, reason: string) => Promise<void>
   // a paid week changes only through corrections (+/-, with a reason); a wrong one is voided, not edited
   recordPayrollCorrection: (weekStart: string, employeeId: string, c: { requestId: string; correctionDate: string; wageDelta: number; projectId?: string; reason: string }) => Promise<void>
   voidPayrollCorrection: (weekStart: string, employeeId: string, correctionId: string, version: number, reason: string) => Promise<void>
@@ -364,6 +374,36 @@ export const useStore = create<Store>()((set, get) => {
         version: versionOf('adjustment', adjustmentKey(a.weekStart, a.employeeId)) ?? null,
       })
       await refreshLabour()
+    },
+    voidReceipt: async (installmentId, receiptId, reason) => {
+      const projectId = projectOf(installmentId)
+      await apiPost(`/projects/${projectId}/receipts/${receiptId}/void`, { reason, version: versionOf('receipt', receiptId) })
+      await Promise.all([refreshProject(projectId), refreshActivity()])
+    },
+    reverseWriteOff: async (installmentId, writeOffId, reason) => {
+      const projectId = projectOf(installmentId)
+      await apiPost(`/projects/${projectId}/write-offs/${writeOffId}/reverse`, { reason, version: versionOf('writeOff', writeOffId) })
+      await Promise.all([refreshProject(projectId), refreshActivity()])
+    },
+    voidExpensePayment: async (expenseId, paymentId, reason) => {
+      await apiPost(`/expenses/${expenseId}/payments/${paymentId}/void`, { reason, version: versionOf('expensePayment', paymentId) })
+      await Promise.all([refreshExpenses(), refreshActivity()])
+    },
+    voidSupplierPayment: async (invoiceId, paymentId, reason) => {
+      await apiPost(`/supplier-invoices/${invoiceId}/payments/${paymentId}/void`, { reason, version: versionOf('supplierPayment', paymentId) })
+      await Promise.all([refreshInvoices(), refreshActivity()])
+    },
+    cancelSupplierInvoice: async (invoiceId, reason) => {
+      await apiPost(`/supplier-invoices/${invoiceId}/cancel`, { reason, version: versionOf('invoice', invoiceId) })
+      await Promise.all([refreshInvoices(), refreshActivity()])
+    },
+    voidAdvance: async (advanceId, reason) => {
+      await apiPost(`/payroll/advances/${advanceId}/void`, { reason, version: versionOf('advance', advanceId) })
+      await refreshLabour()
+    },
+    voidCommissionPayment: async (commissionId, paymentId, reason) => {
+      await apiPost(`/commissions/${commissionId}/payments/${paymentId}/void`, { reason, version: versionOf('commissionPayment', paymentId) })
+      await Promise.all([refreshCommissions(), refreshActivity()])
     },
     recordPayrollCorrection: async (ws, emp, c) => {
       await apiPost(`/payroll/weeks/${ws}/employees/${emp}/corrections`, c)

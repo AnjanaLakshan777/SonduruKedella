@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { CircleAlert, HandCoins, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Ban, CircleAlert, HandCoins, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,7 @@ import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
 import { FigureList } from '@/components/app/figure-list'
 import { PaymentDialog } from '@/components/app/payment-dialog'
+import { VoidDialog } from '@/components/app/void-dialog'
 import { useData, useStore } from '@/store/store'
 import { sum, type CommissionView, type ProjectFinance } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
@@ -22,7 +23,8 @@ let k = 0
 /** Commission = agreed contract value × recipient %. Shares are never capped or redistributed automatically. */
 export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
   const d = useData()
-  const { saveCommissions, recordCommissionPayment } = useStore()
+  const { saveCommissions, recordCommissionPayment, voidCommissionPayment } = useStore()
+  const [voiding, setVoiding] = useState<{ commissionId: string; id: string; label: string }>()
   const p = pf.project
   const views = useMemo(() => d.commissions.filter((c) => c.project.id === p.id), [d, p.id])
   const confirmed = views.length > 0 && views.every((v) => v.arr.status === 'Confirmed')
@@ -127,7 +129,7 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
             <Table>
               <TableBody>
                 {views.flatMap((v) => v.payments.map((pay) => ({ v, pay }))).sort((a, b) => b.pay.date.localeCompare(a.pay.date)).map(({ v, pay }) => (
-                  <TableRow key={pay.id}><TableCell className="pl-6">{formatDate(pay.date)}</TableCell><TableCell>{v.arr.recipient}</TableCell><TableCell className="text-muted-foreground">{pay.method}{pay.reference ? ` · ${pay.reference}` : ''}</TableCell><TableCell className="pr-6 text-right font-medium"><Money value={pay.amount} /></TableCell></TableRow>
+                  <TableRow key={pay.id}><TableCell className="pl-6">{formatDate(pay.date)}</TableCell><TableCell>{v.arr.recipient}</TableCell><TableCell className="text-muted-foreground">{pay.method}{pay.reference ? ` · ${pay.reference}` : ''}</TableCell><TableCell className="text-right font-medium"><Money value={pay.amount} /></TableCell><TableCell className="w-10 pr-4"><Button size="icon" variant="ghost" className="size-7" aria-label="Void payment" onClick={() => setVoiding({ commissionId: v.arr.id, id: pay.id, label: `the ${formatLKR(pay.amount)} payment to ${v.arr.recipient}` })}><Ban /></Button></TableCell></TableRow>
                 ))}
               </TableBody>
             </Table>
@@ -168,6 +170,7 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <VoidDialog target={voiding} onClose={() => setVoiding(undefined)} onVoid={(reason) => voidCommissionPayment(voiding!.commissionId, voiding!.id, reason)} />
       <PaymentDialog
         open={!!payFor} onOpenChange={(o) => !o && setPayFor(undefined)} direction="out" verb="Record Payment" successTitle="Commission payment recorded"
         title={`Pay commission — ${payFor?.arr.recipient ?? ''}`} description={payFor ? `${p.code} · ${payFor.arr.rate}% of ${formatLKR(p.contractValue)}` : undefined}

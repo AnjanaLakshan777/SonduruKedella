@@ -63,11 +63,11 @@ export function mapInstallment(i: Row): Installment {
   }
 }
 
-const mapReceipt = (r: Row): ClientPayment => ({
+const mapReceipt = (r: Row): ClientPayment => (keep('receipt', r), {
   id: String(r.id), installmentId: String(r.installmentId), date: r.paymentDate, amount: r.amount, method: r.method,
   reference: opt(r.reference), notes: opt(r.notes),
 })
-const mapWriteOff = (w: Row): WriteOff => ({ id: String(w.id), installmentId: String(w.installmentId), date: w.date, amount: w.amount, reason: w.reason })
+const mapWriteOff = (w: Row): WriteOff => (keep('writeOff', w), { id: String(w.id), installmentId: String(w.installmentId), date: w.date, amount: w.amount, reason: w.reason })
 const mapActivity = (a: Row): ActivityEntry => ({ id: String(a.id), date: a.date, projectId: id(a.projectId), kind: a.kind.toLowerCase(), text: a.message })
 
 // one project with everything hanging off it, for the initial load and for refreshing after a save
@@ -102,7 +102,7 @@ const mapOtherIncome = (o: Row): OtherIncome => ({
   id: String(o.id), date: o.date, description: o.description, payer: opt(o.payer), amount: o.amount, dueDate: opt(o.dueDate),
   reference: opt(o.reference), notes: opt(o.notes),
 })
-const mapIncomeReceipt = (r: Row): OtherIncomeReceipt => ({
+const mapIncomeReceipt = (r: Row): OtherIncomeReceipt => (keep('incomeReceipt', r), {
   id: String(r.id), incomeId: String(r.incomeId), date: r.paymentDate, amount: r.amount, method: r.method, reference: opt(r.reference),
 })
 export async function loadOtherIncome(): Promise<{ otherIncome: OtherIncome[]; otherIncomeReceipts: OtherIncomeReceipt[] }> {
@@ -127,7 +127,7 @@ function mapExpense(e: Row): Expense {
     usageTo: opt(e.usageTo), billingPeriod: opt(e.billingPeriod),
   }
 }
-const mapExpensePayment = (p: Row): ExpensePayment => ({
+const mapExpensePayment = (p: Row): ExpensePayment => (keep('expensePayment', p), {
   id: String(p.id), expenseId: String(p.expenseId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
 })
 export async function loadExpenses(): Promise<{ expenses: Expense[]; expensePayments: ExpensePayment[] }> {
@@ -139,13 +139,13 @@ const mapSupplier = (s: Row): Supplier => ({
   id: String(s.id), name: s.name, contactPerson: s.contactPerson ?? '', phone: s.phone, email: opt(s.email), address: s.address ?? '',
   supplies: s.supplies ?? '', creditDays: s.creditDays,
 })
-const mapInvoice = ({ invoice: i, lines }: Row): SupplierInvoice => ({
+const mapInvoice = ({ invoice: i, lines }: Row): SupplierInvoice => (keep('invoice', i), {
   id: String(i.id), supplierId: String(i.supplierId), invoiceNo: i.invoiceNo, date: i.invoiceDate, dueDate: i.dueDate,
   projectId: id(i.projectId), notes: opt(i.notes),
   attachment: i.attachmentFilename ? { fileName: i.attachmentFilename, size: i.attachmentSize } : undefined,
   lines: lines.map((l: Row) => ({ id: String(l.id), description: l.description, materialId: id(l.materialId), qty: l.quantity, unit: l.unit, unitPrice: l.unitPrice })),
 })
-const mapInvoicePayments = ({ payments }: Row): SupplierPayment[] => payments.filter((p: Row) => !p.voided).map((p: Row) => ({
+const mapInvoicePayments = ({ payments }: Row): SupplierPayment[] => payments.filter((p: Row) => !p.voided).map((p: Row) => (keep('supplierPayment', p), {
   id: String(p.id), invoiceId: String(p.invoiceId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
 }))
 const mapMaterial = (m: Row): Material => ({
@@ -199,7 +199,7 @@ function mapLabour(employeeRows: Row[], attendanceRows: Row[], overtimeRows: Row
       approved: o.approved, recordedBy: o.recordedBy, notes: opt(o.notes),
     }
   })
-  const advances: Advance[] = advanceRows.filter((a: Row) => !a.voided).map((a: Row) => ({
+  const advances: Advance[] = advanceRows.filter((a: Row) => !a.voided).map((a: Row) => (keep('advance', a), {
     id: String(a.id), date: a.paymentDate, employeeId: String(a.employeeId), amount: a.amount, method: a.paymentMethod, notes: opt(a.notes),
   }))
   const payrollAdjustments: PayrollAdjustment[] = adjustmentRows.map((a: Row) => {
@@ -236,7 +236,7 @@ function mapCommission(c: Row): CommissionArrangement {
     status: c.status === 'PENDING' ? 'Pending' : 'Confirmed', confirmedOn: opt(c.confirmedOn),
   }
 }
-const mapCommissionPayment = (p: Row): CommissionPayment => ({
+const mapCommissionPayment = (p: Row): CommissionPayment => (keep('commissionPayment', p), {
   id: String(p.id), arrangementId: String(p.commissionId), date: p.paymentDate, amount: p.amount, method: p.method, reference: opt(p.reference),
 })
 export async function loadCommissions(): Promise<{ commissions: CommissionArrangement[]; commissionPayments: CommissionPayment[] }> {

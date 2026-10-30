@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Ellipsis, ExternalLink, HandCoins, Paperclip, Pencil } from 'lucide-react'
+import { Ban, Ellipsis, ExternalLink, HandCoins, Paperclip, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -14,6 +14,7 @@ import { Money } from './money'
 import { StatusBadge } from './status-badge'
 import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from './data-table'
 import { PaymentDialog } from './payment-dialog'
+import { VoidDialog } from './void-dialog'
 import { RecordExpenseDialog } from './record-expense-dialog'
 import { FigureList } from './figure-list'
 import { EmptyState } from './empty-state'
@@ -22,6 +23,8 @@ export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }
   const d = useData()
   const navigate = useNavigate()
   const recordExpensePayment = useStore((s) => s.recordExpensePayment)
+  const voidExpensePayment = useStore((s) => s.voidExpensePayment)
+  const [voiding, setVoiding] = useState<{ expenseId: string; id: string; amount: number; date: string }>()
   const [payFor, setPayFor] = useState<ExpenseLine | undefined>()
   const [editFor, setEditFor] = useState<ExpenseLine | undefined>()
   const [view, setView] = useState<ExpenseLine | undefined>()
@@ -98,6 +101,11 @@ export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }
       </Table>
       {sorted.length > pageSize && <div className="border-t px-6 py-3"><Pagination {...paged} /></div>}
 
+      <VoidDialog
+        target={voiding && { label: `the ${formatLKR(voiding.amount)} payment of ${formatDate(voiding.date)}` }}
+        onClose={() => setVoiding(undefined)}
+        onVoid={(reason) => voidExpensePayment(voiding!.expenseId, voiding!.id, reason)}
+      />
       <PaymentDialog
         open={!!payFor} onOpenChange={(o) => !o && setPayFor(undefined)} direction="out" verb="Record Payment" successTitle="Expense payment recorded"
         title={`Pay ${payFor?.payee ?? ''}`} description={payFor?.description}
@@ -132,7 +140,7 @@ export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }
                   <div className="grid gap-2">
                     <div className="text-sm font-medium">Payments</div>
                     {d.s.expensePayments.filter((p) => p.expenseId === view.refId).map((p) => (
-                      <div key={p.id} className="flex justify-between border-b pb-2 text-sm last:border-0"><span>{formatDate(p.date)} · {p.method}</span><Money value={p.amount} /></div>
+                      <div key={p.id} className="flex items-center justify-between border-b pb-2 text-sm last:border-0"><span>{formatDate(p.date)} · {p.method}</span><span className="flex items-center gap-1"><Money value={p.amount} /><Button size="icon" variant="ghost" className="size-7" aria-label="Void payment" onClick={() => setVoiding({ expenseId: p.expenseId, id: p.id, amount: p.amount, date: p.date })}><Ban /></Button></span></div>
                     ))}
                     {!d.s.expensePayments.some((p) => p.expenseId === view.refId) && <p className="text-muted-foreground text-sm">No payments yet.</p>}
                   </div>
