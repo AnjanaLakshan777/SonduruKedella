@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Bell, Calendar, ChevronDown, Moon, PanelLeft, RotateCcw, Search, Sun, CircleAlert, Clock, Truck } from 'lucide-react'
+import { Bell, Calendar, ChevronDown, KeyRound, Moon, PanelLeft, RotateCcw, Search, Sun, CircleAlert, Clock, Truck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -11,6 +11,7 @@ import { emptyState } from '@/data/api-load'
 import { addDays, formatDate, formatLongToday, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { useTheme } from './theme'
+import { ChangePasswordDialog } from './change-password-dialog'
 import { cn } from '@/lib/utils'
 
 export interface Crumb { label: string; to?: string }
@@ -38,6 +39,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
   const d = useData()
   const load = useStore((s) => s.load)
   const { user, logout } = useAuth()
+  const [pwOpen, setPwOpen] = useState(false)
   const initials = (user?.displayName ?? '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
   const roleLabel = user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'
   const { theme, setTheme } = useTheme()
@@ -164,12 +166,14 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}{theme === 'dark' ? 'Light theme' : 'Dark theme'}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => navigate('/settings')}>Company settings</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setPwOpen(true)}><KeyRound />Change password</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => { load().then(() => toast.success('Data reloaded')).catch((e) => toast.error('Could not reload', { description: e.message })) }}><RotateCcw />Reload data</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { logout().finally(() => useStore.setState({ ...emptyState(), loaded: false, frozenWeeks: new Set() })) }}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <ChangePasswordDialog open={pwOpen} onOpenChange={setPwOpen} />
     </header>
   )
 }

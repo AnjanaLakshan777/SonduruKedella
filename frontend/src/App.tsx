@@ -20,6 +20,7 @@ import LabourPage from '@/pages/labour/labour-page'
 import CommissionsPage from '@/pages/commissions'
 import ReportsPage from '@/pages/reports/reports-page'
 import SettingsPage from '@/pages/settings'
+import UsersPage from '@/pages/users'
 import NotFound from '@/pages/not-found'
 
 export default function App() {
@@ -48,6 +49,7 @@ export default function App() {
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="reports/:report" element={<ReportsPage />} />
                 <Route path="settings" element={<SettingsPage />} />
+                <Route path="users" element={<UsersPage />} />
                 <Route path="*" element={<NotFound />} />
               </Route>
             </Routes>

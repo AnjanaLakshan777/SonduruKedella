@@ -3,7 +3,8 @@ import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import logo from '@/assets/sonduru-kedella-logo.png'
 import mark from '@/assets/sonduru-kedella-roof-mark.png'
-import { NAV, SETTINGS_ITEM, type NavItem } from './nav'
+import { NAV, SETTINGS_ITEM, USERS_ITEM, type NavItem } from './nav'
+import { useAuth } from '@/store/auth'
 
 function isActive(pathname: string, to: string) {
   return to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/')
@@ -11,6 +12,7 @@ function isActive(pathname: string, to: string) {
 
 export function AppSidebar({ collapsed, counts, onNavigate }: { collapsed?: boolean; counts?: Record<string, { n: number; alert?: boolean }>; onNavigate?: () => void }) {
   const { pathname } = useLocation()
+  const isSuperAdmin = useAuth((s) => s.user?.role === 'SUPER_ADMIN')
   const item = (it: NavItem) => {
     const on = isActive(pathname, it.to)
     const c = counts?.[it.to]
@@ -58,7 +60,7 @@ export function AppSidebar({ collapsed, counts, onNavigate }: { collapsed?: bool
             <ul className="grid gap-0.5">{g.items.map(item)}</ul>
           </div>
         ))}
-        <div className={cn('border-sidebar-border border-t', collapsed ? 'py-1' : 'pt-2')}><ul>{item(SETTINGS_ITEM)}</ul></div>
+        <div className={cn('border-sidebar-border border-t', collapsed ? 'py-1' : 'pt-2')}><ul>{isSuperAdmin && item(USERS_ITEM)}{item(SETTINGS_ITEM)}</ul></div>
       </nav>
     </aside>
   )

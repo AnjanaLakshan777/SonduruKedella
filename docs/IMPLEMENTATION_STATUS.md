@@ -1411,3 +1411,18 @@ For each completed task, record the date, files or migrations changed, verificat
   - Settings: "Financial year starts" shows the server's value (read-only).
 - `lib/dates.ts`: `monthStart`, `monthEnd`, `addMonths`, `fyLabel`, with `lib/dates.test.ts` (3 tests: month ends including leap years, crossing year ends, the year label).
 - Tests: no backend change. Frontend: `tsc -b` is clean and the Vitest suite passes (22 tests, 19 before). Not tried in a browser.
+
+### 2026-10-30: Phase 3f, user management screen and change password
+- `pages/users.tsx` (`/users`, "Users" in the sidebar for Super Admins only; an Admin who opens the URL sees "Super Admins only", and the server answers 403 anyway):
+  - Lists the users: name, username, email, role, active or inactive, and the date added.
+  - Add user: name, username, email, password (at least 12 characters) and role. They sign in with the username or the email.
+  - Edit name and email: `PUT /users/{id}` with the version.
+  - Make Super Admin or Admin: `PUT /users/{id}/role`.
+  - Activate or deactivate: `PUT /users/{id}/status`, after a confirmation that explains it signs the person out.
+  - Reset password: `PUT /users/{id}/password`.
+  - The UI doesn't offer what the server would refuse: changing your own role or status, resetting your own password here, or demoting or deactivating the last active Super Admin. The server still checks all of these.
+  - Users are never deleted, only deactivated.
+- `components/app/change-password-dialog.tsx`: "Change password" in the account menu for every user. It sends `PUT /auth/me/password` `{currentPassword, newPassword}`. This session stays signed in and the others end; a wrong current password counts toward the sign-in limit.
+- `StatusBadge` gained "Super Admin" and "Admin".
+- Verified against the development backend (read-only): `GET /users?sort=displayName` lists both users with name, username, email, role, status and version. Frontend: `tsc -b` is clean and the 22 Vitest tests pass. Not tried in a browser.
+- Phase 3 is complete except the manual expense attachment, which waits for the owner's choice (backend support or remove the field).

@@ -1,4 +1,4 @@
-import { BarChart3, FolderKanban, HandCoins, HardHat, LayoutDashboard, Package, Percent, Receipt, Settings, Truck, Users, type LucideIcon } from 'lucide-react'
+import { BarChart3, FolderKanban, HandCoins, HardHat, LayoutDashboard, Package, Percent, Receipt, Settings, Truck, UserCog, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavItem { to: string; label: string; icon: LucideIcon }
 export const NAV: { label?: string; items: NavItem[] }[] = [
@@ -17,3 +17,5 @@ export const NAV: { label?: string; items: NavItem[] }[] = [
   ] },
 ]
 export const SETTINGS_ITEM: NavItem = { to: '/settings', label: 'Settings', icon: Settings }
+// shown to Super Admins only
+export const USERS_ITEM: NavItem = { to: '/users', label: 'Users', icon: UserCog }
