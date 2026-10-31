@@ -90,6 +90,13 @@ describe('cash basis', () => {
     expect(projectFigures(p, 'accrual').profit).toBe(62000)
   })
 
+  it('puts cash in and out in the month the money moved, without the stock issue', () => {
+    const m = derive(sample()).monthly.get(lastWeek.slice(0, 7))!
+    expect(m.received).toBe(60000)
+    // 10,000 expense payment + 20,000 stock invoice payment; the 8,000 issue is not new cash
+    expect(m.paid).toBe(30000)
+  })
+
   it('counts the stock purchase once in company cash, not again when issued', () => {
     const d = derive(sample())
     // 10,000 expense payment + 20,000 stock invoice payment; the 8,000 issue is not new cash

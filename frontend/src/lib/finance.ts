@@ -668,17 +668,21 @@ export function derive(s: DataState) {
   const revenueRecorded = totals.revenueProjects + totals.revenueOther
   const paymentsReceived = totals.received + totals.receivedOther
 
-  // monthly series (financial year to date)
-  const monthly = new Map<string, { revenue: number; expenses: number; received: number }>()
-  const bump = (k: string, f: 'revenue' | 'expenses' | 'received', v: number) => {
-    const m = monthly.get(k) ?? { revenue: 0, expenses: 0, received: 0 }
+  // monthly series. revenue/expenses are accrual; received/paid are the cash basis, by the day money moved
+  type Month = { revenue: number; expenses: number; received: number; paid: number }
+  const monthly = new Map<string, Month>()
+  const bump = (k: string, f: keyof Month, v: number) => {
+    const m = monthly.get(k) ?? { revenue: 0, expenses: 0, received: 0, paid: 0 }
     m[f] += v
     monthly.set(k, m)
   }
   for (const i of billed) bump(monthKey(i.inst.billedOn ?? i.inst.dueDate), 'revenue', i.net - i.writtenOff)
   for (const o of otherIncome) bump(monthKey(o.income.date), 'revenue', o.income.amount)
   for (const p of s.clientPayments) bump(monthKey(p.date), 'received', p.amount)
+  for (const r of s.otherIncomeReceipts) bump(monthKey(r.date), 'received', r.amount)
   for (const l of expenseLines) bump(monthKey(l.date), 'expenses', l.amount)
+  // stock issues aren't new cash; the stock invoice payments already are
+  for (const l of cashLines) if (!l.fromStock) bump(monthKey(l.date), 'paid', l.amount)
 
   // upcoming payables (next 14 days and overdue)
   const payablesDue = [

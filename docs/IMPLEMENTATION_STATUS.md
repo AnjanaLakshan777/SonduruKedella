@@ -1572,3 +1572,13 @@ For each completed task, record the date, files or migrations changed, verificat
 - Backend `/reports/dashboard` still returns `revenueRecorded` and `writtenOff` as separate fields. It was not changed.
 - Development data: 54,200,000 recorded − 4,950,000 written off = 49,250,000 revenue.
 - Tests: 1 new test in `lib/finance.test.ts`. `tsc -b` is clean and 31 Vitest tests pass. Not tried in a browser.
+
+### 2026-10-31: Dashboard charts follow the Accrual / Cash toggle
+- **Monthly Revenue vs Expenses**, last 12 months:
+  - accrual: revenue recorded after write-offs against expenses recorded;
+  - cash: money received (client payments and other income receipts) against money paid out (the cash ledger without stock issues), by the month the money moved.
+  - The legend and description change with the basis.
+- **Revenue by Type**: revenue after write-offs on accrual, and money received per project type plus other income receipts on cash.
+- Project Profitability already followed the toggle. The collection progress bar compares received with recorded, so it shows the same on both bases.
+- `lib/finance.ts`: the monthly series gained `paid`. `received` now includes other income receipts. Nothing else read `received`.
+- Tests: 1 new test, 32 Vitest tests pass. `tsc -b` is clean. Not tried in a browser.

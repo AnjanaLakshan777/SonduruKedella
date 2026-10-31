@@ -36,20 +36,25 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const t = d.totals
 
-  const monthly = useMemo(
-    () => monthsBetween(addMonths(TODAY.slice(0, 7), -11), TODAY.slice(0, 7)).map((k) => ({ month: k, label: monthLabel(k), revenue: d.monthly.get(k)?.revenue ?? 0, expenses: d.monthly.get(k)?.expenses ?? 0 })),
-    [d],
-  )
-  const byType = useMemo(() => {
-    const rows = (['Construction', 'Design', 'Consultation'] as const).map((type) => ({ type, value: sum(d.projects.filter((p) => p.project.type === type), (p) => p.revenueRecorded - p.writtenOff) }))
-    rows.push({ type: 'Other Income' as never, value: t.revenueOther })
-    return rows
-  }, [d, t.revenueOther])
-  const typeColors = ['var(--chart-5)', 'var(--chart-3)', 'var(--chart-1)', 'var(--muted-foreground)']
-  const totalRev = sum(byType, (r) => r.value)
-
   const [basis, setBasis] = useBasis()
   const cash = basis === 'cash'
+  // the charts follow the toggle too: cash months are money in and out on the day it moved
+  const monthly = useMemo(
+    () => monthsBetween(addMonths(TODAY.slice(0, 7), -11), TODAY.slice(0, 7)).map((k) => {
+      const m = d.monthly.get(k)
+      return { month: k, label: monthLabel(k), revenue: (cash ? m?.received : m?.revenue) ?? 0, expenses: (cash ? m?.paid : m?.expenses) ?? 0 }
+    }),
+    [d, cash],
+  )
+  const byType = useMemo(() => {
+    const rows = (['Construction', 'Design', 'Consultation'] as const).map((type) => ({
+      type, value: sum(d.projects.filter((p) => p.project.type === type), (p) => (cash ? p.received : p.revenueRecorded - p.writtenOff)),
+    }))
+    rows.push({ type: 'Other Income' as never, value: cash ? t.receivedOther : t.revenueOther })
+    return rows
+  }, [d, cash, t.revenueOther, t.receivedOther])
+  const typeColors = ['var(--chart-5)', 'var(--chart-3)', 'var(--chart-1)', 'var(--muted-foreground)']
+  const totalRev = sum(byType, (r) => r.value)
   const activeClients = new Set(d.projects.filter((p) => p.project.status === 'In Progress').map((p) => p.client.id)).size
   const expensesRecorded = sum(d.expenseLines, (l) => l.amount)
   // one figure when they're the same: "3,649,000 overdue" rather than the same number twice
@@ -117,8 +122,8 @@ export default function Dashboard() {
         <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle>Monthly Revenue vs Expenses</CardTitle>
-            <CardDescription>Revenue recorded against all expenses recorded (project and company), last 12 months</CardDescription>
-            <CardAction><Legend items={[{ label: 'Revenue recorded', color: 'var(--chart-3)' }, { label: 'Expenses', color: 'var(--muted-foreground)' }]} /></CardAction>
+            <CardDescription>{cash ? 'Money received against money paid out (project and company), last 12 months' : 'Revenue recorded against all expenses recorded (project and company), last 12 months'}</CardDescription>
+            <CardAction><Legend items={[{ label: cash ? 'Received' : 'Revenue recorded', color: 'var(--chart-3)' }, { label: cash ? 'Paid out' : 'Expenses', color: 'var(--muted-foreground)' }]} /></CardAction>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -127,8 +132,8 @@ export default function Dashboard() {
                 <XAxis dataKey="label" {...axisProps} />
                 <YAxis {...moneyAxis} />
                 <Tooltip cursor={{ fill: 'var(--muted)', opacity: 0.6 }} content={<ChartTooltip />} />
-                <Bar dataKey="revenue" name="Revenue recorded" fill="var(--chart-3)" radius={[3, 3, 0, 0]} maxBarSize={28} />
-                <Bar dataKey="expenses" name="Expenses" fill="var(--muted-foreground)" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="revenue" name={cash ? 'Received' : 'Revenue recorded'} fill="var(--chart-3)" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                <Bar dataKey="expenses" name={cash ? 'Paid out' : 'Expenses'} fill="var(--muted-foreground)" radius={[3, 3, 0, 0]} maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -137,7 +142,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Revenue by Type</CardTitle>
-            <CardDescription>Revenue recorded to date</CardDescription>
+            <CardDescription>{cash ? 'Money received to date' : 'Revenue recorded to date'}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="flex h-3 overflow-hidden rounded-full" role="img" aria-label="Revenue share by project type">
