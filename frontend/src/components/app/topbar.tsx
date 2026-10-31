@@ -75,7 +75,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
         <Popover open={open && results.length > 0} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
-            <label className="border-input dark:bg-input/30 bg-background focus-within:border-ring focus-within:ring-ring/50 text-muted-foreground hidden h-8 w-56 items-center gap-2 rounded-md border px-2.5 focus-within:ring-[3px] md:flex lg:w-72">
+            <label className="border-input dark:bg-input/30 bg-card focus-within:border-ring focus-within:ring-ring/50 text-muted-foreground hidden h-8 w-56 items-center gap-2 rounded-md border px-2.5 focus-within:ring-[3px] md:flex lg:w-72">
               <Search className="size-4 shrink-0" />
               <input
                 ref={inputRef}

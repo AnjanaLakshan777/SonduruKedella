@@ -1680,3 +1680,9 @@ For each completed task, record the date, files or migrations changed, verificat
 - The text only describes the existing formulas. No figures changed.
 - Found while doing this, not changed: the Suppliers page tile "Purchases this year" adds up every supplier invoice ever recorded, not only this year. Its hint says what it really counts.
 - `tsc -b` is clean and 37 Vitest tests pass. Not tried in a browser.
+
+### 2026-10-31: Light mode page background is light grey
+- Owner request, with a reference screenshot: in light mode the page and the cards were both pure white, so cards didn't stand apart the way they do in dark mode.
+- `--background` (light only) changed from `oklch(1 0 0)` to `oklch(0.967 0 0)`. Cards and popovers stay white. Dark mode is unchanged.
+- The topbar search box uses `bg-card` so it stays white on the grey bar.
+- This changes a theme token in `index.css` (owner-approved). `tsc -b` is clean. Not tried in a browser.
