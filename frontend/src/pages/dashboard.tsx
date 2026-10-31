@@ -203,7 +203,7 @@ export default function Dashboard() {
                   <TableCell className="max-w-64 pl-6"><CellMain title={p.project.name} sub={`${p.project.code} · ${p.client.name}`} /></TableCell>
                   <TableCell><StatusBadge status={p.project.status} /></TableCell>
                   <TableCell className="pr-6 whitespace-normal">
-                    <ul className="grid gap-0.5 text-[13px]">{p.attention.slice(0, 2).map((a) => <li key={a} className={cn(a.includes('overdue') && 'text-destructive-soft-foreground font-medium')}>{a}</li>)}</ul>
+                    <ul className="grid gap-0.5 text-[13px]">{p.attention.slice(0, 2).map((a) => <li key={a.text} className={cn(a.tone === 'danger' && 'text-destructive-soft-foreground font-medium')}>{a.text}</li>)}</ul>
                   </TableCell>
                 </TableRow>
               ))}

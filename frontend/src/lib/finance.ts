@@ -53,15 +53,22 @@ export interface InstallmentView {
   status: ReceivableStatus
   daysOverdue: number
   daysToDue: number
+  /** days past the planned date while still unbilled (0 otherwise, and on paused or cancelled projects) */
+  daysLate: number
 }
 
 // Installments whose planned date has passed but nobody billed yet. Only a reminder: they
 // aren't revenue and aren't overdue until billed. Paused or cancelled projects don't nag.
 export function billingLate(installments: InstallmentView[]) {
   return installments
-    .filter((i) => !i.inst.billed && i.inst.dueDate < TODAY && i.project.status !== 'Cancelled' && i.project.status !== 'On Hold')
-    .map((i) => ({ ...i, daysLate: diffDays(TODAY, i.inst.dueDate) }))
+    .filter((i) => i.daysLate > 0)
     .sort((a, b) => b.daysLate - a.daysLate)
+}
+
+// badge word for a schedule row: an unbilled installment past its planned date gets a yellow
+// "Billing Late" instead of "Upcoming". Its real status stays Upcoming, so counts don't move.
+export function scheduleStatus(i: InstallmentView): string {
+  return i.daysLate > 0 ? 'Billing Late' : i.status
 }
 
 // No separate due dates: anything still owed after the day it was billed is overdue.
@@ -327,7 +334,8 @@ export interface ProjectFinance {
   profitBasis: 'Recorded' | 'Estimated'
   margin: number
   collectedPct: number
-  attention: string[]
+  /** red for money billed and not paid, yellow for everything else worth a look */
+  attention: { text: string; tone: 'danger' | 'warning' }[]
 }
 
 export interface DelayCalc {
@@ -392,6 +400,7 @@ export function derive(s: DataState) {
       inst, project, client, payments, writeOffs, paid, writtenOff, deduction, net, remaining, status,
       daysOverdue: status === 'Overdue' ? diffDays(TODAY, inst.billedOn ?? inst.dueDate) : 0,
       daysToDue: diffDays(inst.dueDate, TODAY),
+      daysLate: !inst.billed && inst.dueDate < TODAY && project.status !== 'Cancelled' && project.status !== 'On Hold' ? diffDays(TODAY, inst.dueDate) : 0,
     }
   })
   const instByProject = groupBy(installments, (i) => i.inst.projectId)
@@ -609,15 +618,19 @@ export function derive(s: DataState) {
       costs: cashCosts, profit: r2(received - cashCosts),
     }
     const adjustedValue = project.contractValue - deduction
-    const attention: string[] = []
+    const attention: ProjectFinance['attention'] = []
+    const warn = (text: string) => attention.push({ text, tone: 'warning' })
     const ovCount = insts.filter((i) => i.status === 'Overdue').length
-    if (ovCount) attention.push(`${formatLKR(overdue, { decimals: 0 })} overdue`)
-    if (project.status !== 'Completed' && project.status !== 'Cancelled' && project.expectedCompletion < TODAY) attention.push('Past expected completion')
-    else if (project.status === 'In Progress' && diffDays(project.expectedCompletion, TODAY) <= 14) attention.push(`Due for completion ${diffDays(project.expectedCompletion, TODAY)} days from now`)
-    if (profit < 0) attention.push('Costs exceed revenue recorded')
-    if (policyCheck(project.id).conflict) attention.push('Commission shares above policy')
-    if (project.status === 'On Hold') attention.push('On hold')
-    if (!project.agreement && project.type !== 'Consultation') attention.push('No agreement uploaded')
+    if (ovCount) attention.push({ text: `${formatLKR(overdue, { decimals: 0 })} overdue`, tone: 'danger' })
+    const late = insts.filter((i) => i.daysLate > 0)
+    if (late.length) warn(`${late.length === 1 ? `${late[0].inst.description} not billed` : `${late.length} installments not billed`} · planned date passed`)
+    const daysLeft = diffDays(project.expectedCompletion, TODAY)
+    if (project.status !== 'Completed' && project.status !== 'Cancelled' && project.expectedCompletion < TODAY) warn('Past expected completion')
+    else if (project.status === 'In Progress' && daysLeft <= 14) warn(daysLeft === 0 ? 'Due for completion today' : `Due for completion in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`)
+    if (profit < 0) warn('Costs exceed revenue recorded')
+    if (policyCheck(project.id).conflict) warn('Commission shares above policy')
+    if (project.status === 'On Hold') warn('On hold')
+    if (!project.agreement && project.type !== 'Consultation') warn('No agreement uploaded')
     return {
       project, client: clientById.get(project.clientId)!, installments: insts, contractValue: project.contractValue, deduction, adjustedValue, scheduledTotal,
       revenueRecorded, received, writtenOff, receivable, overdue, unbilled,

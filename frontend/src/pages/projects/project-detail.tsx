@@ -18,7 +18,7 @@ import { EmptyState } from '@/components/app/empty-state'
 import { FileDropzone } from '@/components/app/file-dropzone'
 import { BasisToggle, useBasis } from '@/components/app/basis-toggle'
 import { useData, useStore } from '@/store/store'
-import { projectActivity } from '@/lib/finance'
+import { projectActivity, scheduleStatus } from '@/lib/finance'
 import { diffDays, formatDate, TODAY } from '@/lib/dates'
 import { apiUrl, errorMessage } from '@/lib/api'
 import { formatLKR } from '@/lib/format'
@@ -107,12 +107,17 @@ export default function ProjectDetail() {
 
         <TabsContent value="overview" className="grid items-start gap-6 xl:grid-cols-3">
           <div className="grid gap-6 xl:col-span-2">
-            {pf.attention.length > 0 && (
-              <div className="bg-warning-soft text-warning flex items-start gap-3 rounded-lg border border-current/20 px-4 py-3 text-sm">
-                <CircleAlert className="mt-0.5 size-4 shrink-0" />
-                <div><div className="font-medium">Needs attention</div><div>{pf.attention.join(' · ')}</div></div>
-              </div>
-            )}
+            {/* red for money billed and still unpaid, yellow for the rest */}
+            {(['danger', 'warning'] as const).map((tone) => {
+              const items = pf.attention.filter((a) => a.tone === tone)
+              if (!items.length) return null
+              return (
+                <div key={tone} role={tone === 'danger' ? 'alert' : undefined} className={cn('flex items-start gap-3 rounded-lg border border-current/20 px-4 py-3 text-sm', tone === 'danger' ? 'bg-destructive-soft text-destructive-soft-foreground' : 'bg-warning-soft text-warning')}>
+                  <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                  <div><div className="font-medium">{tone === 'danger' ? 'Overdue' : 'Needs attention'}</div><div>{items.map((a) => a.text).join(' · ')}</div></div>
+                </div>
+              )
+            })}
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
                 <CardHeader><CardTitle>Client money</CardTitle><CardDescription>From agreed value to what is still owed</CardDescription></CardHeader>
@@ -166,7 +171,7 @@ export default function ProjectDetail() {
             <Card>
               <CardHeader>
                 <CardTitle>Payment schedule</CardTitle>
-                <CardDescription>{pf.installments.filter((i) => i.status === 'Paid').length} paid · {pf.installments.filter((i) => i.status === 'Overdue').length} overdue · {pf.installments.filter((i) => i.status === 'Upcoming').length} upcoming</CardDescription>
+                <CardDescription>{pf.installments.filter((i) => i.status === 'Paid').length} paid · {pf.installments.filter((i) => i.status === 'Overdue').length} overdue · {pf.installments.filter((i) => i.status === 'Upcoming').length} upcoming{pf.installments.some((i) => i.daysLate > 0) ? ` · ${pf.installments.filter((i) => i.daysLate > 0).length} not billed on time` : ''}</CardDescription>
                 <CardAction><Button variant="link" size="sm" className="h-auto px-0" onClick={() => setTab('payments')}>Manage<ArrowRight /></Button></CardAction>
               </CardHeader>
               <CardContent className="grid gap-2">
@@ -179,9 +184,9 @@ export default function ProjectDetail() {
                         <span className="text-muted-foreground text-xs">{formatLKR(i.paid, { decimals: 0 })} paid{i.writtenOff ? ` · ${formatLKR(i.writtenOff, { decimals: 0 })} written off` : ''} · <span className={cn(i.status === 'Overdue' && 'text-destructive-soft-foreground font-medium')}>{formatLKR(i.remaining, { decimals: 0 })} left</span></span>
                       )}
                     </span>
-                    <span className="text-muted-foreground w-24">{i.inst.billed ? formatDate(i.inst.billedOn) : <>{formatDate(i.inst.dueDate)}<span className="block text-xs">planned</span></>}</span>
+                    <span className={cn('w-24', i.daysLate > 0 ? 'text-warning' : 'text-muted-foreground')}>{i.inst.billed ? formatDate(i.inst.billedOn) : <>{formatDate(i.inst.dueDate)}<span className="block text-xs">{i.daysLate > 0 ? `planned · ${i.daysLate}d late` : 'planned'}</span></>}</span>
                     <Money value={i.net} decimals={0} className="w-32 text-right" />
-                    <span className="w-28"><StatusBadge status={i.status} /></span>
+                    <span className="w-28"><StatusBadge status={scheduleStatus(i)} /></span>
                   </div>
                 ))}
                 {!pf.installments.length && <p className="text-muted-foreground text-sm">No schedule yet.</p>}
@@ -218,9 +223,9 @@ export default function ProjectDetail() {
                 <div className="text-muted-foreground text-xs">of {formatLKR(pf.adjustedValue, { decimals: 0 })}</div>
                 {nextDue && (
                   <div className="bg-muted/50 mt-1 grid gap-1 rounded-md p-3 text-sm">
-                    <span className="text-muted-foreground text-xs">{nextDue.status === 'Overdue' ? 'Overdue' : 'Next due'}</span>
+                    <span className="text-muted-foreground text-xs">{nextDue.status === 'Overdue' ? 'Overdue' : nextDue.daysLate > 0 ? 'Not billed on time' : 'Next due'}</span>
                     <span className="font-medium">{nextDue.inst.description}</span>
-                    <span className="flex justify-between"><Money value={nextDue.remaining} decimals={0} /><span className={cn(nextDue.status === 'Overdue' && 'text-destructive')}>{nextDue.inst.billed ? `billed ${formatDate(nextDue.inst.billedOn)}` : `planned ${formatDate(nextDue.inst.dueDate)}`}</span></span>
+                    <span className="flex justify-between"><Money value={nextDue.remaining} decimals={0} /><span className={cn(nextDue.status === 'Overdue' && 'text-destructive', nextDue.daysLate > 0 && 'text-warning')}>{nextDue.inst.billed ? `billed ${formatDate(nextDue.inst.billedOn)}` : `planned ${formatDate(nextDue.inst.dueDate)}`}</span></span>
                   </div>
                 )}
               </CardContent>

@@ -18,7 +18,7 @@ import { ScheduleEditor, newRowKey, type ScheduleRow } from '@/components/app/sc
 import { DelayTermsForm, RULE_LABEL } from '@/components/app/delay-terms-form'
 import { AmountInput, DatePicker, Field } from '@/components/app/form'
 import { useStore } from '@/store/store'
-import { calcDelay, sum, type InstallmentView, type ProjectFinance } from '@/lib/finance'
+import { calcDelay, scheduleStatus, sum, type InstallmentView, type ProjectFinance } from '@/lib/finance'
 import { formatDate, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
@@ -32,6 +32,7 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
   const [editOpen, setEditOpen] = useState(false)
   const payView = pf.installments.find((i) => i.inst.id === payFor)
   const overdue = pf.installments.filter((i) => i.status === 'Overdue')
+  const late = pf.installments.filter((i) => i.daysLate > 0)
   const history = pf.installments.flatMap((i) => [
     ...i.payments.map((p) => ({ id: p.id, instId: i.inst.id, date: p.date, inst: i.inst.description, kind: 'Payment' as const, method: `${p.method}${p.reference ? ` · ${p.reference}` : ''}`, amount: p.amount })),
     ...i.writeOffs.map((w) => ({ id: w.id, instId: i.inst.id, date: w.date, inst: i.inst.description, kind: 'Write-off' as const, method: w.reason, amount: w.amount })),
@@ -47,6 +48,16 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
             <div>{overdue.map((i) => `${i.inst.description} — ${i.daysOverdue} days since billed on ${formatDate(i.inst.billedOn ?? i.inst.dueDate)}`).join(' · ')}</div>
           </div>
           <Button size="sm" variant="outline" className="bg-card text-foreground" onClick={() => setPayFor(overdue[0].inst.id)}>Record Payment</Button>
+        </div>
+      )}
+      {late.length > 0 && (
+        <div className="bg-warning-soft text-warning flex flex-wrap items-start gap-3 rounded-lg border border-current/20 px-4 py-3 text-sm">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" />
+          <div className="flex-1">
+            <div className="font-medium">{formatLKR(sum(late, (i) => i.net))} not billed yet, planned date passed</div>
+            <div>{late.map((i) => `${i.inst.description} — planned ${formatDate(i.inst.dueDate)}, ${i.daysLate} ${i.daysLate === 1 ? 'day' : 'days'} late`).join(' · ')}</div>
+          </div>
+          <Button size="sm" variant="outline" className="bg-card text-foreground" onClick={() => setBillFor(late[0])}>Bill now</Button>
         </div>
       )}
 
@@ -76,12 +87,12 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
                   <span className="grid"><span className="truncate font-medium">{n + 1}. {i.inst.description}</span>
                     <span className="text-muted-foreground text-xs">{i.inst.billed ? `Billed ${formatDate(i.inst.billedOn)}` : 'Not billed yet'}{i.writtenOff ? ` · ${formatLKR(i.writtenOff)} written off` : ''}</span></span>
                 </TableCell>
-                <TableCell>{formatDate(i.inst.billedOn ?? i.inst.dueDate)}{!i.inst.billed && <div className="text-muted-foreground text-xs">planned</div>}{i.status === 'Overdue' && <div className="text-destructive-soft-foreground text-xs">{i.daysOverdue} days overdue</div>}</TableCell>
+                <TableCell>{formatDate(i.inst.billedOn ?? i.inst.dueDate)}{!i.inst.billed && (i.daysLate > 0 ? <div className="text-warning text-xs">planned · {i.daysLate} {i.daysLate === 1 ? 'day' : 'days'} late</div> : <div className="text-muted-foreground text-xs">planned</div>)}{i.status === 'Overdue' && <div className="text-destructive-soft-foreground text-xs">{i.daysOverdue} days overdue</div>}</TableCell>
                 <TableCell className="text-right"><Money value={i.inst.amount} currency={false} /></TableCell>
                 <TableCell className="hidden text-right lg:table-cell">{i.deduction ? <Money value={-i.deduction} currency={false} /> : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell className="text-right">{i.paid ? <Money value={i.paid} currency={false} /> : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell className="text-right font-medium">{i.inst.billed ? <Money value={i.remaining} currency={false} /> : <span className="text-muted-foreground font-normal">not billed</span>}</TableCell>
-                <TableCell><StatusBadge status={i.status} /></TableCell>
+                <TableCell><StatusBadge status={scheduleStatus(i)} /></TableCell>
                 <TableCell className="pr-4">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label={`Actions for ${i.inst.description}`}><Ellipsis /></Button></DropdownMenuTrigger>

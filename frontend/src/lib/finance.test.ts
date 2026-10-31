@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createSeed } from '@/data/seed'
 import type { DataState } from '@/data/types'
 import { addDays, TODAY, weekStart } from './dates'
-import { billingLate, derive, projectActivity, projectFigures } from './finance'
+import { billingLate, derive, projectActivity, projectFigures, scheduleStatus } from './finance'
 
 // the seed with every money record cleared, so a test only sees what it adds
 function blank(): DataState {
@@ -74,6 +74,21 @@ describe('billing late reminder', () => {
     ]
     const late = billingLate(derive(s).installments)
     expect(late.map((i) => [i.inst.id, i.daysLate])).toEqual([['i2', 9], ['i1', 2]])
+    // yellow "Billing Late" on the schedule, red "Overdue" once billed and unpaid; the real status stays Upcoming
+    const by = new Map(derive(s).installments.map((i) => [i.inst.id, i]))
+    expect(by.get('i1')!.status).toBe('Upcoming')
+    expect(['i1', 'i3', 'i4'].map((id) => scheduleStatus(by.get(id)!))).toEqual(['Billing Late', 'Upcoming', 'Overdue'])
+  })
+
+  it('puts overdue money in red and late billing in yellow on the project', () => {
+    const s = blank()
+    s.installments = [
+      { id: 'i1', projectId: 'p2', description: 'Slab', dueDate: addDays(TODAY, -10), amount: 60000, billed: true, billedOn: addDays(TODAY, -3) },
+      { id: 'i2', projectId: 'p2', description: 'Roof', dueDate: addDays(TODAY, -4), amount: 50000, billed: false },
+    ]
+    const att = derive(s).projectFinById.get('p2')!.attention
+    expect(att.filter((a) => a.tone === 'danger').map((a) => a.text)).toEqual([expect.stringContaining('60,000 overdue')])
+    expect(att).toContainEqual({ text: 'Roof not billed · planned date passed', tone: 'warning' })
   })
 
   it('skips projects that are on hold or cancelled', () => {

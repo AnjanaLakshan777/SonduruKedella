@@ -22,7 +22,7 @@ import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/fo
 import { EmptyState } from '@/components/app/empty-state'
 import { PaymentDialog } from '@/components/app/payment-dialog'
 import { useData, useStore } from '@/store/store'
-import { sum } from '@/lib/finance'
+import { scheduleStatus, sum } from '@/lib/finance'
 import { formatDate, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
@@ -131,11 +131,11 @@ export default function RevenuePage() {
               <TableBody>
                 {scheduled.map((i) => (
                   <TableRow key={i.inst.id} className="cursor-pointer" onClick={() => navigate(`/projects/${i.project.id}?tab=payments`)}>
-                    <TableCell className="pl-6">{formatDate(i.inst.dueDate)}</TableCell>
+                    <TableCell className="pl-6">{formatDate(i.inst.dueDate)}{i.daysLate > 0 && <div className="text-warning text-xs">{i.daysLate} {i.daysLate === 1 ? 'day' : 'days'} late</div>}</TableCell>
                     <TableCell className="max-w-80"><CellMain title={i.inst.description} sub={<><Mono>{i.project.code}</Mono> · {i.project.name}</>} /></TableCell>
                     <TableCell className="hidden md:table-cell">{i.client.name}</TableCell>
                     <TableCell className="text-right"><Money value={i.net} currency={false} /></TableCell>
-                    <TableCell className="pr-6"><StatusBadge status="Upcoming" /></TableCell>
+                    <TableCell className="pr-6"><StatusBadge status={scheduleStatus(i)} /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>

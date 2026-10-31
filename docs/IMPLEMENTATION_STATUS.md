@@ -1602,3 +1602,22 @@ For each completed task, record the date, files or migrations changed, verificat
   - On Hold and Cancelled projects are skipped. Planned today is not late yet.
 - Worked out in the browser (`billingLate()` in `lib/finance.ts`, used by `components/app/topbar.tsx`). No backend, email or SMS notification.
 - Tests: 2 new Vitest tests (34 pass). `tsc -b` is clean. Not tried in a browser.
+
+### 2026-10-31: Late billing in yellow, overdue in red
+- An unbilled installment past its planned date now shows in yellow wherever the schedule appears. Billed and unpaid after the billing day stays red "Overdue".
+  - The badge says "Billing Late" (warning tone) instead of "Upcoming". The planned date is yellow with "N days late".
+  - Screens: the project overview Payment schedule card (the description also counts "N not billed on time"), the Next due box ("Not billed on time"), the project Payments tab, and the Revenue page Upcoming list.
+  - The bell already used a red icon for overdue and a yellow icon for late billing.
+- `InstallmentView.daysLate` holds the days past the planned date. It is 0 when billed, when not late, or on On Hold / Cancelled projects. `scheduleStatus()` gives the badge word.
+  - The real status stays `Upcoming`, so the counts, revenue and overdue figures don't change.
+- Tests: the billing-late Vitest test also checks the badge words (34 pass). `tsc -b` is clean. Not tried in a browser.
+
+### 2026-10-31: Project warnings split into red and yellow
+- Each project's "needs attention" items now have a tone (`ProjectFinance.attention` is `{ text, tone }[]`).
+  - Red (`danger`): money billed and unpaid after the billing day ("LKR N overdue").
+  - Yellow (`warning`): everything else, plus a new item "<installment> not billed · planned date passed" (or "N installments not billed").
+- Project overview: a red "Overdue" banner and a separate yellow "Needs attention" banner. Before, the overdue amount sat in the yellow banner.
+- Payments tab: a yellow banner under the red overdue one lists unbilled installments past their planned date, with a "Bill now" button.
+- Dashboard "Needs attention" list colours by tone instead of matching the word "overdue".
+- Fixed the wording "Due for completion 0 days from now". It now says "Due for completion today" or "in N days".
+- Tests: 1 new Vitest test (35 pass). `tsc -b` is clean. Not tried in a browser.
