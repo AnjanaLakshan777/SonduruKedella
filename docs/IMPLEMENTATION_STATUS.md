@@ -1686,3 +1686,9 @@ For each completed task, record the date, files or migrations changed, verificat
 - `--background` (light only) changed from `oklch(1 0 0)` to `oklch(0.967 0 0)`. Cards and popovers stay white. Dark mode is unchanged.
 - The topbar search box uses `bg-card` so it stays white on the grey bar.
 - This changes a theme token in `index.css` (owner-approved). `tsc -b` is clean. Not tried in a browser.
+- Follow-up: with the grey page, the filter boxes and other see-through controls blended into the page. In light mode these now have a white background (`bg-card`); dark mode keeps `dark:bg-input/30` as before:
+  - inputs, selects, textareas, date pickers, amount inputs and search filters;
+  - outline buttons;
+  - the active pill tab;
+  - side sheets.
+- The pill tab track is `bg-black/5` in light mode so it shows on both the grey page and white cards (`bg-muted` in dark, unchanged).

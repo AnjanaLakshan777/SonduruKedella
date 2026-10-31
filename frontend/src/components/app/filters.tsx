@@ -8,7 +8,7 @@ import { addMonths, fyLabel, monthEnd, monthLabel, monthStart, TODAY } from '@/l
 
 export function SearchInput({ value, onChange, placeholder = 'Search…', className }: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
   return (
-    <label className={cn('border-input dark:bg-input/30 focus-within:border-ring focus-within:ring-ring/50 text-muted-foreground flex h-8 w-full items-center gap-2 rounded-md border bg-transparent px-2.5 shadow-xs focus-within:ring-[3px] sm:w-64', className)}>
+    <label className={cn('border-input bg-card dark:bg-input/30 focus-within:border-ring focus-within:ring-ring/50 text-muted-foreground flex h-8 w-full items-center gap-2 rounded-md border px-2.5 shadow-xs focus-within:ring-[3px] sm:w-64', className)}>
       <Search className="size-4 shrink-0" />
       <input className="text-foreground placeholder:text-muted-foreground w-full min-w-0 bg-transparent text-sm outline-none" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} aria-label={placeholder} />
       {value && <button type="button" onClick={() => onChange('')} aria-label="Clear search" className="hover:text-foreground"><X className="size-3.5" /></button>}

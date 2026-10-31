@@ -48,7 +48,7 @@ export function AmountInput({ value, onChange, invalid, id, placeholder = '0.00'
   return (
     <div
       className={cn(
-        'border-input dark:bg-input/30 flex h-9 items-center rounded-md border shadow-xs transition-[color,box-shadow]',
+        'border-input bg-card dark:bg-input/30 flex h-9 items-center rounded-md border shadow-xs transition-[color,box-shadow]',
         'focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
         invalid && 'border-destructive ring-destructive/20 dark:ring-destructive/40 ring-[3px]',
         disabled && 'opacity-50',
@@ -87,7 +87,7 @@ export function DatePicker({ value, onChange, invalid, placeholder = 'Pick a dat
           type="button"
           aria-invalid={invalid || undefined}
           className={cn(
-            'border-input dark:bg-input/30 flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 text-left text-sm shadow-xs outline-none',
+            'border-input dark:bg-input/30 flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-card px-3 text-left text-sm shadow-xs outline-none',
             'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:opacity-50',
             !value && 'text-muted-foreground',
             className,
