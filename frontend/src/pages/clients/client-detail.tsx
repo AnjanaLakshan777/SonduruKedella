@@ -17,6 +17,7 @@ import { ClientDialog } from '@/components/app/client-dialog'
 import { useData } from '@/store/store'
 import { clientSummary } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
+import { formatLKR } from '@/lib/format'
 
 const M = (v: number) => <Money value={v} decimals={0} currency={false} />
 
@@ -46,7 +47,7 @@ export default function ClientDetail() {
       />
       <KpiStrip items={[
         { label: 'Contract Value', unit: 'LKR', value: M(s.contractValue), basis: 'Agreed', caption: 'All projects' },
-        { label: 'Revenue Recorded', unit: 'LKR', value: M(s.revenueRecorded), basis: 'Recorded' },
+        { label: 'Revenue Recorded', unit: 'LKR', value: M(s.revenueRecorded - s.writtenOff), basis: 'Recorded', caption: s.writtenOff ? `After ${formatLKR(s.writtenOff, { decimals: 0, currency: false })} written off` : undefined },
         { label: 'Payments Received', unit: 'LKR', value: M(s.received), basis: 'Received' },
         { label: 'Owed Now', unit: 'LKR', value: M(s.receivable), basis: 'Recorded', caption: s.overdue ? <span className="text-destructive-soft-foreground font-medium">{s.overdue.toLocaleString('en-LK')} overdue</span> : 'Nothing overdue' },
         { label: 'Written Off', unit: 'LKR', value: M(s.writtenOff), caption: 'Bad debt — not received' },

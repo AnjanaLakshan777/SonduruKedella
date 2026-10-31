@@ -27,7 +27,7 @@ export default function ReportsPage() {
 
   if (!current) {
     const highlights: Record<string, React.ReactNode> = {
-      income: <>Revenue recorded <Money value={d.totals.revenueRecorded} decimals={0} /></>,
+      income: <>Revenue recorded <Money value={d.totals.revenueNet} decimals={0} /></>,
       expenses: <>Project costs <Money value={d.totals.projectCosts} decimals={0} /></>,
       profitability: <>Est. project profit <Money value={d.totals.projectProfit} decimals={0} /></>,
       receivables: <>Overdue <Money value={d.totals.overdue} decimals={0} /></>,

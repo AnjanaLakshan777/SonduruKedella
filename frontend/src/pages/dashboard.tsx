@@ -41,7 +41,7 @@ export default function Dashboard() {
     [d],
   )
   const byType = useMemo(() => {
-    const rows = (['Construction', 'Design', 'Consultation'] as const).map((type) => ({ type, value: sum(d.projects.filter((p) => p.project.type === type), (p) => p.revenueRecorded) }))
+    const rows = (['Construction', 'Design', 'Consultation'] as const).map((type) => ({ type, value: sum(d.projects.filter((p) => p.project.type === type), (p) => p.revenueRecorded - p.writtenOff) }))
     rows.push({ type: 'Other Income' as never, value: t.revenueOther })
     return rows
   }, [d, t.revenueOther])
@@ -52,6 +52,13 @@ export default function Dashboard() {
   const cash = basis === 'cash'
   const activeClients = new Set(d.projects.filter((p) => p.project.status === 'In Progress').map((p) => p.client.id)).size
   const expensesRecorded = sum(d.expenseLines, (l) => l.amount)
+  // one figure when they're the same: "3,649,000 overdue" rather than the same number twice
+  const L0 = (v: number) => formatLKR(v, { decimals: 0, currency: false })
+  const overdueText = <span className="text-destructive-soft-foreground font-medium">{L0(t.overdue)} overdue</span>
+  const owedCaption = t.receivable <= 0 ? 'Nothing owed'
+    : t.overdue <= 0 ? `${L0(t.receivable)} still owed`
+    : Math.abs(t.overdue - t.receivable) < 0.5 ? overdueText
+    : <><span>{L0(t.receivable)} still owed · </span>{overdueText}</>
   const profitRows = d.projects
     .filter((p) => (cash ? p.received > 0 || p.cash.costs > 0 : p.revenueRecorded > 0))
     .map((p) => ({ id: p.project.id, name: p.project.name, code: p.project.code, profit: Math.round(cash ? p.cash.profit : p.profit), basis: p.profitBasis }))
@@ -95,8 +102,8 @@ export default function Dashboard() {
           { label: 'Contract Value (active)', unit: 'LKR', value: M(t.activeContractValue), basis: 'Agreed', caption: 'Not revenue until billed', hint: 'Total agreed contract value of In Progress projects. Only billed installments count as revenue.' },
           { label: 'Total Clients', value: d.s.clients.length, caption: `${activeClients} with active projects` },
           cash
-            ? { label: 'Total Revenue', unit: 'LKR', value: M(t.paymentsReceived), basis: 'Received', caption: `Accrual: ${formatLKR(t.revenueRecorded, { decimals: 0, currency: false })}`, hint: 'Money actually received: client payments plus other income receipts, on the day they came in.' }
-            : { label: 'Total Revenue', unit: 'LKR', value: M(t.revenueRecorded), basis: 'Recorded', caption: <><span>{formatLKR(t.receivable, { decimals: 0, currency: false })} still owed</span>{t.overdue > 0 && <span className="text-destructive-soft-foreground font-medium"> · {formatLKR(t.overdue, { decimals: 0, currency: false })} overdue</span>}</>, hint: 'Billed installments (net of delay deductions) plus other income. An installment is counted once, however many payments it takes.' },
+            ? { label: 'Total Revenue', unit: 'LKR', value: M(t.paymentsReceived), basis: 'Received', caption: `Accrual: ${formatLKR(t.revenueNet, { decimals: 0, currency: false })}`, hint: 'Money actually received: client payments plus other income receipts, on the day they came in.' }
+            : { label: 'Total Revenue', unit: 'LKR', value: M(t.revenueNet), basis: 'Recorded', caption: owedCaption, hint: 'Billed installments (net of delay deductions) plus other income, less amounts written off as bad debt. An installment is counted once, however many payments it takes.' },
           cash
             ? { label: 'Total Expenses', unit: 'LKR', value: M(t.cashPaidOut), basis: 'Received', caption: `Accrual: ${formatLKR(expensesRecorded, { decimals: 0, currency: false })}`, hint: 'Money actually paid out: expense, supplier (incl. stock purchases), wage, salary advance and commission payments, on the day they were paid.' }
             : { label: 'Total Expenses', unit: 'LKR', value: M(expensesRecorded), basis: 'Recorded', caption: `incl. ${formatLKR(t.companyExpenses, { decimals: 0, currency: false })} company-level`, hint: 'Project costs (direct expenses, materials to site, stock issued at cost, wages, confirmed commission) plus company-level expenses, whether paid or not. Stock purchases count only when issued.' },
@@ -145,9 +152,9 @@ export default function Dashboard() {
               ))}
             </dl>
             <div className="mt-2 grid gap-2 border-t pt-4">
-              <div className="flex items-baseline justify-between text-sm"><span className="font-medium">Collected from revenue recorded</span><span className="tabular text-muted-foreground text-xs">{((t.paymentsReceived / t.revenueRecorded) * 100).toFixed(0)}%</span></div>
-              <Progress value={(t.paymentsReceived / t.revenueRecorded) * 100} aria-label="Collected" />
-              <div className="text-muted-foreground flex justify-between text-xs"><span>Received {formatLKR(t.paymentsReceived, { decimals: 0 })}</span><span>Recorded {formatLKR(t.revenueRecorded, { decimals: 0 })}</span></div>
+              <div className="flex items-baseline justify-between text-sm"><span className="font-medium">Collected from revenue recorded</span><span className="tabular text-muted-foreground text-xs">{((t.paymentsReceived / t.revenueNet) * 100).toFixed(0)}%</span></div>
+              <Progress value={(t.paymentsReceived / t.revenueNet) * 100} aria-label="Collected" />
+              <div className="text-muted-foreground flex justify-between text-xs"><span>Received {formatLKR(t.paymentsReceived, { decimals: 0 })}</span><span>Recorded {formatLKR(t.revenueNet, { decimals: 0 })}</span></div>
             </div>
           </CardContent>
         </Card>

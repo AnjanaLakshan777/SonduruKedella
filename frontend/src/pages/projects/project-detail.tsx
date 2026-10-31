@@ -85,7 +85,7 @@ export default function ProjectDetail() {
       <KpiStrip
         items={[
           { label: 'Contract Value', unit: 'LKR', value: M(pf.contractValue), basis: 'Agreed', caption: pf.deduction ? `Adjusted ${formatLKR(pf.adjustedValue, { decimals: 0, currency: false })} after deduction` : 'Unchanged by deductions' },
-          { label: 'Revenue Recorded', unit: 'LKR', value: M(pf.revenueRecorded), basis: 'Recorded', caption: `${pf.installments.filter((i) => i.inst.billed).length} of ${pf.installments.length} installments billed` },
+          { label: 'Revenue Recorded', unit: 'LKR', value: M(pf.revenueRecorded - pf.writtenOff), basis: 'Recorded', caption: pf.writtenOff ? `After ${formatLKR(pf.writtenOff, { decimals: 0, currency: false })} written off` : `${pf.installments.filter((i) => i.inst.billed).length} of ${pf.installments.length} installments billed` },
           { label: 'Payments Received', unit: 'LKR', value: M(pf.received), basis: 'Received', caption: `${pf.collectedPct.toFixed(0)}% of amount payable` },
           { label: 'Receivable', unit: 'LKR', value: M(pf.receivable), basis: 'Recorded', caption: pf.overdue ? <span className="text-destructive-soft-foreground font-medium">{formatLKR(pf.overdue, { decimals: 0, currency: false })} overdue</span> : 'Nothing overdue' },
           { label: 'Project Costs', unit: 'LKR', value: M(pf.totalCosts), basis: 'Recorded', caption: pf.payables.total ? `${formatLKR(pf.payables.total, { decimals: 0, currency: false })} still to pay` : 'All paid' },

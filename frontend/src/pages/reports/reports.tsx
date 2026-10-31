@@ -79,7 +79,7 @@ export function IncomeReport() {
   const [range, setRange] = useState(defaultRange())
   const [cat, setCat] = useState(ALL)
   const rows = useMemo(() => [
-    ...d.installments.filter((i) => i.inst.billed).map((i) => ({ date: i.inst.billedOn ?? i.inst.dueDate, category: i.project.type as string, project: i.project, amount: i.net, received: i.paid, remaining: i.remaining })),
+    ...d.installments.filter((i) => i.inst.billed).map((i) => ({ date: i.inst.billedOn ?? i.inst.dueDate, category: i.project.type as string, project: i.project, amount: i.net - i.writtenOff, received: i.paid, remaining: i.remaining })),
     ...d.otherIncome.map((o) => ({ date: o.income.date, category: 'Other Income', project: undefined, amount: o.income.amount, received: o.received, remaining: o.remaining })),
   ].filter((r) => inRange(r.date, range) && (cat === ALL || r.category === cat)), [d, range, cat])
   const received = useMemo(() => d.s.clientPayments.filter((p) => inRange(p.date, range)), [d, range])
@@ -92,7 +92,7 @@ export function IncomeReport() {
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <FilterBar><DateRangeFilter value={range} onChange={setRange} /><FilterSelect label="Categories" value={cat} onChange={setCat} options={d.s.settings.revenueCategories} /></FilterBar>
-        <ExportMenu subtitle={formatRange(range.from, range.to)} name="income-report" rows={() => [['Date', 'Category', 'Project', 'Revenue recorded (LKR)', 'Received (LKR)', 'Outstanding (LKR)'], ...rows.map((r) => [formatDate(r.date), r.category, r.project?.code ?? '', r.amount, r.received, r.remaining])]} />
+        <ExportMenu subtitle={formatRange(range.from, range.to)} name="income-report" rows={() => [['Date', 'Category', 'Project', 'Revenue recorded, after write-offs (LKR)', 'Received (LKR)', 'Outstanding (LKR)'], ...rows.map((r) => [formatDate(r.date), r.category, r.project?.code ?? '', r.amount, r.received, r.remaining])]} />
       </div>
       <KpiStrip items={[
         { label: 'Revenue recorded', unit: 'LKR', value: M0(sum(rows, (r) => r.amount)), basis: 'Recorded' },
@@ -100,7 +100,7 @@ export function IncomeReport() {
         { label: 'Still outstanding', unit: 'LKR', value: M0(sum(rows, (r) => r.remaining)) },
         { label: 'Cash received in period', unit: 'LKR', value: M0(sum(months, (m) => m.received)), caption: 'Includes payments for earlier billing', hint: 'Payments dated within the range, whichever period the revenue was recorded in.' },
       ]} />
-      <Basis>Revenue is recorded when an installment is billed (net of any applied delay deduction), plus other income. Payments received are shown separately; an installment paid in several payments is counted as revenue once. Contract value is not revenue.</Basis>
+      <Basis>Revenue is recorded when an installment is billed (net of any applied delay deduction), plus other income, less any amount written off as bad debt. Payments received are shown separately; an installment paid in several payments is counted as revenue once. Contract value is not revenue.</Basis>
       <div className="grid gap-6 xl:grid-cols-5">
         <Card className="xl:col-span-3">
           <CardHeader><CardTitle>Revenue by period</CardTitle><CardDescription>Recorded versus received, by month</CardDescription><CardAction><Legend items={[{ label: 'Recorded', color: 'var(--chart-3)' }, { label: 'Received', color: 'var(--chart-5)' }]} /></CardAction></CardHeader>
@@ -121,7 +121,7 @@ export function IncomeReport() {
         <CardHeader><CardTitle>Revenue by project</CardTitle></CardHeader>
         <Table>
           <TableHeader><TableRow><TableHead className="pl-6">Project</TableHead><TableHead className="hidden md:table-cell">Type</TableHead><TableHead className="text-right">Recorded (LKR)</TableHead><TableHead className="text-right">Received (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
-          <TableBody>{byProject.map((x) => <TableRow key={x.p.project.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.project.name} sub={<Mono>{x.p.project.code}</Mono>} /></TableCell><TableCell className="hidden md:table-cell">{x.p.project.type}</TableCell><TableCell className="text-right">{M0(x.v)}</TableCell><TableCell className="text-right">{M0(x.rec)}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(x.v - x.rec - sum(x.p.installments.filter((i) => inRange(i.inst.billedOn ?? i.inst.dueDate, range)), (i) => i.writtenOff))}</TableCell></TableRow>)}</TableBody>
+          <TableBody>{byProject.map((x) => <TableRow key={x.p.project.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.project.name} sub={<Mono>{x.p.project.code}</Mono>} /></TableCell><TableCell className="hidden md:table-cell">{x.p.project.type}</TableCell><TableCell className="text-right">{M0(x.v)}</TableCell><TableCell className="text-right">{M0(x.rec)}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(x.v - x.rec)}</TableCell></TableRow>)}</TableBody>
         </Table>
       </Card>
     </>

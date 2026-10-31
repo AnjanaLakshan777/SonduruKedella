@@ -675,7 +675,7 @@ export function derive(s: DataState) {
     m[f] += v
     monthly.set(k, m)
   }
-  for (const i of billed) bump(monthKey(i.inst.billedOn ?? i.inst.dueDate), 'revenue', i.net)
+  for (const i of billed) bump(monthKey(i.inst.billedOn ?? i.inst.dueDate), 'revenue', i.net - i.writtenOff)
   for (const o of otherIncome) bump(monthKey(o.income.date), 'revenue', o.income.amount)
   for (const p of s.clientPayments) bump(monthKey(p.date), 'received', p.amount)
   for (const l of expenseLines) bump(monthKey(l.date), 'expenses', l.amount)
@@ -691,7 +691,8 @@ export function derive(s: DataState) {
     // FIFO cost of every stock movement, keyed by movement id
     stockCost: fifo.costed,
     installments, invoices, materials, payroll, advances, commissions, policyCheck, expenseLines, cashLines, projects, projectFinById, otherIncome,
-    totals: { ...totals, revenueRecorded, paymentsReceived },
+    // revenueNet is what the screens call revenue: billed and other income, less what was written off as bad debt
+    totals: { ...totals, revenueRecorded, revenueNet: r2(revenueRecorded - totals.writtenOff), paymentsReceived },
     monthly, payablesDue,
   }
 }

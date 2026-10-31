@@ -14,6 +14,24 @@ function blank(): DataState {
   }
 }
 
+describe('revenue after write-offs', () => {
+  it('takes written-off amounts out of revenue but keeps the write-off out of money received', () => {
+    const s = blank()
+    s.installments = [{ id: 'i1', projectId: 'p1', description: 'Slab', dueDate: TODAY, amount: 100000, billed: true, billedOn: TODAY }]
+    s.clientPayments = [{ id: 'cp1', installmentId: 'i1', date: TODAY, amount: 60000, method: 'Cash' }]
+    s.writeOffs = [{ id: 'w1', installmentId: 'i1', date: TODAY, amount: 30000, reason: 'Client cannot pay' }]
+    s.otherIncome = [{ id: 'o1', date: TODAY, description: 'Scrap', amount: 5000 }]
+    const t = derive(s).totals
+    // billed 100,000 + other 5,000, less the 30,000 written off
+    expect(t.revenueNet).toBe(75000)
+    expect(t.revenueRecorded).toBe(105000)
+    expect(t.paymentsReceived).toBe(60000)
+    // what's left to collect: 100,000 − 60,000 received − 30,000 written off, plus the unpaid 5,000
+    expect(t.receivable).toBe(15000)
+    expect(derive(s).monthly.get(TODAY.slice(0, 7))!.revenue).toBe(75000)
+  })
+})
+
 describe('overdue', () => {
   it('counts from the day after billing, whatever the planned date says', () => {
     const s = blank()

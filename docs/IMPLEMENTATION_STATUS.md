@@ -1554,3 +1554,21 @@ For each completed task, record the date, files or migrations changed, verificat
   - frontend: `tsc -b` is clean and 30 Vitest tests pass;
   - the dev backend was rebuilt.
   - Not tried in a browser.
+
+### 2026-10-31: Revenue is shown after write-offs
+- Owner decision: an amount written off as bad debt comes out of billed revenue.
+- `lib/finance.ts`:
+  - New `totals.revenueNet` = revenue recorded − written off.
+  - The monthly series takes each installment's write-offs off its billing month.
+  - The stored facts are unchanged: billing and write-offs are still separate records. A write-off is still not money received, and receivable = billed − received − written off as before.
+- Screens now show revenue after write-offs:
+  - the dashboard Total Revenue tile on accrual (and the accrual figure in its cash caption);
+  - Revenue by Type and the collection progress bar;
+  - the Reports page summary;
+  - the Income report rows, totals, chart and exports (the column is "Revenue recorded, after write-offs");
+  - the Revenue Recorded tile on the project and client pages, with an "After N written off" caption.
+- The project page's "Client money" card still lists billed revenue and then subtracts the write-off, so the steps stay visible.
+- Profitability accrual revenue was already net of write-offs, so it is unchanged.
+- Backend `/reports/dashboard` still returns `revenueRecorded` and `writtenOff` as separate fields. It was not changed.
+- Development data: 54,200,000 recorded − 4,950,000 written off = 49,250,000 revenue.
+- Tests: 1 new test in `lib/finance.test.ts`. `tsc -b` is clean and 31 Vitest tests pass. Not tried in a browser.
