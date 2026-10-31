@@ -216,7 +216,7 @@ export default function Dashboard() {
         <Card className="gap-4 pb-0">
           <CardHeader>
             <CardTitle>Overdue Client Receivables</CardTitle>
-            <CardDescription>Unpaid after the day it was billed · total {formatLKR(sum(overdue, (i) => i.remaining))}</CardDescription>
+            <CardDescription>Billed and still unpaid · total {formatLKR(sum(overdue, (i) => i.remaining))}</CardDescription>
             <ViewAll to="/clients?tab=receivables" label="All receivables" />
           </CardHeader>
           <Table>

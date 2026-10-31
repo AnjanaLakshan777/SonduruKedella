@@ -118,10 +118,10 @@ class OtherIncomeApiIntegrationTest {
     }
 
     @Test
-    void incomeRecordedTodayIsDueUntilTomorrow() throws Exception {
+    void incomeRecordedTodayAndUnpaidIsAlreadyOverdue() throws Exception {
         String today = LocalDate.now(ClockConfig.BUSINESS_ZONE).toString();
         create("{\"date\":\"" + today + "\",\"description\":\"Site visit fee\",\"amount\":4000}")
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("DUE"));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("OVERDUE"));
     }
 
     @Test

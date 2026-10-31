@@ -1621,3 +1621,12 @@ For each completed task, record the date, files or migrations changed, verificat
 - Dashboard "Needs attention" list colours by tone instead of matching the word "overdue".
 - Fixed the wording "Due for completion 0 days from now". It now says "Due for completion today" or "in N days".
 - Tests: 1 new Vitest test (35 pass). `tsc -b` is clean. Not tried in a browser.
+
+### 2026-10-31: Billed and unpaid is overdue from the billing day
+- Owner decision: no separate "due" stage. An installment billed today and not paid is already overdue (0 days). The same goes for other income recorded today.
+  - Backend: `ReceivableCalculator` uses `billed_on <= today`; `OtherIncomeService` uses `income_date <= today`.
+  - Frontend: `installmentStatus` and the other income status in `lib/finance.ts` follow the same rule.
+  - So "Cash to collect" and "Cash overdue" on the dashboard are now the same figure, and the dashboard shows it once.
+- Wording: "0 days since billed" now reads "billed today". The Payments tab says "unpaid since today". The bill dialog no longer says "overdue if still unpaid tomorrow". Captions read "Billed and still unpaid". The ageing bucket is "0–30 days".
+- `BILLED` / `PARTIALLY_PAID` (backend) and `Due` / `Partially Paid` (frontend) stay in the code but only apply to a future billing date, which the app never sets.
+- Tests: backend unit and integration tests updated (673 pass); Vitest updated (35 pass). `tsc -b` is clean. The dev backend container was rebuilt. Not tried in a browser.

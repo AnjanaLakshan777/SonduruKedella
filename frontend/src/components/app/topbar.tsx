@@ -131,7 +131,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
                 <CircleAlert className="text-destructive! mt-0.5" />
                 <span className="grid">
                   <span>{i.client.name} — {formatLKR(i.remaining)} overdue</span>
-                  <span className="text-muted-foreground text-xs">{i.inst.description} · {i.daysOverdue} days since billed on {formatDate(i.inst.billedOn ?? i.inst.dueDate)}</span>
+                  <span className="text-muted-foreground text-xs">{i.inst.description} · {i.daysOverdue ? `${i.daysOverdue} days since billed on ${formatDate(i.inst.billedOn ?? i.inst.dueDate)}` : 'billed today'}</span>
                 </span>
               </DropdownMenuItem>
             ))}

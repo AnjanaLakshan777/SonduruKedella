@@ -98,8 +98,8 @@ class RevenueApiIntegrationTest {
         bill(advance, null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.billed").value(true))
                 .andExpect(jsonPath("$.billedOn").value("2026-10-25"))
-                // billed today: owed, but not late until tomorrow, whatever the planned date was
-                .andExpect(jsonPath("$.status").value("BILLED"))
+                // billed today and unpaid: owed straight away, so already overdue (0 days), whatever the planned date was
+                .andExpect(jsonPath("$.status").value("OVERDUE"))
                 .andExpect(jsonPath("$.daysOverdue").value(0))
                 .andExpect(jsonPath("$.outstanding").value(300000.00));
         bill(advance, null).andExpect(status().isConflict())
@@ -129,7 +129,7 @@ class RevenueApiIntegrationTest {
         receipt(handover, first, "100000").andExpect(status().isCreated())
                 .andExpect(jsonPath("$.method").value("Bank Transfer"))
                 .andExpect(jsonPath("$.voided").value(false));
-        expectInstallment(handover, "PARTIALLY_PAID", "200000.00");
+        expectInstallment(handover, "OVERDUE", "200000.00");
 
         receipt(handover, UUID.randomUUID(), "200000.01").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("More than the LKR 200,000.00 still owed on Handover."));
@@ -155,7 +155,7 @@ class RevenueApiIntegrationTest {
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM client_payments WHERE request_id = ?", Long.class, requestId))
                 .isEqualTo(1L);
-        expectInstallment(handover, "PARTIALLY_PAID", "250000.00");
+        expectInstallment(handover, "OVERDUE", "250000.00");
     }
 
     @Test
@@ -185,7 +185,7 @@ class RevenueApiIntegrationTest {
         mockMvc.perform(post(base() + "/receipts/" + id + "/void").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"again\",\"version\":1}")).andExpect(status().isConflict());
 
-        expectInstallment(handover, "PARTIALLY_PAID", "270000.00");
+        expectInstallment(handover, "OVERDUE", "270000.00");
         mockMvc.perform(get(base() + "/receipts"))
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[?(@.voided == true)].id").value(org.hamcrest.Matchers.contains((int) id)));
@@ -209,7 +209,7 @@ class RevenueApiIntegrationTest {
                 .andExpect(jsonPath("$.installment.writtenOff").value(50000.00))
                 .andExpect(jsonPath("$.installment.received").value(0))
                 .andExpect(jsonPath("$.installment.outstanding").value(250000.00))
-                .andExpect(jsonPath("$.installment.status").value("PARTIALLY_PAID"))
+                .andExpect(jsonPath("$.installment.status").value("OVERDUE"))
                 .andExpect(jsonPath("$.writeOffs.length()").value(1));
         assertThat(activity("WRITEOFF")).containsExactly(
                 "Bad debt written off: Client cannot be traced since moving abroad. (LKR 50,000.00, Handover)");
@@ -255,7 +255,7 @@ class RevenueApiIntegrationTest {
                 .andExpect(jsonPath("$.appliedToInstallmentId").value(handover))
                 .andExpect(jsonPath("$.actualCompletion").value("2026-10-13"))
                 .andExpect(jsonPath("$.appliedOn").value("2026-10-25"));
-        expectInstallment(handover, "BILLED", "260000.00");
+        expectInstallment(handover, "OVERDUE", "260000.00");
         mockMvc.perform(get(base() + "/receivables"))
                 .andExpect(jsonPath("$.totals.deductions").value(40000.00))
                 .andExpect(jsonPath("$.totals.revenueRecognised").value(260000.00));
@@ -266,7 +266,7 @@ class RevenueApiIntegrationTest {
                 .andExpect(jsonPath("$.appliedAmount").doesNotExist())
                 .andExpect(jsonPath("$.actualCompletion").doesNotExist());
         reverse(2).andExpect(status().isConflict()); // nothing applied any more
-        expectInstallment(handover, "BILLED", "300000.00");
+        expectInstallment(handover, "OVERDUE", "300000.00");
 
         assertThat(contractValue()).isEqualByComparingTo("1000000.00");
         // the project's own completion date is never written by a deduction
@@ -318,7 +318,7 @@ class RevenueApiIntegrationTest {
     void totalsAndTheSummaryAddUp() throws Exception {
         bill(advance, null);   // 300,000, paid in full below
         bill(roof, "2026-10-20"); // 400,000, billed 5 days ago so overdue
-        bill(handover, null);  // 300,000, billed today so not late yet
+        bill(handover, null);  // 300,000, billed today and unpaid, so overdue too
         receipt(advance, UUID.randomUUID(), "300000");                 // paid
         receipt(roof, UUID.randomUUID(), "150000");                    // overdue, partly paid
         writeOff(roof, "50000", "Agreed discount for snagging works on the roof.");
@@ -327,23 +327,23 @@ class RevenueApiIntegrationTest {
         mockMvc.perform(get(base() + "/receivables"))
                 .andExpect(jsonPath("$.installments[0].status").value("PAID"))
                 .andExpect(jsonPath("$.installments[1].status").value("OVERDUE"))
-                .andExpect(jsonPath("$.installments[2].status").value("BILLED"))
+                .andExpect(jsonPath("$.installments[2].status").value("OVERDUE"))
                 .andExpect(jsonPath("$.totals.billed").value(1000000.00))
                 .andExpect(jsonPath("$.totals.deductions").value(20000.00))
                 .andExpect(jsonPath("$.totals.revenueRecognised").value(980000.00))
                 .andExpect(jsonPath("$.totals.received").value(450000.00))
                 .andExpect(jsonPath("$.totals.writtenOff").value(50000.00))
                 .andExpect(jsonPath("$.totals.outstanding").value(480000.00))  // 200,000 roof + 280,000 handover
-                .andExpect(jsonPath("$.totals.overdue").value(200000.00))
+                .andExpect(jsonPath("$.totals.overdue").value(480000.00))  // all of it: billed and unpaid is overdue
                 .andExpect(jsonPath("$.totals.unbilled").value(0));
 
         mockMvc.perform(get("/api/v1/receivables/summary"))
                 .andExpect(jsonPath("$.outstanding").value(480000.00))
-                .andExpect(jsonPath("$.overdue").value(200000.00))
+                .andExpect(jsonPath("$.overdue").value(480000.00))
                 .andExpect(jsonPath("$.partiallyPaid").value(200000.00))
                 .andExpect(jsonPath("$.writtenOff").value(50000.00))
                 .andExpect(jsonPath("$.openInstallments").value(2))
-                .andExpect(jsonPath("$.overdueInstallments").value(1))
+                .andExpect(jsonPath("$.overdueInstallments").value(2))
                 .andExpect(jsonPath("$.partiallyPaidInstallments").value(1));
     }
 

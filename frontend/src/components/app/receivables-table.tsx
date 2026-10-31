@@ -14,7 +14,7 @@ import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from './d
 import { PaymentDialog } from './payment-dialog'
 import { WriteOffDialog } from './write-off-dialog'
 
-/** Client receivables: original amount, received, remaining, billing date, days overdue (counted from the day after billing), status. */
+/** Client receivables: original amount, received, remaining, billing date, days overdue (counted from the billing day), status. */
 export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { rows: InstallmentView[]; showClient?: boolean; pageSize?: number }) {
   const navigate = useNavigate()
   const recordClientPayment = useStore((s) => s.recordClientPayment)
@@ -91,7 +91,7 @@ export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { r
 export function ageingBuckets(rows: InstallmentView[]) {
   const b = [
     { label: 'Not yet due', test: (i: InstallmentView) => i.status !== 'Overdue' },
-    { label: '1–30 days', test: (i: InstallmentView) => i.status === 'Overdue' && i.daysOverdue <= 30 },
+    { label: '0–30 days', test: (i: InstallmentView) => i.status === 'Overdue' && i.daysOverdue <= 30 },
     { label: '31–60 days', test: (i: InstallmentView) => i.daysOverdue > 30 && i.daysOverdue <= 60 },
     { label: '61–90 days', test: (i: InstallmentView) => i.daysOverdue > 60 && i.daysOverdue <= 90 },
     { label: 'Over 90 days', test: (i: InstallmentView) => i.daysOverdue > 90 },

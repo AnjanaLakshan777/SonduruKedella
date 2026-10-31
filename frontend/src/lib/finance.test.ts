@@ -33,19 +33,19 @@ describe('revenue after write-offs', () => {
 })
 
 describe('overdue', () => {
-  it('counts from the day after billing, whatever the planned date says', () => {
+  it('counts from the billing day, whatever the planned date says', () => {
     const s = blank()
     s.installments = [
       // planned for next month but billed yesterday and unpaid: overdue by one day
       { id: 'i1', projectId: 'p1', description: 'Slab', dueDate: addDays(TODAY, 30), amount: 50000, billed: true, billedOn: addDays(TODAY, -1) },
-      // planned long ago but billed today: not late yet
+      // billed today and unpaid: owed straight away, so already overdue (0 days)
       { id: 'i2', projectId: 'p1', description: 'Roof', dueDate: addDays(TODAY, -60), amount: 50000, billed: true, billedOn: TODAY },
       // not billed: never overdue, it isn't revenue yet
       { id: 'i3', projectId: 'p1', description: 'Finishing', dueDate: addDays(TODAY, -10), amount: 50000, billed: false },
     ]
     const by = new Map(derive(s).installments.map((i) => [i.inst.id, i]))
     expect(by.get('i1')).toMatchObject({ status: 'Overdue', daysOverdue: 1 })
-    expect(by.get('i2')).toMatchObject({ status: 'Due', daysOverdue: 0 })
+    expect(by.get('i2')).toMatchObject({ status: 'Overdue', daysOverdue: 0 })
     expect(by.get('i3')!.status).toBe('Upcoming')
   })
 
@@ -57,7 +57,7 @@ describe('overdue', () => {
     ]
     const by = new Map(derive(s).otherIncome.map((o) => [o.income.id, o]))
     expect(by.get('o1')!.status).toBe('Overdue')
-    expect(by.get('o2')!.status).toBe('Due')
+    expect(by.get('o2')!.status).toBe('Overdue')
   })
 })
 

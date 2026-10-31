@@ -29,9 +29,9 @@ public final class ReceivableCalculator {
             status = ReceivableStatus.UNBILLED;
         } else if (outstanding.signum() == 0) {
             status = ReceivableStatus.PAID;
-        } else if (billedOn != null && billedOn.isBefore(today)) {
-            // there are no separate due dates: anything still owed after the day it was billed is late.
-            // Overdue wins over partially paid, as in the UI: a late part-payment is still late
+        } else if (billedOn != null && !billedOn.isAfter(today)) {
+            // no separate due dates: billed money is owed straight away, so anything still unpaid from the
+            // billing day on is overdue. Overdue wins over partially paid: a part-payment is still late
             status = ReceivableStatus.OVERDUE;
         } else if (settled.signum() > 0) {
             status = ReceivableStatus.PARTIALLY_PAID;

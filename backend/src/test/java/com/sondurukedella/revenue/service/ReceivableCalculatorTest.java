@@ -23,17 +23,20 @@ class ReceivableCalculatorTest {
     }
 
     @Test
-    void billedTodayWithNothingReceivedIsBilledNotOverdue() {
+    void billedTodayAndUnpaidIsAlreadyOverdue() {
         Receivable r = of("100000", true, TODAY, ZERO, ZERO, ZERO);
 
-        assertThat(r.status()).isEqualTo(ReceivableStatus.BILLED); // billed today: late only from tomorrow
+        assertThat(r.status()).isEqualTo(ReceivableStatus.OVERDUE); // owed from the billing day itself
+        assertThat(r.daysOverdue()).isZero();
         assertThat(r.outstanding()).isEqualByComparingTo("100000.00");
     }
 
     @Test
-    void someReceivedOnTheBillingDayIsPartiallyPaid() {
-        assertThat(of("100000", true, TODAY, ZERO, big("40000"), ZERO).status())
-                .isEqualTo(ReceivableStatus.PARTIALLY_PAID);
+    void aPartPaymentDoesNotStopItBeingOverdue() {
+        assertThat(of("100000", true, TODAY, ZERO, big("40000"), ZERO).status()).isEqualTo(ReceivableStatus.OVERDUE);
+        // only a billing date still ahead (never set by the app) gives the in-between statuses
+        assertThat(of("100000", true, TODAY.plusDays(1), ZERO, ZERO, ZERO).status()).isEqualTo(ReceivableStatus.BILLED);
+        assertThat(of("100000", true, TODAY.plusDays(1), ZERO, big("40000"), ZERO).status()).isEqualTo(ReceivableStatus.PARTIALLY_PAID);
         Receivable late = of("100000", true, TODAY.minusDays(3), ZERO, big("40000"), ZERO);
         assertThat(late.status()).isEqualTo(ReceivableStatus.OVERDUE);
         assertThat(late.daysOverdue()).isEqualTo(3);
@@ -41,7 +44,7 @@ class ReceivableCalculatorTest {
     }
 
     @Test
-    void everyDayUnpaidAfterTheBillingDayIsOverdueWithNoSeparateDueDate() {
+    void daysOverdueCountFromTheBillingDayWithNoSeparateDueDate() {
         Receivable dayAfter = of("100000", true, TODAY.minusDays(1), ZERO, ZERO, ZERO);
         assertThat(dayAfter.status()).isEqualTo(ReceivableStatus.OVERDUE);
         assertThat(dayAfter.daysOverdue()).isEqualTo(1);
@@ -54,7 +57,8 @@ class ReceivableCalculatorTest {
     void aWriteOffAlsoCountsAsSettlementButIsNotReceived() {
         Receivable r = of("100000", true, TODAY, ZERO, ZERO, big("30000"));
 
-        assertThat(r.status()).isEqualTo(ReceivableStatus.PARTIALLY_PAID);
+        assertThat(r.status()).isEqualTo(ReceivableStatus.OVERDUE); // the rest is still owed
+        assertThat(r.partlySettled()).isTrue();
         assertThat(r.received()).isEqualByComparingTo("0");
         assertThat(r.writtenOff()).isEqualByComparingTo("30000.00");
         assertThat(r.outstanding()).isEqualByComparingTo("70000.00");

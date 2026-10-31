@@ -71,11 +71,11 @@ export function scheduleStatus(i: InstallmentView): string {
   return i.daysLate > 0 ? 'Billing Late' : i.status
 }
 
-// No separate due dates: anything still owed after the day it was billed is overdue.
+// No separate due dates: billed money is owed straight away, so anything unpaid is overdue from the billing day.
 function installmentStatus(billed: boolean, remaining: number, paid: number, writtenOff: number, billedOn: string): ReceivableStatus {
   if (!billed) return 'Upcoming'
   if (remaining <= 0.005) return writtenOff > 0 ? 'Written Off' : 'Paid'
-  if (billedOn < TODAY) return 'Overdue'
+  if (billedOn <= TODAY) return 'Overdue'
   if (paid > 0) return 'Partially Paid'
   return 'Due'
 }
@@ -651,7 +651,7 @@ export function derive(s: DataState) {
     const receipts = oirByInc.get(inc.id) ?? []
     const received = sum(receipts, (r) => r.amount)
     const remaining = Math.max(0, inc.amount - received)
-    const status: ReceivableStatus = remaining <= 0 ? 'Paid' : inc.date < TODAY ? 'Overdue' : received > 0 ? 'Partially Paid' : 'Due'
+    const status: ReceivableStatus = remaining <= 0 ? 'Paid' : inc.date <= TODAY ? 'Overdue' : received > 0 ? 'Partially Paid' : 'Due'
     return { income: inc, receipts, received, remaining, status }
   })
 
