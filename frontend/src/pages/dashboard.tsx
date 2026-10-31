@@ -57,13 +57,14 @@ export default function Dashboard() {
   const totalRev = sum(byType, (r) => r.value)
   const activeClients = new Set(d.projects.filter((p) => p.project.status === 'In Progress').map((p) => p.client.id)).size
   const expensesRecorded = sum(d.expenseLines, (l) => l.amount)
-  // one figure when they're the same: "3,649,000 overdue" rather than the same number twice
+  // what's late is the client's payment, not the revenue, so the caption talks about cash to collect.
+  // One figure when they're the same, rather than the same number twice
   const L0 = (v: number) => formatLKR(v, { decimals: 0, currency: false })
-  const overdueText = <span className="text-destructive-soft-foreground font-medium">{L0(t.overdue)} overdue</span>
-  const owedCaption = t.receivable <= 0 ? 'Nothing owed'
-    : t.overdue <= 0 ? `${L0(t.receivable)} still owed`
+  const overdueText = <span className="text-destructive-soft-foreground font-medium">Cash overdue {L0(t.overdue)}</span>
+  const owedCaption = t.receivable <= 0 ? 'All cash collected'
+    : t.overdue <= 0 ? `Cash to collect ${L0(t.receivable)}`
     : Math.abs(t.overdue - t.receivable) < 0.5 ? overdueText
-    : <><span>{L0(t.receivable)} still owed · </span>{overdueText}</>
+    : <><span>Cash to collect {L0(t.receivable)} · </span>{overdueText}</>
   const profitRows = d.projects
     .filter((p) => (cash ? p.received > 0 || p.cash.costs > 0 : p.revenueRecorded > 0))
     .map((p) => ({ id: p.project.id, name: p.project.name, code: p.project.code, profit: Math.round(cash ? p.cash.profit : p.profit), basis: p.profitBasis }))

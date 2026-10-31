@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Bell, Calendar, ChevronDown, KeyRound, Moon, PanelLeft, RotateCcw, Search, Sun, CircleAlert, Clock, Truck } from 'lucide-react'
+import { Bell, Calendar, ChevronDown, KeyRound, Moon, PanelLeft, RotateCcw, Search, Sun, CircleAlert, Clock, Truck, CalendarClock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -10,6 +10,7 @@ import { useAuth } from '@/store/auth'
 import { emptyState } from '@/data/api-load'
 import { addDays, formatDate, formatLongToday, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { billingLate } from '@/lib/finance'
 import { useTheme } from './theme'
 import { ChangePasswordDialog } from './change-password-dialog'
 import { cn } from '@/lib/utils'
@@ -61,7 +62,8 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
   const overdue = d.installments.filter((i) => i.status === 'Overdue').sort((a, b) => b.daysOverdue - a.daysOverdue)
   const dueSoon = d.payablesDue.filter((p) => p.status !== 'Overdue' && p.dueDate <= addDays(TODAY, 3))
   const otPending = d.s.overtime.filter((o) => !o.approved)
-  const count = overdue.length + dueSoon.length + (otPending.length ? 1 : 0)
+  const notBilled = billingLate(d.installments)
+  const count = overdue.length + dueSoon.length + notBilled.length + (otPending.length ? 1 : 0)
 
   return (
     <header className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-30 flex h-14 items-center gap-2 border-b px-3 backdrop-blur sm:px-4">
@@ -130,6 +132,15 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
                 <span className="grid">
                   <span>{i.client.name} — {formatLKR(i.remaining)} overdue</span>
                   <span className="text-muted-foreground text-xs">{i.inst.description} · {i.daysOverdue} days since billed on {formatDate(i.inst.billedOn ?? i.inst.dueDate)}</span>
+                </span>
+              </DropdownMenuItem>
+            ))}
+            {notBilled.slice(0, 4).map((i) => (
+              <DropdownMenuItem key={i.inst.id} onSelect={() => navigate(`/projects/${i.project.id}?tab=payments`)} className="items-start">
+                <CalendarClock className="text-warning! mt-0.5" />
+                <span className="grid">
+                  <span>{i.project.name} — {i.inst.description} not billed</span>
+                  <span className="text-muted-foreground text-xs">{formatLKR(i.inst.amount)} · planned {formatDate(i.inst.dueDate)}, {i.daysLate} {i.daysLate === 1 ? 'day' : 'days'} ago</span>
                 </span>
               </DropdownMenuItem>
             ))}

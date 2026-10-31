@@ -172,8 +172,14 @@ export default function ProjectDetail() {
               <CardContent className="grid gap-2">
                 {pf.installments.map((i) => (
                   <div key={i.inst.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b pb-2 text-sm last:border-b-0 last:pb-0">
-                    <span className="min-w-0 flex-1 truncate">{i.inst.description}</span>
-                    <span className="text-muted-foreground w-24">{formatDate(i.inst.dueDate)}</span>
+                    <span className="grid min-w-0 flex-1">
+                      <span className="truncate">{i.inst.description}</span>
+                      {/* a part-payment has to show here, or "Overdue" reads as if nothing was paid */}
+                      {i.inst.billed && (i.paid > 0 || i.writtenOff > 0) && i.remaining > 0 && (
+                        <span className="text-muted-foreground text-xs">{formatLKR(i.paid, { decimals: 0 })} paid{i.writtenOff ? ` · ${formatLKR(i.writtenOff, { decimals: 0 })} written off` : ''} · <span className={cn(i.status === 'Overdue' && 'text-destructive-soft-foreground font-medium')}>{formatLKR(i.remaining, { decimals: 0 })} left</span></span>
+                      )}
+                    </span>
+                    <span className="text-muted-foreground w-24">{i.inst.billed ? formatDate(i.inst.billedOn) : <>{formatDate(i.inst.dueDate)}<span className="block text-xs">planned</span></>}</span>
                     <Money value={i.net} decimals={0} className="w-32 text-right" />
                     <span className="w-28"><StatusBadge status={i.status} /></span>
                   </div>
@@ -214,7 +220,7 @@ export default function ProjectDetail() {
                   <div className="bg-muted/50 mt-1 grid gap-1 rounded-md p-3 text-sm">
                     <span className="text-muted-foreground text-xs">{nextDue.status === 'Overdue' ? 'Overdue' : 'Next due'}</span>
                     <span className="font-medium">{nextDue.inst.description}</span>
-                    <span className="flex justify-between"><Money value={nextDue.remaining} decimals={0} /><span className={cn(nextDue.status === 'Overdue' && 'text-destructive')}>{formatDate(nextDue.inst.dueDate)}</span></span>
+                    <span className="flex justify-between"><Money value={nextDue.remaining} decimals={0} /><span className={cn(nextDue.status === 'Overdue' && 'text-destructive')}>{nextDue.inst.billed ? `billed ${formatDate(nextDue.inst.billedOn)}` : `planned ${formatDate(nextDue.inst.dueDate)}`}</span></span>
                   </div>
                 )}
               </CardContent>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createSeed } from '@/data/seed'
 import type { DataState } from '@/data/types'
 import { addDays, TODAY, weekStart } from './dates'
-import { derive, projectActivity, projectFigures } from './finance'
+import { billingLate, derive, projectActivity, projectFigures } from './finance'
 
 // the seed with every money record cleared, so a test only sees what it adds
 function blank(): DataState {
@@ -58,6 +58,32 @@ describe('overdue', () => {
     const by = new Map(derive(s).otherIncome.map((o) => [o.income.id, o]))
     expect(by.get('o1')!.status).toBe('Overdue')
     expect(by.get('o2')!.status).toBe('Due')
+  })
+})
+
+describe('billing late reminder', () => {
+  it('lists unbilled installments past their planned date, longest late first', () => {
+    const s = blank()
+    s.installments = [
+      { id: 'i1', projectId: 'p1', description: 'Slab', dueDate: addDays(TODAY, -2), amount: 50000, billed: false },
+      { id: 'i2', projectId: 'p1', description: 'Roof', dueDate: addDays(TODAY, -9), amount: 50000, billed: false },
+      // planned today: not late yet
+      { id: 'i3', projectId: 'p1', description: 'Walls', dueDate: TODAY, amount: 50000, billed: false },
+      // already billed: that's the overdue rule's job, not this one
+      { id: 'i4', projectId: 'p1', description: 'Footing', dueDate: addDays(TODAY, -20), amount: 50000, billed: true, billedOn: addDays(TODAY, -20) },
+    ]
+    const late = billingLate(derive(s).installments)
+    expect(late.map((i) => [i.inst.id, i.daysLate])).toEqual([['i2', 9], ['i1', 2]])
+  })
+
+  it('skips projects that are on hold or cancelled', () => {
+    const s = blank()
+    s.projects = s.projects.map((p) => (p.id === 'p1' ? { ...p, status: 'On Hold' as const } : p.id === 'p2' ? { ...p, status: 'Cancelled' as const } : p))
+    s.installments = [
+      { id: 'i1', projectId: 'p1', description: 'Slab', dueDate: addDays(TODAY, -5), amount: 50000, billed: false },
+      { id: 'i2', projectId: 'p2', description: 'Slab', dueDate: addDays(TODAY, -5), amount: 50000, billed: false },
+    ]
+    expect(billingLate(derive(s).installments)).toEqual([])
   })
 })
 

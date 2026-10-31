@@ -1582,3 +1582,23 @@ For each completed task, record the date, files or migrations changed, verificat
 - Project Profitability already followed the toggle. The collection progress bar compares received with recorded, so it shows the same on both bases.
 - `lib/finance.ts`: the monthly series gained `paid`. `received` now includes other income receipts. Nothing else read `received`.
 - Tests: 1 new test, 32 Vitest tests pass. `tsc -b` is clean. Not tried in a browser.
+
+### 2026-10-31: Project overview shows part-payments on the schedule
+- Reported: a 75,000 overdue installment was part-paid (5,000), and the project's Payment schedule card still showed 75,000 "Overdue" with no sign of the payment.
+  - The figures were right. 70,000 is still owed after the billing day, so it stays overdue, the same in the backend (`OVERDUE`, received 5,000, outstanding 70,000).
+  - The overview card didn't show it, and it still showed the planned date.
+- Fixed (`pages/projects/project-detail.tsx`):
+  - The Payment schedule card now shows "N paid · N written off · N left" under a part-settled installment. The amount left is red when it is overdue.
+  - Billed installments show their billing date. Unbilled ones show the planned date marked "planned".
+  - The Next due / Overdue box shows "billed <date>" or "planned <date>" instead of the planned date for everything.
+- Client page history: a billed row's detail said "Planned <date>" and now says "Revenue recorded".
+- Checked the other places that show installment status: the Payments tab table, the receivables table, the dashboard overdue list, notifications, the Revenue page and the reports. They already show received and remaining amounts and the billing date.
+- `tsc -b` is clean and 32 Vitest tests pass. Not tried in a browser.
+
+### 2026-10-31: Reminder when an installment's planned date passes unbilled
+- The notification bell now lists installments that are not billed yet and whose planned date has passed: "<project> — <installment> not billed", with the amount, the planned date and how many days ago.
+  - Up to 4 are listed, longest late first. All of them count in the bell badge. Clicking one opens the project's Payments tab.
+  - Only a reminder. The installment isn't revenue and isn't overdue until it is billed.
+  - On Hold and Cancelled projects are skipped. Planned today is not late yet.
+- Worked out in the browser (`billingLate()` in `lib/finance.ts`, used by `components/app/topbar.tsx`). No backend, email or SMS notification.
+- Tests: 2 new Vitest tests (34 pass). `tsc -b` is clean. Not tried in a browser.

@@ -55,6 +55,15 @@ export interface InstallmentView {
   daysToDue: number
 }
 
+// Installments whose planned date has passed but nobody billed yet. Only a reminder: they
+// aren't revenue and aren't overdue until billed. Paused or cancelled projects don't nag.
+export function billingLate(installments: InstallmentView[]) {
+  return installments
+    .filter((i) => !i.inst.billed && i.inst.dueDate < TODAY && i.project.status !== 'Cancelled' && i.project.status !== 'On Hold')
+    .map((i) => ({ ...i, daysLate: diffDays(TODAY, i.inst.dueDate) }))
+    .sort((a, b) => b.daysLate - a.daysLate)
+}
+
 // No separate due dates: anything still owed after the day it was billed is overdue.
 function installmentStatus(billed: boolean, remaining: number, paid: number, writtenOff: number, billedOn: string): ReceivableStatus {
   if (!billed) return 'Upcoming'
