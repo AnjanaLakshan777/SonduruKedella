@@ -36,6 +36,7 @@ export default function ClientsPage() {
     if (!i.inst.billed) return false
     if (q && !`${i.client.name} ${i.project.name} ${i.project.code}`.toLowerCase().includes(q.toLowerCase())) return false
     if (status === 'open') return i.remaining > 0
+    if (status === 'part') return i.remaining > 0 && i.paid > 0
     if (status === ALL) return true
     return i.status === status
   }), [d, q, status])
@@ -93,7 +94,7 @@ export default function ClientsPage() {
             { label: 'Received', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.remaining > 0), (i) => i.paid)} decimals={0} currency={false} />, basis: 'Received', caption: `Paid so far on ${billed.filter((i) => i.remaining > 0 && i.paid > 0).length} unpaid installments`, hint: 'Paid so far on the installments that are not fully paid yet.' },
             { label: 'Written off (bad debt)', unit: 'LKR', value: <Money value={d.totals.writtenOff} decimals={0} currency={false} />, caption: 'Not money received', hint: 'Total written off as bad debt for all clients. Taken off revenue; not money received.' },
           ]} />
-          <div className="bg-card grid overflow-hidden rounded-xl border sm:grid-cols-5" aria-label="Ageing">
+          <div className="bg-card grid overflow-hidden rounded-xl border sm:grid-cols-4" aria-label="Ageing">
             {ageing.map((a) => (
               <div key={a.label} className="-mr-px -mb-px border-r border-b px-4 py-3">
                 <div className="text-muted-foreground text-xs font-medium">{a.label}</div>
@@ -104,7 +105,7 @@ export default function ClientsPage() {
           </div>
           <FilterBar>
             <SearchInput value={q} onChange={setQ} placeholder="Search client or project…" />
-            <FilterSelect label="Statuses" value={status} onChange={setStatus} options={[{ value: 'open', label: 'Outstanding (all unpaid)' }, 'Overdue', 'Partially Paid', 'Due', 'Paid', 'Written Off']} />
+            <FilterSelect label="Statuses" value={status} onChange={setStatus} options={[{ value: 'open', label: 'Unpaid (all overdue)' }, { value: 'part', label: 'Part-paid' }, 'Paid', 'Written Off']} />
           </FilterBar>
           <Card className="gap-0 py-0">
             {recRows.length ? <ReceivablesTable rows={recRows} /> : <EmptyState title="Nothing matches" description="No receivables with this status." />}

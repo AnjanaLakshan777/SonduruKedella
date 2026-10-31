@@ -90,7 +90,6 @@ export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { r
 
 export function ageingBuckets(rows: InstallmentView[]) {
   const b = [
-    { label: 'Not yet due', test: (i: InstallmentView) => i.status !== 'Overdue' },
     { label: '0–30 days', test: (i: InstallmentView) => i.status === 'Overdue' && i.daysOverdue <= 30 },
     { label: '31–60 days', test: (i: InstallmentView) => i.daysOverdue > 30 && i.daysOverdue <= 60 },
     { label: '61–90 days', test: (i: InstallmentView) => i.daysOverdue > 60 && i.daysOverdue <= 90 },

@@ -76,7 +76,7 @@ export default function RevenuePage() {
             <FilterSelect label="Categories" value={cat} onChange={setCat} options={d.s.settings.revenueCategories} />
             <FilterSelect label="Projects" value={proj} onChange={setProj} options={d.s.projects.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))} />
             <FilterSelect label="Clients" value={client} onChange={setClient} options={[...new Set(all.map((r) => r.client))].sort()} />
-            <FilterSelect label="Payment statuses" value={status} onChange={setStatus} options={['Due', 'Partially Paid', 'Paid', 'Overdue', 'Written Off']} />
+            <FilterSelect label="Payment statuses" value={status} onChange={setStatus} options={['Overdue', 'Paid', 'Written Off']} />
           </FilterBar>
           <Card className="gap-0 py-0">
             {rows.length ? (

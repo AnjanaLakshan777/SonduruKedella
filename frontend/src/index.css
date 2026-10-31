@@ -162,3 +162,14 @@
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* thin scrollbar that only shows while the pointer is over the area (or focus is in it);
+   the space stays reserved so nothing shifts when it appears */
+@utility scroll-on-hover {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  &:hover,
+  &:focus-within {
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent) transparent;
+  }
+}

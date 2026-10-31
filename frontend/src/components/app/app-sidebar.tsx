@@ -53,7 +53,7 @@ export function AppSidebar({ collapsed, counts, onNavigate }: { collapsed?: bool
           {collapsed ? <img src={mark} alt="" className="size-10" /> : <img src={logo} alt="Sonduru Kedella — Home Design & Construction" className="h-16 w-auto" />}
         </NavLink>
       </div>
-      <nav className="flex-1 overflow-y-auto p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <nav className="flex-1 overflow-y-auto p-2 scroll-on-hover">
         {NAV.map((g, i) => (
           <div key={i} className={cn('py-2', collapsed && i > 0 && 'border-sidebar-border border-t py-1')}>
             {g.label && !collapsed && <div className="text-sidebar-foreground/70 flex h-8 items-center px-2 text-xs font-medium">{g.label}</div>}

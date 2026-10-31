@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowRight, BarChart3, FileSpreadsheet, HardHat, HandCoins, Receipt, Scale, Truck, Users } from 'lucide-react'
+import { ArrowRight, BarChart3, HardHat, HandCoins, Receipt, Scale, Truck, Users } from 'lucide-react'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCrumbs } from '@/components/app/app-layout'
@@ -36,7 +36,7 @@ export default function ReportsPage() {
     }
     return (
       <>
-        <PageHeader title="Reports" description={`Financial reports for the financial year ${fyLabel(d.s.settings.financialYearStart)}, built from the same records as every other screen. Cash-flow reports are not part of this version.`} />
+        <PageHeader title="Reports" description={`Financial reports for the financial year ${fyLabel(d.s.settings.financialYearStart)}, built from the same records as every other screen.`} />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {REPORTS.map((r) => (
             <Link key={r.id} to={`/reports/${r.id}`} className="group focus-visible:ring-ring/50 rounded-xl outline-none focus-visible:ring-[3px]">
@@ -50,9 +50,7 @@ export default function ReportsPage() {
               </Card>
             </Link>
           ))}
-        </div>
-        <div className="text-muted-foreground flex items-center gap-2 text-sm"><FileSpreadsheet className="size-4" />Every report can be exported to CSV. Excel export arrives with the backend.</div>
-      </>
+        </div>      </>
     )
   }
 

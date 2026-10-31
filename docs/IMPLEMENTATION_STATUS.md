@@ -1692,3 +1692,29 @@ For each completed task, record the date, files or migrations changed, verificat
   - the active pill tab;
   - side sheets.
 - The pill tab track is `bg-black/5` in light mode so it shows on both the grey page and white cards (`bg-muted` in dark, unchanged).
+
+### 2026-10-31: Sidebar scrollbar shows on hover
+- The navigation sidebar hid its scrollbar completely. It now shows a thin scrollbar while the pointer is over it (or keyboard focus is inside it), and hides it again otherwise.
+- New `scroll-on-hover` utility in `index.css` (standard `scrollbar-width` / `scrollbar-color`). The scrollbar space stays reserved, so the menu doesn't shift when it appears.
+- `tsc -b` and `vite build` are clean. Not tried in a browser.
+
+### 2026-11-01: Reports page note removed
+- Removed the out-of-date line "Every report can be exported to CSV. Excel export arrives with the backend." from the Reports page. Every report already exports to PDF, Excel, CSV and Copy.
+
+### 2026-11-01: Swept the UI for out-of-date wording
+- Status filters offered states that no longer happen for client money (unpaid billed money is overdue from the billing day), so choosing them showed nothing:
+  - Clients → Receivables offered "Due" and "Partially Paid" and now has "Unpaid (all overdue)", "Part-paid" (some paid, some still owed), "Paid" and "Written Off";
+  - the Revenue page offered "Due" and "Partially Paid" and now has "Overdue", "Paid" and "Written Off".
+- Ageing: dropped the "Not yet due" bucket, which is always empty now. Clients and Reports ageing show four buckets: 0–30, 31–60, 61–90 and over 90 days.
+- Reports page description: "Cash-flow reports are not part of this version" is replaced with "Expense and profitability reports switch between accrual and cash basis".
+- Checked and left as they are: supplier and expense due dates (still real), "Check that the backend is running" (the error when the API can't be reached), and the fixed project statuses note in Settings.
+- `tsc -b` is clean and 37 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-01: Expense and profitability reports back to one basis, no toggle
+- Owner decision: these two reports don't need an Accrual / Cash toggle or a separate cash view. The recorded amount with its Paid / Unpaid figures is enough.
+  - The Expense report shows recorded expenses with Paid and Unpaid.
+  - The Profitability report shows profit to date with Receivable.
+  - Both are as they were before the cash basis was added, without the toggle.
+- The cash basis stays on the Dashboard and the Project page, which keep their toggles. `ProjectFinance.cash` and the cash ledger are unchanged.
+- Reports page description: dropped the line about accrual and cash.
+- `tsc -b` is clean and 37 Vitest tests pass. Not tried in a browser.
