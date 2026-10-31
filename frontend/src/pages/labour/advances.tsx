@@ -31,10 +31,10 @@ export function AdvancesView() {
         <span>An advance is wages paid early. It is deducted from that week's net pay and is <strong className="text-foreground">not</strong> a second labour cost — the wages themselves are the cost.</span>
       </div>
       <KpiStrip items={[
-        { label: `Advances given (${monthLabel(TODAY.slice(0, 7))})`, unit: 'LKR', value: <Money value={sum(rows.filter((a) => a.advance.date >= monthStart(TODAY.slice(0, 7))), (a) => a.advance.amount)} decimals={0} currency={false} />, caption: `${rows.filter((a) => a.advance.date >= monthStart(TODAY.slice(0, 7))).length} advances` },
-        { label: 'Deducted from paid wages', unit: 'LKR', value: <Money value={sum(rows, (a) => a.deducted)} decimals={0} currency={false} />, caption: 'In pay runs already paid' },
-        { label: 'To deduct this week', unit: 'LKR', value: <Money value={sum(rows, (a) => a.scheduled)} decimals={0} currency={false} />, caption: 'In the current payroll' },
-        { label: 'Not yet covered', unit: 'LKR', value: <Money value={sum(rows, (a) => a.remaining)} decimals={0} currency={false} />, caption: 'Larger than wages earned so far' },
+        { label: `Advances given (${monthLabel(TODAY.slice(0, 7))})`, unit: 'LKR', value: <Money value={sum(rows.filter((a) => a.advance.date >= monthStart(TODAY.slice(0, 7))), (a) => a.advance.amount)} decimals={0} currency={false} />, caption: `${rows.filter((a) => a.advance.date >= monthStart(TODAY.slice(0, 7))).length} advances`, hint: 'Salary advances handed to workers this month.' },
+        { label: 'Deducted from paid wages', unit: 'LKR', value: <Money value={sum(rows, (a) => a.deducted)} decimals={0} currency={false} />, caption: 'In pay runs already paid', hint: 'Advances already taken back from wages in paid pay weeks. Not a second cost: the wages are the cost.' },
+        { label: 'To deduct this week', unit: 'LKR', value: <Money value={sum(rows, (a) => a.scheduled)} decimals={0} currency={false} />, caption: 'In the current payroll', hint: 'Advances that will be taken off pay in the current payroll week.' },
+        { label: 'Not yet covered', unit: 'LKR', value: <Money value={sum(rows, (a) => a.remaining)} decimals={0} currency={false} />, caption: 'Larger than wages earned so far', hint: 'Advances bigger than the wages earned so far, still to recover from later pay.' },
       ]} />
       <div className="flex justify-end"><Button onClick={() => setOpen(true)}><Plus />Record Advance</Button></div>
       <Card className="gap-0 py-0">

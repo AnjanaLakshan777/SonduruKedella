@@ -41,10 +41,10 @@ export function Employees() {
   return (
     <>
       <KpiStrip items={[
-        { label: 'Active workers', value: activeEmps.length, caption: `${d.s.employees.length - activeEmps.length} inactive` },
-        { label: 'Daily wage bill', unit: 'LKR', value: <Money value={sum(activeEmps, (e) => e.dailyRate)} decimals={0} currency={false} />, caption: 'If everyone works a full day' },
-        { label: 'Wages earned this week', unit: 'LKR', value: <Money value={week?.gross ?? 0} decimals={0} currency={false} />, basis: 'Recorded', caption: 'Mon–today, before advances' },
-        { label: 'Advances to recover', unit: 'LKR', value: <Money value={sum(d.advances, (a) => a.scheduled + a.remaining)} decimals={0} currency={false} />, caption: 'Deducted in this week’s payroll' },
+        { label: 'Active workers', value: activeEmps.length, caption: `${d.s.employees.length - activeEmps.length} inactive`, hint: 'Workers with status Active. Underneath: inactive workers.' },
+        { label: 'Daily wage bill', unit: 'LKR', value: <Money value={sum(activeEmps, (e) => e.dailyRate)} decimals={0} currency={false} />, caption: 'If everyone works a full day', hint: 'Daily rates of all active workers added up: the cost of one full day if everyone works.' },
+        { label: 'Wages earned this week', unit: 'LKR', value: <Money value={week?.gross ?? 0} decimals={0} currency={false} />, basis: 'Recorded', caption: 'Mon–today, before advances', hint: 'Gross wages earned from Monday to today, before advances are deducted.' },
+        { label: 'Advances to recover', unit: 'LKR', value: <Money value={sum(d.advances, (a) => a.scheduled + a.remaining)} decimals={0} currency={false} />, caption: 'Deducted in this week’s payroll', hint: 'Advance amounts still to take back from wages.' },
       ]} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <FilterBar><SearchInput value={q} onChange={setQ} placeholder="Search name or role…" /><FilterSelect label="Statuses" value={status} onChange={setStatus} options={['Active', 'Inactive']} /></FilterBar>

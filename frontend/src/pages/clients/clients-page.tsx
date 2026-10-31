@@ -70,7 +70,7 @@ export default function ClientsPage() {
                     <TableRow key={x.c.id} className="cursor-pointer" onClick={() => navigate(`/clients/${x.c.id}`)}>
                       <TableCell className="pl-6"><CellMain title={x.c.name} sub={`${x.c.kind} · ${x.c.city}`} /></TableCell>
                       <TableCell className="hidden md:table-cell"><CellMain title={x.c.phone} sub={x.c.email ?? '—'} /></TableCell>
-                      <TableCell className="hidden max-w-64 lg:table-cell"><span className="text-muted-foreground block truncate text-[13px]">{x.projects.map((p) => p.project.code).join(', ') || '—'}</span></TableCell>
+                      <TableCell className="hidden max-w-64 lg:table-cell"><span className="text-muted-foreground block font-mono text-xs font-medium whitespace-normal">{x.projects.map((p) => p.project.code).join(', ') || '—'}</span></TableCell>
                       <TableCell className="hidden text-right sm:table-cell"><Money value={x.contractValue} currency={false} decimals={0} /></TableCell>
                       <TableCell className="hidden text-right lg:table-cell"><Money value={x.received} currency={false} decimals={0} /></TableCell>
                       <TableCell className="pr-6 text-right font-medium">
@@ -87,11 +87,11 @@ export default function ClientsPage() {
         <TabsContent value="receivables" className="grid gap-4">
           <KpiStrip items={[
             // outstanding and overdue are the same money now (unpaid is overdue from the billing day), so this tile counts items instead
-            { label: 'Overdue Items', value: billed.filter((i) => i.status === 'Overdue').length, caption: `Across ${new Set(billed.filter((i) => i.status === 'Overdue').map((i) => i.client.id)).size} clients` },
-            { label: 'Overdue', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.status === 'Overdue'), (i) => i.remaining)} decimals={0} currency={false} />, tone: 'destructive', caption: 'Billed and still unpaid' },
+            { label: 'Overdue Items', value: billed.filter((i) => i.status === 'Overdue').length, caption: `Across ${new Set(billed.filter((i) => i.status === 'Overdue').map((i) => i.client.id)).size} clients`, hint: 'Billed installments with money still unpaid, for all clients. Underneath: how many clients they belong to.' },
+            { label: 'Overdue', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.status === 'Overdue'), (i) => i.remaining)} decimals={0} currency={false} />, tone: 'destructive', caption: 'Billed and still unpaid', hint: 'What clients still owe on billed installments. Unpaid billed money is overdue from the billing day.' },
             // paid so far on the installments still owed, so it sits next to the overdue amount
-            { label: 'Received', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.remaining > 0), (i) => i.paid)} decimals={0} currency={false} />, basis: 'Received', caption: `Paid so far on ${billed.filter((i) => i.remaining > 0 && i.paid > 0).length} unpaid installments` },
-            { label: 'Written off (bad debt)', unit: 'LKR', value: <Money value={d.totals.writtenOff} decimals={0} currency={false} />, caption: 'Not money received' },
+            { label: 'Received', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.remaining > 0), (i) => i.paid)} decimals={0} currency={false} />, basis: 'Received', caption: `Paid so far on ${billed.filter((i) => i.remaining > 0 && i.paid > 0).length} unpaid installments`, hint: 'Paid so far on the installments that are not fully paid yet.' },
+            { label: 'Written off (bad debt)', unit: 'LKR', value: <Money value={d.totals.writtenOff} decimals={0} currency={false} />, caption: 'Not money received', hint: 'Total written off as bad debt for all clients. Taken off revenue; not money received.' },
           ]} />
           <div className="bg-card grid overflow-hidden rounded-xl border sm:grid-cols-5" aria-label="Ageing">
             {ageing.map((a) => (

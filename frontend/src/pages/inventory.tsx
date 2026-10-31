@@ -18,7 +18,7 @@ import { PageHeader } from '@/components/app/page-header'
 import { KpiStrip } from '@/components/app/kpi-strip'
 import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
-import { CellMain, Mono, Pagination, usePaged } from '@/components/app/data-table'
+import { CellMain, Pagination, usePaged } from '@/components/app/data-table'
 import { ALL, FilterBar, FilterSelect, SearchInput } from '@/components/app/filters'
 import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/form'
 import { FigureList } from '@/components/app/figure-list'
@@ -54,9 +54,9 @@ export default function InventoryPage() {
         actions={<><Button variant="outline" asChild><Link to="/suppliers/invoices/new"><FilePlus2 />Record purchase</Link></Button><Button onClick={() => setMove({ open: true })}><ArrowLeftRight />Stock movement</Button></>}
       />
       <KpiStrip items={[
-        { label: 'Stock value', unit: 'LKR', value: <Money value={d.totals.stockValue} decimals={0} currency={false} />, caption: 'FIFO cost of stock on hand' },
-        { label: 'Materials tracked', value: d.materials.length, caption: `${new Set(d.materials.map((m) => m.material.category)).size} categories` },
-        { label: `Issued to projects (${monthLabel(thisMonth)})`, unit: 'LKR', value: <Money value={sum(issuedOct, (m) => -(d.stockCost.get(m.id)?.totalCost ?? 0))} decimals={0} currency={false} />, basis: 'Recorded', caption: `${issuedOct.length} issues — charged to projects` },
+        { label: 'Stock value', unit: 'LKR', value: <Money value={d.totals.stockValue} decimals={0} currency={false} />, caption: 'FIFO cost of stock on hand', hint: 'What the stock on hand cost, valued first-in first-out. Buying stock is not a project cost until it is issued.' },
+        { label: 'Materials tracked', value: d.materials.length, caption: `${new Set(d.materials.map((m) => m.material.category)).size} categories`, hint: 'Number of materials in the catalogue. Underneath: how many categories.' },
+        { label: `Issued to projects (${monthLabel(thisMonth)})`, unit: 'LKR', value: <Money value={sum(issuedOct, (m) => -(d.stockCost.get(m.id)?.totalCost ?? 0))} decimals={0} currency={false} />, basis: 'Recorded', caption: `${issuedOct.length} issues — charged to projects`, hint: 'FIFO cost of stock issued to projects this month. This is the project cost for those materials.' },
       ]} />
       <Tabs defaultValue="stock" className="gap-4">
         <TabsList variant="line"><TabsTrigger value="stock">Materials</TabsTrigger><TabsTrigger value="movements">Stock movements</TabsTrigger></TabsList>
@@ -74,7 +74,7 @@ export default function InventoryPage() {
               <TableBody>
                 {rows.map((m) => (
                   <TableRow key={m.material.id} className="cursor-pointer" onClick={() => setView(m)}>
-                    <TableCell className="pl-6"><CellMain title={m.material.name} sub={<Mono>{m.material.sku}</Mono>} /></TableCell>
+                    <TableCell className="pl-6"><CellMain title={m.material.name} code={m.material.sku} /></TableCell>
                     <TableCell className="hidden md:table-cell">{m.material.category}</TableCell>
                     <TableCell className={cn('tabular text-right font-medium', m.status !== 'In Stock' && 'text-destructive-soft-foreground')}>{formatQty(m.qty, m.material.unit)}</TableCell>
                     <TableCell className="hidden text-right lg:table-cell"><Money value={m.material.unitCost} currency={false} /></TableCell>
@@ -157,7 +157,7 @@ function MovementsTable({ moves, compact }: { moves: StockMovement[]; compact?: 
           return (
             <TableRow key={m.id}>
               <TableCell className="pl-6">{formatDate(m.date)}</TableCell>
-              {!compact && <TableCell><CellMain title={mat.name} sub={<Mono>{mat.sku}</Mono>} /></TableCell>}
+              {!compact && <TableCell><CellMain title={mat.name} code={mat.sku} /></TableCell>}
               <TableCell className="max-w-72">
                 <CellMain title={movementTitle(m, p?.code)} sub={m.type === 'Issued' || m.type === 'Returned' ? p?.name : m.type === 'Received' ? `Invoice ${m.reference ?? ''}` : m.reason} />
               </TableCell>

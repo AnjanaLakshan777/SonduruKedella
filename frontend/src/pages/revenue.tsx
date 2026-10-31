@@ -16,7 +16,7 @@ import { PageHeader } from '@/components/app/page-header'
 import { KpiStrip } from '@/components/app/kpi-strip'
 import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
-import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from '@/components/app/data-table'
+import { CellMain, Pagination, SortableHead, usePaged, useSort } from '@/components/app/data-table'
 import { ALL, DateRangeFilter, FilterBar, FilterSelect, SearchInput, defaultRange, inRange } from '@/components/app/filters'
 import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/form'
 import { EmptyState } from '@/components/app/empty-state'
@@ -62,10 +62,10 @@ export default function RevenuePage() {
     <>
       <PageHeader title="Revenue" description="Income recorded for work done, and how much of it has been received. Each installment is counted once, however many payments it takes." actions={<Button onClick={() => setAddOpen(true)}><Plus />Add Revenue</Button>} />
       <KpiStrip items={[
-        { label: 'Revenue Recorded', unit: 'LKR', value: <Money value={sum(rows, (r) => r.amount)} decimals={0} currency={false} />, basis: 'Recorded', caption: `${rows.length} records in view` },
-        { label: 'Received', unit: 'LKR', value: <Money value={sum(rows, (r) => r.received)} decimals={0} currency={false} />, basis: 'Received', caption: 'Against these records' },
-        { label: 'Outstanding', unit: 'LKR', value: <Money value={sum(rows, (r) => r.outstanding)} decimals={0} currency={false} />, caption: `${formatLKR(sum(rows.filter((r) => r.status === 'Overdue'), (r) => r.outstanding), { decimals: 0 })} overdue` },
-        { label: 'Scheduled, not billed', unit: 'LKR', value: <Money value={sum(scheduled, (i) => i.net)} decimals={0} currency={false} />, basis: 'Expected', caption: 'Future installments — not revenue yet' },
+        { label: 'Revenue Recorded', unit: 'LKR', value: <Money value={sum(rows, (r) => r.amount)} decimals={0} currency={false} />, basis: 'Recorded', caption: `${rows.length} records in view`, hint: 'Billed installments (net of delay deductions) and other income in the current view, before write-offs.' },
+        { label: 'Received', unit: 'LKR', value: <Money value={sum(rows, (r) => r.received)} decimals={0} currency={false} />, basis: 'Received', caption: 'Against these records', hint: 'Payments received against these records.' },
+        { label: 'Outstanding', unit: 'LKR', value: <Money value={sum(rows, (r) => r.outstanding)} decimals={0} currency={false} />, caption: `${formatLKR(sum(rows.filter((r) => r.status === 'Overdue'), (r) => r.outstanding), { decimals: 0 })} overdue`, hint: 'Still unpaid on these records. Unpaid billed money is overdue from the billing day.' },
+        { label: 'Scheduled, not billed', unit: 'LKR', value: <Money value={sum(scheduled, (i) => i.net)} decimals={0} currency={false} />, basis: 'Expected', caption: 'Future installments — not revenue yet', hint: 'Installments on project schedules that are not billed yet (cancelled projects left out). Not revenue until billed; the date filter does not apply.' },
       ]} />
       <Tabs defaultValue="recorded" className="gap-4">
         <TabsList variant="line"><TabsTrigger value="recorded">Revenue recorded</TabsTrigger><TabsTrigger value="scheduled">Scheduled installments</TabsTrigger></TabsList>
@@ -98,7 +98,7 @@ export default function RevenuePage() {
                     {paged.rows.map((r) => (
                       <TableRow key={r.id} className="cursor-pointer" onClick={() => (r.projectId ? navigate(`/projects/${r.projectId}?tab=payments`) : r.outstanding > 0 && setReceiptFor(r))}>
                         <TableCell className="pl-6">{formatDate(r.date)}</TableCell>
-                        <TableCell className="max-w-80"><CellMain title={r.description} sub={r.code ? <><Mono>{r.code}</Mono> · {r.project}</> : 'Not linked to a project'} /></TableCell>
+                        <TableCell className="max-w-80"><CellMain title={r.description} code={r.code} sub={r.code ? r.project : 'Not linked to a project'} /></TableCell>
                         <TableCell>{r.category}</TableCell>
                         <TableCell className="hidden max-w-48 truncate lg:table-cell">{r.client}</TableCell>
                         <TableCell className="text-right font-medium"><Money value={r.amount} currency={false} /></TableCell>
@@ -132,7 +132,7 @@ export default function RevenuePage() {
                 {scheduled.map((i) => (
                   <TableRow key={i.inst.id} className="cursor-pointer" onClick={() => navigate(`/projects/${i.project.id}?tab=payments`)}>
                     <TableCell className="pl-6">{formatDate(i.inst.dueDate)}{i.daysLate > 0 && <div className="text-warning text-xs">{i.daysLate} {i.daysLate === 1 ? 'day' : 'days'} late</div>}</TableCell>
-                    <TableCell className="max-w-80"><CellMain title={i.inst.description} sub={<><Mono>{i.project.code}</Mono> · {i.project.name}</>} /></TableCell>
+                    <TableCell className="max-w-80"><CellMain title={i.inst.description} code={i.project.code} sub={i.project.name} /></TableCell>
                     <TableCell className="hidden md:table-cell">{i.client.name}</TableCell>
                     <TableCell className="text-right"><Money value={i.net} currency={false} /></TableCell>
                     <TableCell className="pr-6"><StatusBadge status={scheduleStatus(i)} /></TableCell>

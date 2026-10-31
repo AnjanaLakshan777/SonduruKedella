@@ -47,10 +47,10 @@ export default function CommissionsPage() {
     <>
       <PageHeader title="Commissions" description="Commission on Design and Construction projects = agreed contract value × each recipient's percentage. Set recipients on each project's Commissions tab." />
       <KpiStrip items={[
-        { label: 'Commission committed', unit: 'LKR', value: <Money value={sum(confirmed, (c) => c.amount)} decimals={0} currency={false} />, basis: 'Agreed', caption: `${confirmed.length} confirmed arrangements` },
-        { label: 'Paid', unit: 'LKR', value: <Money value={sum(d.commissions, (c) => c.paid)} decimals={0} currency={false} />, basis: 'Recorded', caption: `${payments.length} payments` },
-        { label: 'Outstanding payable', unit: 'LKR', value: <Money value={sum(confirmed, (c) => c.remaining)} decimals={0} currency={false} />, caption: `${recipients.filter(([, x]) => x.remaining > 0).length} recipients owed` },
-        { label: 'Awaiting confirmation', value: pendingProjects.length, caption: pendingProjects.length ? 'Not counted as a cost yet' : 'None' },
+        { label: 'Commission committed', unit: 'LKR', value: <Money value={sum(confirmed, (c) => c.amount)} decimals={0} currency={false} />, basis: 'Agreed', caption: `${confirmed.length} confirmed arrangements`, hint: 'Commission on confirmed arrangements. Counted as a project cost once confirmed, paid or not.' },
+        { label: 'Paid', unit: 'LKR', value: <Money value={sum(d.commissions, (c) => c.paid)} decimals={0} currency={false} />, basis: 'Recorded', caption: `${payments.length} payments`, hint: 'Commission payments made so far.' },
+        { label: 'Outstanding payable', unit: 'LKR', value: <Money value={sum(confirmed, (c) => c.remaining)} decimals={0} currency={false} />, caption: `${recipients.filter(([, x]) => x.remaining > 0).length} recipients owed`, hint: 'Confirmed commission not paid yet.' },
+        { label: 'Awaiting confirmation', value: pendingProjects.length, caption: pendingProjects.length ? 'Not counted as a cost yet' : 'None', hint: 'Projects whose commission arrangements still wait for confirmation. Not a cost until confirmed.' },
       ]} />
       {conflicts.map(({ pid, check }) => {
         const p = d.projectById.get(pid)!

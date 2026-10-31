@@ -9,7 +9,7 @@ import { useCrumbs } from '@/components/app/app-layout'
 import { PageHeader } from '@/components/app/page-header'
 import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
-import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from '@/components/app/data-table'
+import { CellMain, Pagination, SortableHead, usePaged, useSort } from '@/components/app/data-table'
 import { ALL, FilterBar, FilterSelect, SearchInput } from '@/components/app/filters'
 import { EmptyState } from '@/components/app/empty-state'
 import { useData } from '@/store/store'
@@ -87,7 +87,7 @@ export default function ProjectsList() {
               <TableBody>
                 {paged.rows.map((p) => (
                   <TableRow key={p.project.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.project.id}`)}>
-                    <TableCell className="max-w-72 pl-6"><CellMain title={p.project.name} sub={<Mono>{p.project.code}</Mono>} /></TableCell>
+                    <TableCell className="max-w-72 pl-6"><CellMain title={p.project.name} code={p.project.code} /></TableCell>
                     <TableCell className="hidden max-w-48 truncate lg:table-cell">{p.client.name}</TableCell>
                     <TableCell>{p.project.type}</TableCell>
                     <TableCell className="text-right"><Money value={p.contractValue} currency={false} decimals={0} /></TableCell>

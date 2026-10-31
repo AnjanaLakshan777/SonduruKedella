@@ -61,15 +61,21 @@ export function Pagination({ page, pageSize, total, setPage, className }: { page
 }
 
 /** Primary cell: name over a muted sub-line. */
-export function CellMain({ title, sub, mono }: { title: React.ReactNode; sub?: React.ReactNode; mono?: boolean }) {
+// `code` (project code, SKU) always shows in full; only the text after it gets cut with "…"
+export function CellMain({ title, sub, mono, code }: { title: React.ReactNode; sub?: React.ReactNode; mono?: boolean; code?: React.ReactNode }) {
   return (
     <span className="grid min-w-0">
       <span className="truncate font-medium">{title}</span>
-      {sub && <span className={cn('text-muted-foreground truncate text-xs', mono && 'font-mono font-medium')}>{sub}</span>}
+      {code ? (
+        <span className="text-muted-foreground flex min-w-0 items-baseline gap-1 text-xs">
+          <Mono className="shrink-0">{code}</Mono>
+          {sub && <span className="truncate">· {sub}</span>}
+        </span>
+      ) : sub && <span className={cn('text-muted-foreground truncate text-xs', mono && 'font-mono font-medium')}>{sub}</span>}
     </span>
   )
 }
 
 export function Mono({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <span className={cn('text-muted-foreground font-mono text-xs font-medium', className)}>{children}</span>
+  return <span className={cn('text-muted-foreground font-mono text-xs font-medium whitespace-nowrap', className)}>{children}</span>
 }

@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { KpiStrip } from '@/components/app/kpi-strip'
 import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
-import { CellMain, Mono } from '@/components/app/data-table'
+import { CellMain } from '@/components/app/data-table'
 import { ALL, DateRangeFilter, FilterBar, FilterSelect, defaultRange, inRange } from '@/components/app/filters'
 import { axisProps, ChartTooltip, Legend, moneyAxis } from '@/components/app/chart'
 import { ageingBuckets } from '@/components/app/receivables-table'
@@ -95,9 +95,9 @@ export function IncomeReport() {
         <ExportMenu subtitle={formatRange(range.from, range.to)} name="income-report" rows={() => [['Date', 'Category', 'Project', 'Revenue recorded, after write-offs (LKR)', 'Received (LKR)', 'Outstanding (LKR)'], ...rows.map((r) => [formatDate(r.date), r.category, r.project?.code ?? '', r.amount, r.received, r.remaining])]} />
       </div>
       <KpiStrip items={[
-        { label: 'Revenue recorded', unit: 'LKR', value: M0(sum(rows, (r) => r.amount)), basis: 'Recorded' },
-        { label: 'Received against it', unit: 'LKR', value: M0(sum(rows, (r) => r.received)), basis: 'Received' },
-        { label: 'Still outstanding', unit: 'LKR', value: M0(sum(rows, (r) => r.remaining)) },
+        { label: 'Revenue recorded', unit: 'LKR', value: M0(sum(rows, (r) => r.amount)), basis: 'Recorded', hint: 'Billed installments and other income in the range, less write-offs.' },
+        { label: 'Received against it', unit: 'LKR', value: M0(sum(rows, (r) => r.received)), basis: 'Received', hint: 'Payments received against those records, whenever they came in.' },
+        { label: 'Still outstanding', unit: 'LKR', value: M0(sum(rows, (r) => r.remaining)), hint: 'What is still unpaid on those records.' },
         { label: 'Cash received in period', unit: 'LKR', value: M0(sum(months, (m) => m.received)), caption: 'Includes payments for earlier billing', hint: 'Payments dated within the range, whichever period the revenue was recorded in.' },
       ]} />
       <Basis>Revenue is recorded when an installment is billed (net of any applied delay deduction), plus other income, less any amount written off as bad debt. Payments received are shown separately; an installment paid in several payments is counted as revenue once. Contract value is not revenue.</Basis>
@@ -121,7 +121,7 @@ export function IncomeReport() {
         <CardHeader><CardTitle>Revenue by project</CardTitle></CardHeader>
         <Table>
           <TableHeader><TableRow><TableHead className="pl-6">Project</TableHead><TableHead className="hidden md:table-cell">Type</TableHead><TableHead className="text-right">Recorded (LKR)</TableHead><TableHead className="text-right">Received (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
-          <TableBody>{byProject.map((x) => <TableRow key={x.p.project.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.project.name} sub={<Mono>{x.p.project.code}</Mono>} /></TableCell><TableCell className="hidden md:table-cell">{x.p.project.type}</TableCell><TableCell className="text-right">{M0(x.v)}</TableCell><TableCell className="text-right">{M0(x.rec)}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(x.v - x.rec)}</TableCell></TableRow>)}</TableBody>
+          <TableBody>{byProject.map((x) => <TableRow key={x.p.project.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.project.name} code={x.p.project.code} /></TableCell><TableCell className="hidden md:table-cell">{x.p.project.type}</TableCell><TableCell className="text-right">{M0(x.v)}</TableCell><TableCell className="text-right">{M0(x.rec)}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(x.v - x.rec)}</TableCell></TableRow>)}</TableBody>
         </Table>
       </Card>
     </>
@@ -162,17 +162,17 @@ export function ExpenseReport() {
         </div>
       </div>
       <KpiStrip items={cash ? [
-        { label: 'Total paid out', unit: 'LKR', value: M0(sum(rows, (l) => l.amount)), basis: 'Received', caption: `${rows.length} payments` },
-        { label: 'Project payments', unit: 'LKR', value: M0(sum(rows.filter((l) => l.scope === 'Project'), (l) => l.amount)), caption: onePro ? 'Incl. stock issued to it' : 'Wages, materials, expenses, commission' },
-        { label: 'Company-level', unit: 'LKR', value: M0(sum(company, (l) => l.amount)), caption: 'Incl. stock purchases and salary advances' },
+        { label: 'Total paid out', unit: 'LKR', value: M0(sum(rows, (l) => l.amount)), basis: 'Received', caption: `${rows.length} payments`, hint: 'Money paid out in the range: expense, supplier, wage, advance and commission payments.' },
+        { label: 'Project payments', unit: 'LKR', value: M0(sum(rows.filter((l) => l.scope === 'Project'), (l) => l.amount)), caption: onePro ? 'Incl. stock issued to it' : 'Wages, materials, expenses, commission', hint: 'Payments for project costs. With one project selected, also stock issued to it at cost.' },
+        { label: 'Company-level', unit: 'LKR', value: M0(sum(company, (l) => l.amount)), caption: 'Incl. stock purchases and salary advances', hint: 'Payments not charged to a project, including stock purchases and salary advances.' },
         onePro
-          ? { label: 'Issued from stock', unit: 'LKR', value: M0(sum(rows.filter((l) => l.fromStock), (l) => l.amount)), caption: 'Paid when the stock was bought' }
-          : { label: 'Recorded, not yet paid', unit: 'LKR', value: M0(sum(d.expenseLines.filter(pick), (l) => l.remaining)), caption: 'Counts on accrual, not here' },
+          ? { label: 'Issued from stock', unit: 'LKR', value: M0(sum(rows.filter((l) => l.fromStock), (l) => l.amount)), caption: 'Paid when the stock was bought', hint: 'Stock issued to this project, at cost. The cash went out when the stock was bought.' }
+          : { label: 'Recorded, not yet paid', unit: 'LKR', value: M0(sum(d.expenseLines.filter(pick), (l) => l.remaining)), caption: 'Counts on accrual, not here', hint: 'Expenses recorded but not paid yet. They count on the accrual basis only.' },
       ] : [
-        { label: 'Total expenses', unit: 'LKR', value: M0(sum(rows, (l) => l.amount)), basis: 'Recorded', caption: `${rows.length} records` },
-        { label: 'Project expenses', unit: 'LKR', value: M0(sum(rows.filter((l) => l.scope === 'Project'), (l) => l.amount)), caption: 'Direct costs incl. commissions' },
-        { label: 'Company-level', unit: 'LKR', value: M0(sum(company, (l) => l.amount)), caption: 'General business costs' },
-        { label: 'Unpaid', unit: 'LKR', value: M0(sum(rows, (l) => l.remaining)) },
+        { label: 'Total expenses', unit: 'LKR', value: M0(sum(rows, (l) => l.amount)), basis: 'Recorded', caption: `${rows.length} records`, hint: 'Every expense recorded in the range, paid or not.' },
+        { label: 'Project expenses', unit: 'LKR', value: M0(sum(rows.filter((l) => l.scope === 'Project'), (l) => l.amount)), caption: 'Direct costs incl. commissions', hint: 'Costs charged to projects, including confirmed commission.' },
+        { label: 'Company-level', unit: 'LKR', value: M0(sum(company, (l) => l.amount)), caption: 'General business costs', hint: 'General business costs not charged to any project.' },
+        { label: 'Unpaid', unit: 'LKR', value: M0(sum(rows, (l) => l.remaining)), hint: 'Recorded but not paid yet.' },
       ]} />
       {cash
         ? <Basis><strong className="text-foreground">Cash basis.</strong> Only money actually paid out, on the day it was paid: expense payments, supplier payments, wage payments (split over the projects worked that week), salary advances when given, and commission payments. Unpaid bills are left out. Buying stock is a company-level payment; when a single project is selected, the stock issued to it is included at issue cost, because the project used it even though no new cash moved.</Basis>
@@ -195,7 +195,7 @@ export function ExpenseReport() {
           <Table>
             <TableHeader><TableRow><TableHead className="pl-6">Charged to</TableHead><TableHead className="pr-6 text-right">Amount (LKR)</TableHead></TableRow></TableHeader>
             <TableBody>
-              {byProject.map((x) => <TableRow key={x.p.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.name} sub={<Mono>{x.p.code}</Mono>} /></TableCell><TableCell className="pr-6 text-right">{M0(x.v)}</TableCell></TableRow>)}
+              {byProject.map((x) => <TableRow key={x.p.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.name} code={x.p.code} /></TableCell><TableCell className="pr-6 text-right">{M0(x.v)}</TableCell></TableRow>)}
               <TableRow><TableCell className="pl-6"><CellMain title="Company-level expenses" sub={[...new Set(company.map((l) => l.category))].join(', ')} /></TableCell><TableCell className="pr-6 text-right">{M0(sum(company, (l) => l.amount))}</TableCell></TableRow>
             </TableBody>
             <TableFooter><TableRow><TableCell className="pl-6">Total</TableCell><TableCell className="pr-6 text-right">{M0(sum(rows, (l) => l.amount))}</TableCell></TableRow></TableFooter>
@@ -231,17 +231,17 @@ export function ProfitabilityReport() {
         </div>
       </div>
       <KpiStrip items={cash ? [
-        { label: 'Contract value', unit: 'LKR', value: T((p) => p.contractValue), basis: 'Agreed' },
-        { label: 'Received from clients', unit: 'LKR', value: T((p) => p.f.revenue), basis: 'Received' },
-        { label: 'Paid out for projects', unit: 'LKR', value: T((p) => p.f.costs), caption: 'incl. stock issued at cost' },
-        { label: 'Cash profit', unit: 'LKR', value: T((p) => p.f.profit), caption: `Accrual profit ${formatLKR(sum(rows, (p) => p.profit), { decimals: 0 })}` },
-        { label: 'Client receivables', unit: 'LKR', value: T((p) => p.receivable), caption: 'Not received — not in cash profit' },
+        { label: 'Contract value', unit: 'LKR', value: T((p) => p.contractValue), basis: 'Agreed', hint: 'Agreed contract value of the projects in this report.' },
+        { label: 'Received from clients', unit: 'LKR', value: T((p) => p.f.revenue), basis: 'Received', hint: 'Client payments received for these projects.' },
+        { label: 'Paid out for projects', unit: 'LKR', value: T((p) => p.f.costs), caption: 'incl. stock issued at cost', hint: 'Money paid out for these projects, plus stock issued to them at cost.' },
+        { label: 'Cash profit', unit: 'LKR', value: T((p) => p.f.profit), caption: `Accrual profit ${formatLKR(sum(rows, (p) => p.profit), { decimals: 0 })}`, hint: 'Received from clients − paid out for projects.' },
+        { label: 'Client receivables', unit: 'LKR', value: T((p) => p.receivable), caption: 'Not received — not in cash profit', hint: 'Billed but not received yet. Left out of cash profit.' },
       ] : [
-        { label: 'Contract value', unit: 'LKR', value: T((p) => p.contractValue), basis: 'Agreed' },
-        { label: 'Revenue recorded', unit: 'LKR', value: T((p) => p.revenueRecorded), basis: 'Recorded' },
-        { label: 'Project costs', unit: 'LKR', value: T((p) => p.totalCosts), basis: 'Recorded', caption: 'incl. committed commission' },
-        { label: 'Profit to date', unit: 'LKR', value: T((p) => p.profit), basis: 'Estimated', caption: `${formatLKR(sum(rows.filter((p) => p.profitBasis === 'Recorded'), (p) => p.profit), { decimals: 0 })} on completed projects` },
-        { label: 'Client receivables', unit: 'LKR', value: T((p) => p.receivable), caption: 'Not profit — still to collect' },
+        { label: 'Contract value', unit: 'LKR', value: T((p) => p.contractValue), basis: 'Agreed', hint: 'Agreed contract value of the projects in this report.' },
+        { label: 'Revenue recorded', unit: 'LKR', value: T((p) => p.revenueRecorded), basis: 'Recorded', hint: 'Billed installments, net of delay deductions, before write-offs.' },
+        { label: 'Project costs', unit: 'LKR', value: T((p) => p.totalCosts), basis: 'Recorded', caption: 'incl. committed commission', hint: 'Materials, labour, expenses and confirmed commission, paid or not.' },
+        { label: 'Profit to date', unit: 'LKR', value: T((p) => p.profit), basis: 'Estimated', caption: `${formatLKR(sum(rows.filter((p) => p.profitBasis === 'Recorded'), (p) => p.profit), { decimals: 0 })} on completed projects`, hint: 'Revenue recorded − written off − project costs. An estimate while projects are still in progress.' },
+        { label: 'Client receivables', unit: 'LKR', value: T((p) => p.receivable), caption: 'Not profit — still to collect', hint: 'Billed but not received yet. Still to collect, not profit.' },
       ]} />
       {cash ? (
         <Basis>
@@ -263,7 +263,7 @@ export function ProfitabilityReport() {
             <TableBody>
               {rows.map((p) => (
                 <TableRow key={p.project.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.project.id}`)}>
-                  <TableCell className="min-w-52 pl-6 whitespace-normal"><CellMain title={<span className="line-clamp-2 whitespace-normal">{p.project.name}</span>} sub={<><Mono>{p.project.code}</Mono> · {p.project.status}</>} /></TableCell>
+                  <TableCell className="min-w-52 pl-6 whitespace-normal"><CellMain title={<span className="line-clamp-2 whitespace-normal">{p.project.name}</span>} code={p.project.code} sub={p.project.status} /></TableCell>
                   <TableCell className="text-right">{M0(p.contractValue)}</TableCell>
                   <TableCell className="hidden text-right 2xl:table-cell">{p.deduction ? <Money value={-p.deduction} decimals={0} currency={false} /> : '—'}</TableCell>
                   <TableCell className="text-right">{M0(p.f.revenue)}</TableCell>
@@ -318,10 +318,10 @@ export function ReceivablesReport() {
     <>
       <div className="flex justify-end"><ExportMenu name="client-receivables" rows={() => [['Client', 'Project', 'Installment', 'Billed on', 'Amount due', 'Received', 'Written off', 'Remaining', 'Days overdue', 'Status'], ...billed.map((i) => [i.client.name, i.project.code, i.inst.description, formatDate(i.inst.billedOn ?? i.inst.dueDate), i.net, i.paid, i.writtenOff, i.remaining, i.daysOverdue, i.status])]} /></div>
       <KpiStrip items={[
-        { label: 'Amounts owed', unit: 'LKR', value: M0(sum(open, (i) => i.remaining)), basis: 'Recorded', caption: `${open.length} installments` },
-        { label: 'Overdue', unit: 'LKR', value: M0(sum(open.filter((i) => i.status === 'Overdue'), (i) => i.remaining)), tone: 'destructive' },
-        { label: 'Partially paid', value: open.filter((i) => i.paid > 0).length, caption: `${formatLKR(sum(open.filter((i) => i.paid > 0), (i) => i.remaining), { decimals: 0 })} still owed on them` },
-        { label: 'Written off', unit: 'LKR', value: M0(d.totals.writtenOff), caption: `${d.s.writeOffs.length} write-offs — not received` },
+        { label: 'Amounts owed', unit: 'LKR', value: M0(sum(open, (i) => i.remaining)), basis: 'Recorded', caption: `${open.length} installments`, hint: 'Billed installments that are still unpaid.' },
+        { label: 'Overdue', unit: 'LKR', value: M0(sum(open.filter((i) => i.status === 'Overdue'), (i) => i.remaining)), tone: 'destructive', hint: 'Unpaid billed money. It is overdue from the billing day.' },
+        { label: 'Partially paid', value: open.filter((i) => i.paid > 0).length, caption: `${formatLKR(sum(open.filter((i) => i.paid > 0), (i) => i.remaining), { decimals: 0 })} still owed on them`, hint: 'Unpaid installments that have had some payment. Underneath: what is still owed on them.' },
+        { label: 'Written off', unit: 'LKR', value: M0(d.totals.writtenOff), caption: `${d.s.writeOffs.length} write-offs — not received`, hint: 'Total written off as bad debt. Taken off revenue; not money received.' },
       ]} />
       <Card className="gap-4">
         <CardHeader><CardTitle>Ageing summary</CardTitle><CardDescription>Outstanding by days since billing</CardDescription></CardHeader>
@@ -347,7 +347,7 @@ export function ReceivablesReport() {
       <Card className="gap-4 pb-0">
         <CardHeader><CardTitle>Bad-debt write-offs</CardTitle><CardDescription>Formally abandoned amounts — kept separate from payments</CardDescription></CardHeader>
         {d.s.writeOffs.length ? (
-          <Table><TableBody>{d.s.writeOffs.map((w) => { const i = d.installments.find((x) => x.inst.id === w.installmentId)!; return <TableRow key={w.id}><TableCell className="pl-6">{formatDate(w.date)}</TableCell><TableCell><CellMain title={i.client.name} sub={`${i.project.code} · ${i.inst.description}`} /></TableCell><TableCell className="text-muted-foreground hidden max-w-80 truncate md:table-cell">{w.reason}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(w.amount)}</TableCell></TableRow> })}</TableBody></Table>
+          <Table><TableBody>{d.s.writeOffs.map((w) => { const i = d.installments.find((x) => x.inst.id === w.installmentId)!; return <TableRow key={w.id}><TableCell className="pl-6">{formatDate(w.date)}</TableCell><TableCell><CellMain title={i.client.name} code={i.project.code} sub={i.inst.description} /></TableCell><TableCell className="text-muted-foreground hidden max-w-80 truncate md:table-cell">{w.reason}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(w.amount)}</TableCell></TableRow> })}</TableBody></Table>
         ) : <CardContent className="text-muted-foreground pb-6 text-sm">No debts have been written off this year.</CardContent>}
       </Card>
     </>
@@ -366,11 +366,11 @@ export function PayablesReport() {
         <ExportMenu name="supplier-payables" rows={() => [['Supplier', 'Invoice', 'Invoice date', 'Due date', 'Allocated to', 'Total', 'Paid', 'Remaining', 'Status'], ...rows.map((v) => [v.supplier.name, v.invoice.invoiceNo, formatDate(v.invoice.date), formatDate(v.invoice.dueDate), v.project?.code ?? 'Stock', v.total, v.paid, v.remaining, v.status])]} />
       </div>
       <KpiStrip items={[
-        { label: 'Supplier invoices', unit: 'LKR', value: M0(sum(d.invoices, (v) => v.total)), basis: 'Recorded', caption: `${d.invoices.length} invoices` },
-        { label: 'Amounts paid', unit: 'LKR', value: M0(sum(d.invoices, (v) => v.paid)) },
-        { label: 'Remaining payable', unit: 'LKR', value: M0(d.totals.supplierPayables) },
-        { label: 'Overdue', unit: 'LKR', value: M0(sum(d.invoices.filter((v) => v.status === 'Overdue'), (v) => v.remaining)), tone: 'destructive' },
-        { label: 'Other payables', unit: 'LKR', value: M0(d.totals.expensePayables + d.totals.commissionPayables + d.totals.payrollPayables), caption: 'Bills, commissions, wages' },
+        { label: 'Supplier invoices', unit: 'LKR', value: M0(sum(d.invoices, (v) => v.total)), basis: 'Recorded', caption: `${d.invoices.length} invoices`, hint: 'Total of all supplier invoices recorded.' },
+        { label: 'Amounts paid', unit: 'LKR', value: M0(sum(d.invoices, (v) => v.paid)), hint: 'Payments made against supplier invoices.' },
+        { label: 'Remaining payable', unit: 'LKR', value: M0(d.totals.supplierPayables), hint: 'Supplier invoice amounts not paid yet.' },
+        { label: 'Overdue', unit: 'LKR', value: M0(sum(d.invoices.filter((v) => v.status === 'Overdue'), (v) => v.remaining)), tone: 'destructive', hint: 'Unpaid supplier invoices past their due date.' },
+        { label: 'Other payables', unit: 'LKR', value: M0(d.totals.expensePayables + d.totals.commissionPayables + d.totals.payrollPayables), caption: 'Bills, commissions, wages', hint: 'Unpaid expenses, confirmed commission and wages.' },
       ]} />
       <Card className="gap-0 py-0">
         <Table>
@@ -402,11 +402,11 @@ export function LabourReport() {
         <ExportMenu subtitle={formatRange(range.from, range.to)} name="labour-payments" rows={() => [['Worker', 'Present', 'Half days', 'Absent', 'Days', 'Base wages', 'OT hours', 'OT pay', 'Advances given'], ...emps.map((x) => [x.e.name, x.p, x.h, x.ab, x.days, x.wages, x.otH, x.otPay, x.adv])]} />
       </div>
       <KpiStrip items={[
-        { label: 'Base wages', unit: 'LKR', value: M0(sum(emps, (x) => x.wages)), basis: 'Recorded', caption: `${sum(emps, (x) => x.days)} worker-days` },
-        { label: 'Overtime', unit: 'LKR', value: M0(sum(emps, (x) => x.otPay)), caption: `${sum(emps, (x) => x.otH)} approved hours` },
-        { label: 'Advances given', unit: 'LKR', value: M0(sum(emps, (x) => x.adv)), caption: 'Recovered from weekly pay' },
-        { label: 'Payroll paid', unit: 'LKR', value: M0(sum(weeks, (w) => w.paid)), caption: `${weeks.length} pay weeks overlap this range` },
-        { label: 'Payroll outstanding', unit: 'LKR', value: M0(sum(weeks, (w) => w.remaining)) },
+        { label: 'Base wages', unit: 'LKR', value: M0(sum(emps, (x) => x.wages)), basis: 'Recorded', caption: `${sum(emps, (x) => x.days)} worker-days`, hint: 'Days worked × daily rate in the range.' },
+        { label: 'Overtime', unit: 'LKR', value: M0(sum(emps, (x) => x.otPay)), caption: `${sum(emps, (x) => x.otH)} approved hours`, hint: 'Pay for approved overtime hours in the range.' },
+        { label: 'Advances given', unit: 'LKR', value: M0(sum(emps, (x) => x.adv)), caption: 'Recovered from weekly pay', hint: 'Salary advances given in the range. Taken back from weekly pay, not an extra cost.' },
+        { label: 'Payroll paid', unit: 'LKR', value: M0(sum(weeks, (w) => w.paid)), caption: `${weeks.length} pay weeks overlap this range`, hint: 'Wage payments for pay weeks that overlap the range.' },
+        { label: 'Payroll outstanding', unit: 'LKR', value: M0(sum(weeks, (w) => w.remaining)), hint: 'Wages still unpaid for those pay weeks.' },
       ]} />
       <Card className="gap-4 pb-0">
         <CardHeader><CardTitle>Attendance summary</CardTitle><CardDescription>{formatDate(range.from)} – {formatDate(range.to)}</CardDescription></CardHeader>

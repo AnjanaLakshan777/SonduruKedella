@@ -1664,3 +1664,19 @@ For each completed task, record the date, files or migrations changed, verificat
 - Same tab: the third tile, "Partially paid" (what was still owed on part-paid installments), is replaced by "Received".
   - It shows the amount already paid on installments that are still owed (live: 2,615,000 across 4 installments).
   - It sits next to the overdue amount: paid so far versus still owed.
+
+### 2026-10-31: Project codes are never cut off
+- `CellMain` (`components/app/data-table.tsx`) has a `code` prop. The code (project code or SKU) never shrinks or wraps. Only the text after it ("· project name") is cut with "…" when the column is narrow. `Mono` is now `whitespace-nowrap` everywhere.
+- Moved to it: project lists, client page projects, dashboard needs-attention list, receivables table, Revenue page (records and upcoming), inventory SKUs, reports (by-project tables, profitability, write-offs).
+- The Clients list "Projects" column wraps the list of codes onto more lines instead of cutting it.
+- `tsc -b` is clean and 37 Vitest tests pass. Not tried in a browser.
+
+### 2026-10-31: Every dashboard tile explains itself
+- "Active Projects" and "Total Clients" now have an info (i) icon. Hovering or focusing it explains what the number counts. The other four tiles already had one, in both the Accrual and Cash views.
+- `tsc -b` is clean. Not tried in a browser.
+
+### 2026-10-31: Info hints on every KPI tile
+- Every KPI tile in the app now has the (i) icon with a one-line explanation of what it counts. That is 88 tiles across clients, client detail, project detail, revenue, expenses, commissions, suppliers, supplier detail, inventory, employees, advances, payroll and every report (both bases where a report toggles).
+- The text only describes the existing formulas. No figures changed.
+- Found while doing this, not changed: the Suppliers page tile "Purchases this year" adds up every supplier invoice ever recorded, not only this year. Its hint says what it really counts.
+- `tsc -b` is clean and 37 Vitest tests pass. Not tried in a browser.

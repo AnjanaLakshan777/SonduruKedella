@@ -29,10 +29,10 @@ export default function SupplierDetail() {
     <>
       <PageHeader title={s.name} description={`${s.supplies} · ${s.creditDays}-day credit`} actions={<Button asChild><Link to={`/suppliers/invoices/new?supplier=${s.id}`}><FilePlus2 />Record Invoice</Link></Button>} />
       <KpiStrip items={[
-        { label: 'Purchases', unit: 'LKR', value: M(sum(inv, (v) => v.total)), basis: 'Recorded', caption: `${inv.length} invoices` },
-        { label: 'Paid', unit: 'LKR', value: M(sum(inv, (v) => v.paid)), caption: `${payments.length} payments` },
-        { label: 'Outstanding payable', unit: 'LKR', value: M(sum(open, (v) => v.remaining)), caption: `${open.length} invoices` },
-        { label: 'Overdue', unit: 'LKR', value: M(sum(open.filter((v) => v.status === 'Overdue'), (v) => v.remaining)), tone: open.some((v) => v.status === 'Overdue') ? 'destructive' : 'default', caption: open[0] ? `Next due ${formatDate(open[0].invoice.dueDate)}` : 'Nothing due' },
+        { label: 'Purchases', unit: 'LKR', value: M(sum(inv, (v) => v.total)), basis: 'Recorded', caption: `${inv.length} invoices`, hint: 'All invoices from this supplier.' },
+        { label: 'Paid', unit: 'LKR', value: M(sum(inv, (v) => v.paid)), caption: `${payments.length} payments`, hint: 'Payments made to this supplier.' },
+        { label: 'Outstanding payable', unit: 'LKR', value: M(sum(open, (v) => v.remaining)), caption: `${open.length} invoices`, hint: 'Invoice amounts not paid yet.' },
+        { label: 'Overdue', unit: 'LKR', value: M(sum(open.filter((v) => v.status === 'Overdue'), (v) => v.remaining)), tone: open.some((v) => v.status === 'Overdue') ? 'destructive' : 'default', caption: open[0] ? `Next due ${formatDate(open[0].invoice.dueDate)}` : 'Nothing due', hint: 'Unpaid invoices past their due date.' },
       ]} />
       <div className="grid items-start gap-6 xl:grid-cols-3">
         <div className="grid gap-6 xl:col-span-2">

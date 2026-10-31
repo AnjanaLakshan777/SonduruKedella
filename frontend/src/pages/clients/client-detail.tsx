@@ -10,7 +10,7 @@ import { PageHeader } from '@/components/app/page-header'
 import { KpiStrip } from '@/components/app/kpi-strip'
 import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
-import { CellMain, Mono } from '@/components/app/data-table'
+import { CellMain } from '@/components/app/data-table'
 import { EmptyState } from '@/components/app/empty-state'
 import { ReceivablesTable } from '@/components/app/receivables-table'
 import { ClientDialog } from '@/components/app/client-dialog'
@@ -46,12 +46,12 @@ export default function ClientDetail() {
         actions={<><Button variant="outline" onClick={() => setEdit(true)}><Pencil />Edit</Button><Button asChild><Link to="/projects/new"><Plus />New project</Link></Button></>}
       />
       <KpiStrip items={[
-        { label: 'Total Projects', value: s.projects.length, caption: `${s.projects.filter((p) => p.project.status === 'In Progress').length} in progress` },
-        { label: 'Contract Value', unit: 'LKR', value: M(s.contractValue), basis: 'Agreed', caption: 'All projects' },
-        { label: 'Revenue Recorded', unit: 'LKR', value: M(s.revenueRecorded - s.writtenOff), basis: 'Recorded', caption: s.writtenOff ? `After ${formatLKR(s.writtenOff, { decimals: 0, currency: false })} written off` : undefined },
-        { label: 'Payments Received', unit: 'LKR', value: M(s.received), basis: 'Received' },
-        { label: 'Owed Now', unit: 'LKR', value: M(s.receivable), basis: 'Recorded', caption: s.overdue ? <span className="text-destructive-soft-foreground font-medium">{s.overdue.toLocaleString('en-LK')} overdue</span> : 'Nothing overdue' },
-        { label: 'Written Off', unit: 'LKR', value: M(s.writtenOff), caption: 'Bad debt — not received' },
+        { label: 'Total Projects', value: s.projects.length, caption: `${s.projects.filter((p) => p.project.status === 'In Progress').length} in progress`, hint: 'Number of projects for this client, any status. Underneath: how many are In Progress.' },
+        { label: 'Contract Value', unit: 'LKR', value: M(s.contractValue), basis: 'Agreed', caption: 'All projects', hint: 'Agreed contract value of all projects for this client. Not revenue until installments are billed.' },
+        { label: 'Revenue Recorded', unit: 'LKR', value: M(s.revenueRecorded - s.writtenOff), basis: 'Recorded', caption: s.writtenOff ? `After ${formatLKR(s.writtenOff, { decimals: 0, currency: false })} written off` : undefined, hint: 'Billed installments for this client (net of delay deductions), less amounts written off.' },
+        { label: 'Payments Received', unit: 'LKR', value: M(s.received), basis: 'Received', hint: 'Money actually received from this client against billed installments.' },
+        { label: 'Owed Now', unit: 'LKR', value: M(s.receivable), basis: 'Recorded', caption: s.overdue ? <span className="text-destructive-soft-foreground font-medium">{s.overdue.toLocaleString('en-LK')} overdue</span> : 'Nothing overdue', hint: 'Billed and not yet paid or written off. Unpaid billed money is overdue from the billing day.' },
+        { label: 'Written Off', unit: 'LKR', value: M(s.writtenOff), caption: 'Bad debt — not received', hint: 'Amounts given up as bad debt. Taken off revenue; never counted as money received or as an expense.' },
       ]} />
       <div className="grid items-start gap-6 xl:grid-cols-3">
         <div className="grid gap-6 xl:col-span-2">
@@ -66,7 +66,7 @@ export default function ClientDetail() {
               <TableBody>
                 {s.projects.map((p) => (
                   <TableRow key={p.project.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.project.id}`)}>
-                    <TableCell className="max-w-72 pl-6"><CellMain title={p.project.name} sub={<><Mono>{p.project.code}</Mono> · {p.project.type}</>} /></TableCell>
+                    <TableCell className="max-w-72 pl-6"><CellMain title={p.project.name} code={p.project.code} sub={p.project.type} /></TableCell>
                     <TableCell><StatusBadge status={p.project.status} /></TableCell>
                     <TableCell className="text-right"><Money value={p.contractValue} currency={false} decimals={0} /></TableCell>
                     <TableCell className="text-right"><Money value={p.received} currency={false} decimals={0} /></TableCell>

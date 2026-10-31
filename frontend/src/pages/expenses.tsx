@@ -45,10 +45,10 @@ export default function ExpensesPage() {
     <>
       <PageHeader title="Expenses" description="Every cost, marked as a project expense or a company-level expense. Materials, labour and commissions from other modules appear here automatically." actions={<Button onClick={() => setOpen(true)}><Plus />Record Expense</Button>} />
       <KpiStrip items={[
-        { label: 'Expenses in view', unit: 'LKR', value: <Money value={sum(rows, (l) => l.amount)} decimals={0} currency={false} />, basis: 'Recorded', caption: `${rows.length} records` },
-        { label: 'Project expenses', unit: 'LKR', value: <Money value={sum(rows.filter((l) => l.scope === 'Project'), (l) => l.amount)} decimals={0} currency={false} />, caption: 'Counted in project profitability' },
-        { label: 'Company-level', unit: 'LKR', value: <Money value={sum(rows.filter((l) => l.scope === 'Company'), (l) => l.amount)} decimals={0} currency={false} />, caption: 'Not assigned to any project' },
-        { label: 'Unpaid', unit: 'LKR', value: <Money value={sum(rows, (l) => l.remaining)} decimals={0} currency={false} />, caption: `${formatLKR(sum(rows.filter((l) => l.status === 'Overdue'), (l) => l.remaining), { decimals: 0 })} overdue` },
+        { label: 'Expenses in view', unit: 'LKR', value: <Money value={sum(rows, (l) => l.amount)} decimals={0} currency={false} />, basis: 'Recorded', caption: `${rows.length} records`, hint: 'Every expense matching the current filters, at its recorded amount, paid or not.' },
+        { label: 'Project expenses', unit: 'LKR', value: <Money value={sum(rows.filter((l) => l.scope === 'Project'), (l) => l.amount)} decimals={0} currency={false} />, caption: 'Counted in project profitability', hint: 'The part charged to projects. It reduces the profit of those projects.' },
+        { label: 'Company-level', unit: 'LKR', value: <Money value={sum(rows.filter((l) => l.scope === 'Company'), (l) => l.amount)} decimals={0} currency={false} />, caption: 'Not assigned to any project', hint: 'General business costs not charged to any project.' },
+        { label: 'Unpaid', unit: 'LKR', value: <Money value={sum(rows, (l) => l.remaining)} decimals={0} currency={false} />, caption: `${formatLKR(sum(rows.filter((l) => l.status === 'Overdue'), (l) => l.remaining), { decimals: 0 })} overdue`, hint: 'Recorded but not paid yet, in the current view. Underneath: the part past its due date.' },
       ]} />
       <FilterBar active={active} onClear={clear}>
         <SearchInput value={q} onChange={setQ} placeholder="Search description, payee…" />

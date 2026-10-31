@@ -170,11 +170,11 @@ export function PayrollView() {
       {w && (
         <>
           <KpiStrip items={[
-            { label: 'Gross wages', unit: 'LKR', value: <Money value={w.gross} decimals={0} currency={false} />, basis: 'Recorded', caption: `${w.lines.length} workers · labour cost` },
-            { label: 'Advances deducted', unit: 'LKR', value: <Money value={w.advances} decimals={0} currency={false} />, caption: 'Already paid out — not a new cost' },
-            { label: 'Net payable', unit: 'LKR', value: <Money value={w.net + w.corrections} decimals={0} currency={false} />, caption: w.corrections ? `incl. ${formatLKR(w.corrections, { decimals: 0 })} corrections` : w.other ? `after ${formatLKR(w.other, { decimals: 0 })} other deductions` : 'To hand over on payday' },
-            { label: 'Paid', unit: 'LKR', value: <Money value={w.paid} decimals={0} currency={false} />, basis: 'Recorded' },
-            { label: 'Remaining', unit: 'LKR', value: <Money value={w.remaining} decimals={0} currency={false} />, tone: w.payable && w.remaining > 0 ? 'destructive' : 'default', caption: unpaid.length ? `${unpaid.length} workers` : 'Fully paid' },
+            { label: 'Gross wages', unit: 'LKR', value: <Money value={w.gross} decimals={0} currency={false} />, basis: 'Recorded', caption: `${w.lines.length} workers · labour cost`, hint: 'Days worked × daily rate, plus approved overtime, for this pay week. This is the labour cost.' },
+            { label: 'Advances deducted', unit: 'LKR', value: <Money value={w.advances} decimals={0} currency={false} />, caption: 'Already paid out — not a new cost', hint: 'Advances taken off this week. They were paid out earlier, so this is not a new cost.' },
+            { label: 'Net payable', unit: 'LKR', value: <Money value={w.net + w.corrections} decimals={0} currency={false} />, caption: w.corrections ? `incl. ${formatLKR(w.corrections, { decimals: 0 })} corrections` : w.other ? `after ${formatLKR(w.other, { decimals: 0 })} other deductions` : 'To hand over on payday', hint: 'What to hand over: gross wages − advances − other deductions, plus corrections.' },
+            { label: 'Paid', unit: 'LKR', value: <Money value={w.paid} decimals={0} currency={false} />, basis: 'Recorded', hint: 'Wage payments recorded for this pay week.' },
+            { label: 'Remaining', unit: 'LKR', value: <Money value={w.remaining} decimals={0} currency={false} />, tone: w.payable && w.remaining > 0 ? 'destructive' : 'default', caption: unpaid.length ? `${unpaid.length} workers` : 'Fully paid', hint: 'Net payable for this pay week that is not paid yet.' },
           ]} />
 
           <Card className="gap-4 pb-0">

@@ -104,9 +104,9 @@ export default function Dashboard() {
 
       <KpiStrip
         items={[
-          { label: 'Active Projects', value: t.activeProjects, caption: `${t.activeByType.Construction} construction · ${t.activeByType.Design} design · ${t.activeByType.Consultation} consultation` },
+          { label: 'Active Projects', value: t.activeProjects, caption: `${t.activeByType.Construction} construction · ${t.activeByType.Design} design · ${t.activeByType.Consultation} consultation`, hint: 'Projects with status In Progress, by type. Planning, On Hold, Completed and Cancelled projects are not counted.' },
           { label: 'Contract Value (active)', unit: 'LKR', value: M(t.activeContractValue), basis: 'Agreed', caption: 'Not revenue until billed', hint: 'Total agreed contract value of In Progress projects. Only billed installments count as revenue.' },
-          { label: 'Total Clients', value: d.s.clients.length, caption: `${activeClients} with active projects` },
+          { label: 'Total Clients', value: d.s.clients.length, caption: `${activeClients} with active projects`, hint: 'Every client on record. Underneath: how many of them have at least one In Progress project.' },
           cash
             ? { label: 'Total Revenue', unit: 'LKR', value: M(t.paymentsReceived), basis: 'Received', caption: `Accrual: ${formatLKR(t.revenueNet, { decimals: 0, currency: false })}`, hint: 'Money actually received: client payments plus other income receipts, on the day they came in.' }
             : { label: 'Total Revenue', unit: 'LKR', value: M(t.revenueNet), basis: 'Recorded', caption: owedCaption, hint: 'Billed installments (net of delay deductions) plus other income, less amounts written off as bad debt. An installment is counted once, however many payments it takes.' },
@@ -200,7 +200,7 @@ export default function Dashboard() {
             <TableBody>
               {attention.map((p) => (
                 <TableRow key={p.project.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.project.id}`)}>
-                  <TableCell className="max-w-64 pl-6"><CellMain title={p.project.name} sub={`${p.project.code} · ${p.client.name}`} /></TableCell>
+                  <TableCell className="max-w-64 pl-6"><CellMain title={p.project.name} code={p.project.code} sub={p.client.name} /></TableCell>
                   <TableCell><StatusBadge status={p.project.status} /></TableCell>
                   <TableCell className="pr-6 whitespace-normal">
                     <ul className="grid gap-0.5 text-[13px]">{p.attention.slice(0, 2).map((a) => <li key={a.text} className={cn(a.tone === 'danger' && 'text-destructive-soft-foreground font-medium')}>{a.text}</li>)}</ul>

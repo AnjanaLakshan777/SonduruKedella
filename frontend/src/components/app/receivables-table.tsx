@@ -10,7 +10,7 @@ import { formatDate } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { Money } from './money'
 import { StatusBadge } from './status-badge'
-import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from './data-table'
+import { CellMain, Pagination, SortableHead, usePaged, useSort } from './data-table'
 import { PaymentDialog } from './payment-dialog'
 import { WriteOffDialog } from './write-off-dialog'
 
@@ -44,7 +44,7 @@ export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { r
           {paged.rows.map((i) => (
             <TableRow key={i.inst.id} className="cursor-pointer" onClick={() => navigate(`/projects/${i.project.id}?tab=payments`)}>
               {showClient && <TableCell className="max-w-52 pl-6"><CellMain title={i.client.name} sub={i.client.phone} /></TableCell>}
-              <TableCell className={showClient ? 'max-w-64' : 'max-w-64 pl-6'}><CellMain title={i.inst.description} sub={<><Mono>{i.project.code}</Mono> · {i.project.name}</>} /></TableCell>
+              <TableCell className={showClient ? 'max-w-64' : 'max-w-64 pl-6'}><CellMain title={i.inst.description} code={i.project.code} sub={i.project.name} /></TableCell>
               <TableCell className="hidden text-right md:table-cell"><Money value={i.net} currency={false} />{i.deduction > 0 && <div className="text-muted-foreground text-xs">after {formatLKR(i.deduction, { decimals: 0 })} deduction</div>}</TableCell>
               <TableCell className="hidden text-right md:table-cell">{i.paid ? <Money value={i.paid} currency={false} /> : <span className="text-muted-foreground">—</span>}{i.writtenOff > 0 && <div className="text-muted-foreground text-xs">{formatLKR(i.writtenOff, { decimals: 0 })} written off</div>}</TableCell>
               <TableCell className="text-right font-medium">{i.inst.billed ? <Money value={i.remaining} currency={false} /> : <span className="text-muted-foreground font-normal">not billed</span>}</TableCell>

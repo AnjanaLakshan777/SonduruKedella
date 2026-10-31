@@ -45,10 +45,10 @@ export default function SuppliersPage() {
         actions={<><Button variant="outline" onClick={() => setAddOpen(true)}><Plus />Add Supplier</Button><Button asChild><Link to="/suppliers/invoices/new"><FilePlus2 />Record Invoice</Link></Button></>}
       />
       <KpiStrip items={[
-        { label: 'Supplier payables', unit: 'LKR', value: <Money value={t.supplierPayables} decimals={0} currency={false} />, basis: 'Recorded', caption: `${d.invoices.filter((v) => v.remaining > 0).length} invoices unpaid` },
-        { label: 'Overdue', unit: 'LKR', value: <Money value={sum(d.invoices.filter((v) => v.status === 'Overdue'), (v) => v.remaining)} decimals={0} currency={false} />, caption: 'Past the credit period' },
-        { label: 'Due in the next 7 days', unit: 'LKR', value: <Money value={sum(d.invoices.filter((v) => v.remaining > 0 && v.daysToDue >= 0 && v.daysToDue <= 7), (v) => v.remaining)} decimals={0} currency={false} />, caption: 'Plan these payments' },
-        { label: 'Purchases this year', unit: 'LKR', value: <Money value={sum(d.invoices, (v) => v.total)} decimals={0} currency={false} />, caption: `${d.invoices.length} invoices` },
+        { label: 'Supplier payables', unit: 'LKR', value: <Money value={t.supplierPayables} decimals={0} currency={false} />, basis: 'Recorded', caption: `${d.invoices.filter((v) => v.remaining > 0).length} invoices unpaid`, hint: 'Supplier invoice amounts not paid yet.' },
+        { label: 'Overdue', unit: 'LKR', value: <Money value={sum(d.invoices.filter((v) => v.status === 'Overdue'), (v) => v.remaining)} decimals={0} currency={false} />, caption: 'Past the credit period', hint: 'Unpaid invoices past their due date (the credit period).' },
+        { label: 'Due in the next 7 days', unit: 'LKR', value: <Money value={sum(d.invoices.filter((v) => v.remaining > 0 && v.daysToDue >= 0 && v.daysToDue <= 7), (v) => v.remaining)} decimals={0} currency={false} />, caption: 'Plan these payments', hint: 'Unpaid invoices due within the next 7 days.' },
+        { label: 'Purchases this year', unit: 'LKR', value: <Money value={sum(d.invoices, (v) => v.total)} decimals={0} currency={false} />, caption: `${d.invoices.length} invoices`, hint: 'Total of all supplier invoices recorded.' },
       ]} />
       <Tabs value={tab} onValueChange={(v) => setParams(v === 'directory' ? {} : { tab: v }, { replace: true })} className="gap-4">
         <TabsList variant="line"><TabsTrigger value="directory">Supplier directory</TabsTrigger><TabsTrigger value="payables">Invoices & payables</TabsTrigger></TabsList>
