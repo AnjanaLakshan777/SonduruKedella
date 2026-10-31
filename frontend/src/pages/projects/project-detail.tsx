@@ -16,6 +16,7 @@ import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
 import { EmptyState } from '@/components/app/empty-state'
 import { FileDropzone } from '@/components/app/file-dropzone'
+import { BasisToggle, useBasis } from '@/components/app/basis-toggle'
 import { useData, useStore } from '@/store/store'
 import { projectActivity } from '@/lib/finance'
 import { diffDays, formatDate, TODAY } from '@/lib/dates'
@@ -38,6 +39,8 @@ export default function ProjectDetail() {
   const pf = d.projectFinById.get(id)
   useCrumbs([{ label: 'Projects', to: '/projects' }, { label: pf?.project.name ?? 'Not found' }])
   const [payFor, setPayFor] = useState<string | null>(null)
+  const [basis, setBasis] = useBasis()
+  const cash = basis === 'cash'
   if (!pf) return <EmptyState title="Project not found" description="It may have been removed." action={<Button asChild><Link to="/projects">Back to Projects</Link></Button>} />
 
   const p = pf.project
@@ -86,7 +89,9 @@ export default function ProjectDetail() {
           { label: 'Payments Received', unit: 'LKR', value: M(pf.received), basis: 'Received', caption: `${pf.collectedPct.toFixed(0)}% of amount payable` },
           { label: 'Receivable', unit: 'LKR', value: M(pf.receivable), basis: 'Recorded', caption: pf.overdue ? <span className="text-destructive-soft-foreground font-medium">{formatLKR(pf.overdue, { decimals: 0, currency: false })} overdue</span> : 'Nothing overdue' },
           { label: 'Project Costs', unit: 'LKR', value: M(pf.totalCosts), basis: 'Recorded', caption: pf.payables.total ? `${formatLKR(pf.payables.total, { decimals: 0, currency: false })} still to pay` : 'All paid' },
-          { label: pf.profitBasis === 'Recorded' ? 'Project Profit' : 'Profit to Date', unit: 'LKR', value: <Money value={pf.profit} decimals={0} currency={false} tone="auto" />, basis: pf.profitBasis, caption: pf.profitBasis === 'Estimated' ? 'Costs still to come not included' : `${pf.margin.toFixed(1)}% margin`, hint: 'Revenue recorded − written off − project costs (materials, labour, expenses, confirmed commissions).' },
+          cash
+            ? { label: 'Cash Profit', unit: 'LKR', value: <Money value={pf.cash.profit} decimals={0} currency={false} tone="auto" />, basis: 'Received', caption: `Accrual: ${formatLKR(pf.profit, { decimals: 0, currency: false })}`, hint: 'Client payments received − money paid out for this project (expense, supplier, wage and commission payments, plus stock issued at cost).' }
+            : { label: pf.profitBasis === 'Recorded' ? 'Project Profit' : 'Profit to Date', unit: 'LKR', value: <Money value={pf.profit} decimals={0} currency={false} tone="auto" />, basis: pf.profitBasis, caption: pf.profitBasis === 'Estimated' ? `Cash basis: ${formatLKR(pf.cash.profit, { decimals: 0, currency: false })}` : `${pf.margin.toFixed(1)}% margin`, hint: 'Revenue recorded − written off − project costs (materials, labour, expenses, confirmed commissions), whether paid or not. Costs still to come are not included.' },
         ]}
       />
 
@@ -125,8 +130,25 @@ export default function ProjectDetail() {
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle>Costs and result</CardTitle><CardDescription>Recorded to date · {pf.profitBasis === 'Estimated' ? 'not final' : 'project completed'}</CardDescription></CardHeader>
+                <CardHeader>
+                  <CardTitle>Costs and result</CardTitle>
+                  <CardDescription>{cash ? 'Money received and paid out to date' : `Recorded to date · ${pf.profitBasis === 'Estimated' ? 'not final' : 'project completed'}`}</CardDescription>
+                  <CardAction><BasisToggle value={basis} onChange={setBasis} /></CardAction>
+                </CardHeader>
                 <CardContent>
+                  {cash ? (
+                    <>
+                      <FigureList decimals={0} rows={[
+                        { label: 'Payments received from client', value: pf.cash.received },
+                        ...(pf.cash.materials ? [{ kind: 'less' as const, label: 'Materials paid for', value: pf.cash.materials, note: pf.costs.materialsStock ? 'Incl. stock issued at FIFO cost — paid when the stock was bought' : undefined }] : []),
+                        ...(pf.cash.labour ? [{ kind: 'less' as const, label: 'Wages paid', value: pf.cash.labour }] : []),
+                        ...(pf.cash.expenses ? [{ kind: 'less' as const, label: 'Other expenses paid', value: pf.cash.expenses }] : []),
+                        ...(pf.cash.commission ? [{ kind: 'less' as const, label: 'Commission paid', value: pf.cash.commission }] : []),
+                        { kind: 'highlight', label: <span className="flex items-center gap-2">Cash profit<StatusBadge status="Received" /></span>, value: <Money value={pf.cash.profit} decimals={0} tone="auto" /> },
+                      ]} />
+                      <p className="text-muted-foreground mt-3 text-xs">Cash basis: unpaid bills ({formatLKR(pf.payables.total, { decimals: 0 })}) and money the client still owes ({formatLKR(pf.receivable, { decimals: 0 })}) are not counted until they are paid.</p>
+                    </>
+                  ) : (<>
                   <FigureList decimals={0} rows={[
                     { label: 'Revenue recorded', value: pf.revenueRecorded - pf.writtenOff, note: pf.writtenOff ? 'After write-offs' : undefined },
                     ...(pf.costs.materialsDirect ? [{ kind: 'less' as const, label: 'Materials delivered to site', value: pf.costs.materialsDirect }] : []),
@@ -137,6 +159,7 @@ export default function ProjectDetail() {
                     { kind: 'highlight', label: <span className="flex items-center gap-2">{pf.profitBasis === 'Recorded' ? 'Project profit' : 'Profit to date'}<StatusBadge status={pf.profitBasis} /></span>, value: <Money value={pf.profit} decimals={0} tone="auto" /> },
                   ]} />
                   {pf.profitBasis === 'Estimated' && <p className="text-muted-foreground mt-3 text-xs">Estimated: work, materials and bills still to come are not included, so the final profit will be lower than this figure.</p>}
+                  </>)}
                 </CardContent>
               </Card>
             </div>

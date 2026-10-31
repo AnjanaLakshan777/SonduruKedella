@@ -87,6 +87,26 @@ export interface ExpenseLine {
   method?: string
 }
 
+// Cash basis: one row per payment that actually went out, dated when it was paid. A stock issue is the one
+// exception (fromStock): no new cash moves, but the project still carries the stock's cost, so it counts
+// for the project and is left out of company totals, where the stock invoice payments already are.
+export interface CashLine {
+  id: string
+  source: ExpenseSource | 'Advance'
+  date: string
+  scope: ExpenseScope
+  projectId?: string
+  group: ExpenseGroup
+  category: string
+  description: string
+  payee: string
+  amount: number
+  method?: string
+  fromStock?: boolean
+}
+
+export type ProfitBasis = 'accrual' | 'cash'
+
 // ---------------------------------------------------------------- payroll
 export interface PayrollLine {
   employee: Employee
@@ -291,6 +311,8 @@ export interface ProjectFinance {
   commissionPaid: number
   commissionPendingRate: number
   payables: { expenses: number; suppliers: number; commission: number; total: number }
+  /** the same project on the cash basis: money received from the client less money paid out for it */
+  cash: { received: number; materials: number; labour: number; expenses: number; commission: number; costs: number; profit: number }
   profit: number
   profitBasis: 'Recorded' | 'Estimated'
   margin: number
@@ -479,6 +501,65 @@ export function derive(s: DataState) {
   expenseLines.sort((a, b) => b.date.localeCompare(a.date))
   const linesByProject = groupBy(expenseLines, (l) => l.projectId)
 
+  // cash ledger: what was paid, when it was paid
+  const expenseById = new Map(s.expenses.map((e) => [e.id, e]))
+  const invoiceById = new Map(invoices.map((v) => [v.invoice.id, v]))
+  const payrollLineOf = new Map(payroll.flatMap((w) => w.lines.map((l) => [`${w.weekStart}:${l.employee.id}`, { w, l }] as const)))
+  const cashLines: CashLine[] = []
+  for (const p of s.expensePayments) {
+    const e = expenseById.get(p.expenseId)
+    if (!e) continue
+    cashLines.push({ id: `ep:${p.id}`, source: 'Manual', date: p.date, scope: e.scope, projectId: e.projectId, group: e.group, category: e.category, description: e.description, payee: e.payee, amount: p.amount, method: p.method })
+  }
+  for (const p of s.supplierPayments) {
+    const v = invoiceById.get(p.invoiceId)
+    if (!v) continue
+    // paying for stock is company money; it reaches a project later, when the stock is issued
+    const toStock = !v.invoice.projectId
+    cashLines.push({
+      id: `sp:${p.id}`, source: 'Supplier invoice', date: p.date, scope: toStock ? 'Company' : 'Project', projectId: v.invoice.projectId, group: toStock ? 'Company' : 'Construction',
+      category: toStock ? 'Stock purchases' : 'Materials', description: `${v.invoice.lines.map((l) => l.description).join(', ')} — ${v.invoice.invoiceNo}`, payee: v.supplier.name, amount: p.amount, method: p.method,
+    })
+  }
+  for (const l of expenseLines) {
+    if (l.source !== 'Stock issue') continue
+    cashLines.push({ id: l.id, source: l.source, date: l.date, scope: l.scope, projectId: l.projectId, group: l.group, category: l.category, description: l.description, payee: l.payee, amount: l.amount, fromStock: true })
+  }
+  // a wage payment is split over the projects the worker was on that week, in proportion to the wages earned there
+  for (const p of s.payrollPayments) {
+    const hit = payrollLineOf.get(`${p.weekStart}:${p.employeeId}`)
+    const who = empById.get(p.employeeId)?.name ?? 'Worker'
+    const description = `Wages, ${hit ? formatRange(hit.w.weekStart, hit.w.weekEnd) : p.weekStart} — ${who}`
+    const parts = Object.entries(hit?.l.byProject ?? {}).filter(([, v]) => v > 0)
+    const base = sum(parts, ([, v]) => v)
+    if (!base) {
+      cashLines.push({ id: `pp:${p.id}`, source: 'Payroll', date: p.date, scope: 'Company', group: 'Company', category: 'Labour', description, payee: who, amount: p.amount, method: p.method })
+      continue
+    }
+    let left = p.amount
+    parts.forEach(([pid, v], i) => {
+      // the last share takes the rounding remainder so the split adds back to the payment
+      const amount = i === parts.length - 1 ? r2(left) : r2((p.amount * v) / base)
+      left -= amount
+      cashLines.push({ id: `pp:${p.id}:${pid}`, source: 'Payroll', date: p.date, scope: 'Project', projectId: pid, group: 'Construction', category: 'Labour', description, payee: who, amount, method: p.method })
+    })
+  }
+  // an advance is cash out the day it's given; it isn't tied to a project, and the later deduction just pays less wages
+  for (const a of s.advances) {
+    const who = empById.get(a.employeeId)?.name ?? 'Worker'
+    cashLines.push({ id: `adv:${a.id}`, source: 'Advance', date: a.date, scope: 'Company', group: 'Company', category: 'Salary advances', description: `Salary advance — ${who}`, payee: who, amount: a.amount, method: a.method })
+  }
+  for (const c of commissions) {
+    for (const p of c.payments) {
+      cashLines.push({
+        id: `cp:${p.id}`, source: 'Commission', date: p.date, scope: 'Project', projectId: c.project.id, group: c.project.type === 'Design' ? 'Design' : 'Construction',
+        category: 'Commission', description: `Commission ${c.arr.rate}% — ${c.arr.recipient} (${c.arr.role})`, payee: c.arr.recipient, amount: p.amount, method: p.method,
+      })
+    }
+  }
+  cashLines.sort((a, b) => b.date.localeCompare(a.date))
+  const cashByProject = groupBy(cashLines, (l) => l.projectId)
+
   // projects
   const projects: ProjectFinance[] = s.projects.map((project) => {
     const insts = (instByProject.get(project.id) ?? []).slice().sort((a, b) => a.inst.dueDate.localeCompare(b.inst.dueDate))
@@ -510,6 +591,13 @@ export function derive(s: DataState) {
     }
     payables.total = payables.expenses + payables.suppliers + payables.commission
     const profit = revenueRecorded - writtenOff - totalCosts
+    const cl = cashByProject.get(project.id) ?? []
+    const cashOf = (...src: CashLine['source'][]) => r2(sum(cl.filter((l) => src.includes(l.source)), (l) => l.amount))
+    const cashCosts = r2(sum(cl, (l) => l.amount))
+    const cash = {
+      received, materials: cashOf('Supplier invoice', 'Stock issue'), labour: cashOf('Payroll'), expenses: cashOf('Manual'), commission: cashOf('Commission'),
+      costs: cashCosts, profit: r2(received - cashCosts),
+    }
     const adjustedValue = project.contractValue - deduction
     const attention: string[] = []
     const ovCount = insts.filter((i) => i.status === 'Overdue').length
@@ -526,7 +614,7 @@ export function derive(s: DataState) {
       costs: { materialsDirect, materialsStock, labour, expensesByCategory, expenses, commission: commissionCommitted },
       directCosts, totalCosts, commissionCommitted, commissionPaid,
       commissionPendingRate: sum(pc.filter((c) => c.arr.status === 'Pending'), (c) => c.arr.rate),
-      payables, profit, profitBasis: project.status === 'Completed' ? 'Recorded' : 'Estimated',
+      payables, cash, profit, profitBasis: project.status === 'Completed' ? 'Recorded' : 'Estimated',
       margin: revenueRecorded > 0 ? (profit / revenueRecorded) * 100 : 0,
       collectedPct: adjustedValue > 0 ? (received / adjustedValue) * 100 : 0,
       attention,
@@ -571,6 +659,9 @@ export function derive(s: DataState) {
     commissionPayables: sum(commissions.filter((c) => c.arr.status === 'Confirmed'), (c) => c.remaining),
     payrollPayables: sum(payroll.filter((w) => w.closed), (w) => w.remaining),
     stockValue: r2(sum(materials, (m) => m.value)),
+    // cash basis. Stock issues are left out of the company total: the stock invoice payments are the cash
+    projectCashProfit: r2(sum(projects, (p) => p.cash.profit)),
+    cashPaidOut: r2(sum(cashLines.filter((l) => !l.fromStock), (l) => l.amount)),
   }
   const revenueRecorded = totals.revenueProjects + totals.revenueOther
   const paymentsReceived = totals.received + totals.receivedOther
@@ -597,13 +688,25 @@ export function derive(s: DataState) {
     s, clientById, projectById, supplierById, empById, materialById,
     // FIFO cost of every stock movement, keyed by movement id
     stockCost: fifo.costed,
-    installments, invoices, materials, payroll, advances, commissions, policyCheck, expenseLines, projects, projectFinById, otherIncome,
+    installments, invoices, materials, payroll, advances, commissions, policyCheck, expenseLines, cashLines, projects, projectFinById, otherIncome,
     totals: { ...totals, revenueRecorded, paymentsReceived },
     monthly, payablesDue,
   }
 }
 
 export type Derived = ReturnType<typeof derive>
+
+/** A project's figures on either basis, so a screen can switch between them without caring which. */
+export function projectFigures(p: ProjectFinance, basis: ProfitBasis) {
+  if (basis === 'cash') {
+    const c = p.cash
+    return { revenue: c.received, materials: c.materials, labour: c.labour, expenses: c.expenses, commission: c.commission, costs: c.costs, profit: c.profit, margin: c.received > 0 ? (c.profit / c.received) * 100 : 0 }
+  }
+  return {
+    revenue: p.revenueRecorded - p.writtenOff, materials: p.costs.materialsDirect + p.costs.materialsStock, labour: p.costs.labour, expenses: p.costs.expenses,
+    commission: p.commissionCommitted, costs: p.totalCosts, profit: p.profit, margin: p.margin,
+  }
+}
 
 export function clientSummary(d: Derived, clientId: string) {
   const projects = d.projects.filter((p) => p.client.id === clientId)

@@ -1496,3 +1496,28 @@ For each completed task, record the date, files or migrations changed, verificat
   - `exceljs` brings in `uuid` 8.3.2, which `npm audit` flags (moderate, `uuid <11.1.1`). The existing `@remix-run/router` advisory comes from react-router and is unrelated.
 - Verified: `tsc -b` is clean and the 24 Vitest tests pass. `vite build` succeeds. A sample .xlsx and .pdf were generated in Node and read back to check the number formats and layout. Not tried in a browser.
 - The frontend Docker container needs a rebuild (`docker compose up -d --build -V frontend`) to pick up the new npm packages. `-V` replaces its anonymous `node_modules` volume, which would otherwise keep the old packages. It does not touch the database volume.
+
+### 2026-10-31: Accrual and cash basis for expenses and profit
+- Until now the figures were accrual only. Revenue counted when billed, and costs counted when recorded, paid or not. Money received showed next to revenue, but nothing showed money paid out or a cash profit.
+- An **Accrual / Cash** toggle (`components/app/basis-toggle.tsx`) now sits on four screens: the Profitability report, the Expense report, the Dashboard (header) and the project page ("Costs and result" card). The browser remembers the last choice. Accrual stays the default, and its figures are unchanged.
+- Cash basis rules (`lib/finance.ts`):
+  - **Cash ledger (`cashLines`):** one row per payment made, dated on the day it was paid. This covers:
+    - expense payments;
+    - supplier payments (a payment for a stock invoice is company-level "Stock purchases");
+    - wage payments;
+    - salary advances, on the day they were given;
+    - commission payments.
+  - **Stock issued to a project** counts towards that project at FIFO issue cost, flagged `fromStock` (owner decision). No new cash moves; the stock was already paid for.
+    - It is left out of company totals (`totals.cashPaidOut`), so the stock purchase is counted once.
+    - The Expense report shows these issue rows only when a single project is selected.
+  - **Wage payments** are split over the projects the worker was on that week, in proportion to the wages earned on each. The last share takes the rounding remainder.
+  - **Advances** stay company-level. The advance plus the net wage paid equals the gross, so nothing is counted twice.
+  - **Project cash profit** = client payments received − the project's cash lines. Unpaid bills, unpaid wages, committed but unpaid commission and amounts clients still owe are left out.
+  - `projectFigures(p, basis)` gives a project's figures on either basis for the screens.
+- Not changed: revenue recognition (billed installments), the backend and its `/reports` endpoints. The cash figures are computed only in the frontend, from data it already loads.
+- Tests: `lib/finance.test.ts` has 4 new tests:
+  - money received and paid, with stock issued at cost;
+  - the stock purchase counted once in company cash;
+  - a wage payment split across projects, with the advance kept at company level;
+  - commission counted when paid, not when confirmed.
+- Verified: `tsc -b` is clean and 28 Vitest tests pass. Not checked against the development data (the stack was down) and not tried in a browser.

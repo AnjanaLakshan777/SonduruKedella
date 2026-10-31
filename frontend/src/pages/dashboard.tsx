@@ -13,6 +13,7 @@ import { Money } from '@/components/app/money'
 import { StatusBadge } from '@/components/app/status-badge'
 import { CellMain, Mono } from '@/components/app/data-table'
 import { axisProps, ChartTooltip, Legend, moneyAxis } from '@/components/app/chart'
+import { BasisToggle, useBasis } from '@/components/app/basis-toggle'
 import { useData } from '@/store/store'
 import { addDays, diffDays, formatDate, formatDateShort, fyLabel, monthLabel, monthsBetween, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
@@ -47,9 +48,11 @@ export default function Dashboard() {
   const typeColors = ['var(--chart-5)', 'var(--chart-3)', 'var(--chart-1)', 'var(--muted-foreground)']
   const totalRev = sum(byType, (r) => r.value)
 
+  const [basis, setBasis] = useBasis()
+  const cash = basis === 'cash'
   const profitRows = d.projects
-    .filter((p) => p.revenueRecorded > 0)
-    .map((p) => ({ id: p.project.id, name: p.project.name, code: p.project.code, profit: Math.round(p.profit), basis: p.profitBasis }))
+    .filter((p) => (cash ? p.received > 0 || p.cash.costs > 0 : p.revenueRecorded > 0))
+    .map((p) => ({ id: p.project.id, name: p.project.name, code: p.project.code, profit: Math.round(cash ? p.cash.profit : p.profit), basis: p.profitBasis }))
     .sort((a, b) => b.profit - a.profit)
 
   const attention = d.projects.filter((p) => p.attention.length && p.project.status !== 'Planning').sort((a, b) => b.overdue - a.overdue).slice(0, 6)
@@ -81,7 +84,7 @@ export default function Dashboard() {
       <PageHeader
         title="Dashboard"
         description={`Financial year ${fyLabel(d.s.settings.financialYearStart)} to date · ${formatDate(d.s.settings.financialYearStart)} – ${formatDate(TODAY)}`}
-        actions={<Button asChild><Link to="/projects/new"><Plus />Create Project</Link></Button>}
+        actions={<><BasisToggle value={basis} onChange={setBasis} /><Button asChild><Link to="/projects/new"><Plus />Create Project</Link></Button></>}
       />
 
       <KpiStrip
@@ -91,7 +94,9 @@ export default function Dashboard() {
           { label: 'Revenue Recorded', unit: 'LKR', value: M(t.revenueRecorded), basis: 'Recorded', caption: `incl. ${formatLKR(t.revenueOther, { decimals: 0, currency: false })} other income`, hint: 'Billed installments (net of delay deductions) plus other income. An installment is counted once, however many payments it takes.' },
           { label: 'Payments Received', unit: 'LKR', value: M(t.paymentsReceived), basis: 'Received', caption: 'From clients and other income' },
           { label: 'Outstanding Receivables', unit: 'LKR', value: M(t.receivable), basis: 'Recorded', caption: <span className="text-destructive-soft-foreground font-medium">{formatLKR(t.overdue, { decimals: 0, currency: false })} overdue</span>, hint: 'Revenue recorded − payments received − amounts written off.' },
-          { label: 'Est. Project Profit', unit: 'LKR', value: M(t.projectProfit), basis: 'Estimated', caption: `After ${formatLKR(t.projectCosts, { decimals: 0, currency: false })} project costs`, hint: 'Revenue recorded − written off − project costs (materials, labour, expenses, confirmed commissions). Excludes costs not yet incurred and company-level expenses.' },
+          cash
+            ? { label: 'Cash Project Profit', unit: 'LKR', value: M(t.projectCashProfit), basis: 'Received', caption: `Accrual: ${formatLKR(t.projectProfit, { decimals: 0, currency: false })}`, hint: 'Client payments received − money paid out for projects (expense, supplier, wage and commission payments, plus stock issued at cost). Unpaid bills and amounts still owed by clients are left out. Excludes company-level expenses.' }
+            : { label: 'Est. Project Profit', unit: 'LKR', value: M(t.projectProfit), basis: 'Estimated', caption: `Cash basis: ${formatLKR(t.projectCashProfit, { decimals: 0, currency: false })}`, hint: 'Revenue recorded − written off − project costs (materials, labour, expenses, confirmed commissions), whether paid or not. Excludes costs not yet incurred and company-level expenses.' },
         ]}
       />
 
@@ -146,7 +151,7 @@ export default function Dashboard() {
         <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle>Project Profitability</CardTitle>
-            <CardDescription>Profit to date per project — estimated until completed</CardDescription>
+            <CardDescription>{cash ? 'Cash profit per project — received less paid out' : 'Profit to date per project — estimated until completed'}</CardDescription>
             <ViewAll to="/reports/profitability" label="Full report" />
           </CardHeader>
           <CardContent style={{ height: profitRows.length * 34 + 24 }}>
@@ -156,13 +161,13 @@ export default function Dashboard() {
                 <YAxis type="category" dataKey="code" {...axisProps} width={96} tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontFamily: 'var(--font-mono)' }} />
                 <ReferenceLine x={0} stroke="var(--border)" />
                 <Tooltip cursor={{ fill: 'var(--muted)', opacity: 0.6 }} content={<ChartTooltip labelFormatter={(code) => profitRows.find((r) => r.code === code)?.name ?? code} />} />
-                <Bar dataKey="profit" name="Profit to date" radius={[0, 3, 3, 0]} maxBarSize={18} onClick={(r: { id?: string }) => r.id && navigate(`/projects/${r.id}`)} className="cursor-pointer">
-                  {profitRows.map((r) => <Cell key={r.id} fill={r.profit < 0 ? 'var(--destructive)' : r.basis === 'Recorded' ? 'var(--chart-5)' : 'var(--chart-3)'} />)}
+                <Bar dataKey="profit" name={cash ? 'Cash profit' : 'Profit to date'} radius={[0, 3, 3, 0]} maxBarSize={18} onClick={(r: { id?: string }) => r.id && navigate(`/projects/${r.id}`)} className="cursor-pointer">
+                  {profitRows.map((r) => <Cell key={r.id} fill={r.profit < 0 ? 'var(--destructive)' : cash || r.basis === 'Recorded' ? 'var(--chart-5)' : 'var(--chart-3)'} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
-          <CardContent className="-mt-2"><Legend items={[{ label: 'Estimated (in progress)', color: 'var(--chart-3)' }, { label: 'Recorded (completed)', color: 'var(--chart-5)' }]} /></CardContent>
+          {!cash && <CardContent className="-mt-2"><Legend items={[{ label: 'Estimated (in progress)', color: 'var(--chart-3)' }, { label: 'Recorded (completed)', color: 'var(--chart-5)' }]} /></CardContent>}
         </Card>
 
         <Card className="gap-4 pb-0 xl:col-span-3">

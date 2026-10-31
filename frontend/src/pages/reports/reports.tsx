@@ -14,8 +14,9 @@ import { CellMain, Mono } from '@/components/app/data-table'
 import { ALL, DateRangeFilter, FilterBar, FilterSelect, defaultRange, inRange } from '@/components/app/filters'
 import { axisProps, ChartTooltip, Legend, moneyAxis } from '@/components/app/chart'
 import { ageingBuckets } from '@/components/app/receivables-table'
+import { BasisToggle, useBasis } from '@/components/app/basis-toggle'
 import { useData, useStore } from '@/store/store'
-import { sum } from '@/lib/finance'
+import { projectFigures, sum } from '@/lib/finance'
 import { formatDate, formatRange, monthEnd, monthKey, monthLabel, monthsBetween, monthStart, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -133,8 +134,16 @@ export function ExpenseReport() {
   const [range, setRange] = useState(defaultRange())
   const [proj, setProj] = useState(ALL)
   const [cat, setCat] = useState(ALL)
-  const rows = d.expenseLines.filter((l) => inRange(l.date, range) && (proj === ALL || (proj === 'company' ? l.scope === 'Company' : l.projectId === proj)) && (cat === ALL || l.category === cat))
-  const cats = [...new Set(rows.map((l) => l.category))].map((c) => ({ c, v: sum(rows.filter((l) => l.category === c), (l) => l.amount), project: sum(rows.filter((l) => l.category === c && l.scope === 'Project'), (l) => l.amount) })).sort((a, b) => b.v - a.v)
+  const [basis, setBasis] = useBasis()
+  const cash = basis === 'cash'
+  const onePro = proj !== ALL && proj !== 'company'
+  const pick = (l: { date: string; scope: string; projectId?: string; category: string }) =>
+    inRange(l.date, range) && (proj === ALL || (proj === 'company' ? l.scope === 'Company' : l.projectId === proj)) && (cat === ALL || l.category === cat)
+  // on cash, stock issues only show for a single project: across the company the stock invoice payments are the cash
+  const cashRows = d.cashLines.filter((l) => pick(l) && (!l.fromStock || onePro))
+  const rows: { date: string; scope: string; projectId?: string; category: string; description: string; payee: string; amount: number; paid: number; remaining: number; fromStock?: boolean }[] =
+    cash ? cashRows.map((l) => ({ ...l, paid: l.amount, remaining: 0 })) : d.expenseLines.filter(pick)
+  const cats =[...new Set(rows.map((l) => l.category))].map((c) => ({ c, v: sum(rows.filter((l) => l.category === c), (l) => l.amount), project: sum(rows.filter((l) => l.category === c && l.scope === 'Project'), (l) => l.amount) })).sort((a, b) => b.v - a.v)
   const byProject = d.s.projects.map((p) => ({ p, v: sum(rows.filter((l) => l.projectId === p.id), (l) => l.amount) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v)
   const company = rows.filter((l) => l.scope === 'Company')
   return (
@@ -143,17 +152,31 @@ export function ExpenseReport() {
         <FilterBar>
           <DateRangeFilter value={range} onChange={setRange} />
           <FilterSelect label="Projects" value={proj} onChange={setProj} options={[{ value: 'company', label: 'Company-level only' }, ...d.s.projects.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} />
-          <FilterSelect label="Categories" value={cat} onChange={setCat} options={[...new Set(d.expenseLines.map((l) => l.category))].sort()} />
+          <FilterSelect label="Categories" value={cat} onChange={setCat} options={[...new Set([...d.expenseLines, ...d.cashLines].map((l) => l.category))].sort()} />
         </FilterBar>
-        <ExportMenu subtitle={formatRange(range.from, range.to)} name="expense-report" rows={() => [['Date', 'Scope', 'Project', 'Category', 'Description', 'Payee', 'Amount (LKR)', 'Paid (LKR)', 'Unpaid (LKR)'], ...rows.map((l) => [formatDate(l.date), l.scope, d.projectById.get(l.projectId ?? '')?.code ?? '', l.category, l.description, l.payee, l.amount, l.paid, l.remaining])]} />
+        <div className="flex items-center gap-2">
+          <BasisToggle value={basis} onChange={setBasis} />
+          <ExportMenu subtitle={`${cash ? 'Cash basis' : 'Accrual basis'} · ${formatRange(range.from, range.to)}`} name={cash ? 'expense-report-cash' : 'expense-report'} rows={() => cash
+            ? [['Paid on', 'Scope', 'Project', 'Category', 'Description', 'Payee', 'Paid (LKR)'], ...rows.map((l) => [formatDate(l.date), l.fromStock ? 'From stock' : l.scope, d.projectById.get(l.projectId ?? '')?.code ?? '', l.category, l.description, l.payee, l.amount])]
+            : [['Date', 'Scope', 'Project', 'Category', 'Description', 'Payee', 'Amount (LKR)', 'Paid (LKR)', 'Unpaid (LKR)'], ...rows.map((l) => [formatDate(l.date), l.scope, d.projectById.get(l.projectId ?? '')?.code ?? '', l.category, l.description, l.payee, l.amount, l.paid, l.remaining])]} />
+        </div>
       </div>
-      <KpiStrip items={[
+      <KpiStrip items={cash ? [
+        { label: 'Total paid out', unit: 'LKR', value: M0(sum(rows, (l) => l.amount)), basis: 'Received', caption: `${rows.length} payments` },
+        { label: 'Project payments', unit: 'LKR', value: M0(sum(rows.filter((l) => l.scope === 'Project'), (l) => l.amount)), caption: onePro ? 'Incl. stock issued to it' : 'Wages, materials, expenses, commission' },
+        { label: 'Company-level', unit: 'LKR', value: M0(sum(company, (l) => l.amount)), caption: 'Incl. stock purchases and salary advances' },
+        onePro
+          ? { label: 'Issued from stock', unit: 'LKR', value: M0(sum(rows.filter((l) => l.fromStock), (l) => l.amount)), caption: 'Paid when the stock was bought' }
+          : { label: 'Recorded, not yet paid', unit: 'LKR', value: M0(sum(d.expenseLines.filter(pick), (l) => l.remaining)), caption: 'Counts on accrual, not here' },
+      ] : [
         { label: 'Total expenses', unit: 'LKR', value: M0(sum(rows, (l) => l.amount)), basis: 'Recorded', caption: `${rows.length} records` },
         { label: 'Project expenses', unit: 'LKR', value: M0(sum(rows.filter((l) => l.scope === 'Project'), (l) => l.amount)), caption: 'Direct costs incl. commissions' },
         { label: 'Company-level', unit: 'LKR', value: M0(sum(company, (l) => l.amount)), caption: 'General business costs' },
         { label: 'Unpaid', unit: 'LKR', value: M0(sum(rows, (l) => l.remaining)) },
       ]} />
-      <Basis>Project expenses include direct expenses, materials delivered to site, materials issued from stock at issue cost, wages and approved overtime (by attendance), and confirmed commissions. Stock purchases are not counted until issued. Company-level expenses are never assigned to a project.</Basis>
+      {cash
+        ? <Basis><strong className="text-foreground">Cash basis.</strong> Only money actually paid out, on the day it was paid: expense payments, supplier payments, wage payments (split over the projects worked that week), salary advances when given, and commission payments. Unpaid bills are left out. Buying stock is a company-level payment; when a single project is selected, the stock issued to it is included at issue cost, because the project used it even though no new cash moved.</Basis>
+        : <Basis><strong className="text-foreground">Accrual basis.</strong> Project expenses include direct expenses, materials delivered to site, materials issued from stock at issue cost, wages and approved overtime (by attendance), and confirmed commissions, whether paid or not. Stock purchases are not counted until issued. Company-level expenses are never assigned to a project.</Basis>}
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader><CardTitle>Expenses by category</CardTitle><CardDescription>Project share in terracotta, company-level in grey</CardDescription></CardHeader>
@@ -189,33 +212,52 @@ export function ProfitabilityReport() {
   const navigate = useNavigate()
   const [type, setType] = useState(ALL)
   const [status, setStatus] = useState(ALL)
+  const [basis, setBasis] = useBasis()
+  const cash = basis === 'cash'
   const rows = d.projects.filter((p) => p.project.status !== 'Planning' && (type === ALL || p.project.type === type) && (status === ALL || p.project.status === status))
+    .map((p) => ({ ...p, f: projectFigures(p, basis) }))
   const T = (f: (p: (typeof rows)[number]) => number) => M0(sum(rows, f))
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <FilterBar><FilterSelect label="Types" value={type} onChange={setType} options={['Design', 'Construction', 'Consultation']} /><FilterSelect label="Statuses" value={status} onChange={setStatus} options={['In Progress', 'On Hold', 'Completed']} /></FilterBar>
-        <ExportMenu name="project-profitability" rows={() => [['Project', 'Name', 'Status', 'Contract value', 'Delay deduction', 'Revenue recorded', 'Written off', 'Materials', 'Labour', 'Other expenses', 'Commission committed', 'Commission paid', 'Total costs', 'Profit', 'Basis', 'Receivable'],
-          ...rows.map((p) => [p.project.code, p.project.name, p.project.status, p.contractValue, p.deduction, p.revenueRecorded, p.writtenOff, p.costs.materialsDirect + p.costs.materialsStock, p.costs.labour, p.costs.expenses, p.commissionCommitted, p.commissionPaid, p.totalCosts, p.profit, p.profitBasis, p.receivable])]} />
+        <div className="flex items-center gap-2">
+          <BasisToggle value={basis} onChange={setBasis} />
+          <ExportMenu subtitle={cash ? 'Cash basis' : 'Accrual basis'} name={cash ? 'project-profitability-cash' : 'project-profitability'} rows={() => cash
+            ? [['Project', 'Name', 'Status', 'Contract value', 'Received from client', 'Materials paid', 'Labour paid', 'Other expenses paid', 'Commission paid', 'Total paid out', 'Cash profit', 'Receivable'],
+              ...rows.map((p) => [p.project.code, p.project.name, p.project.status, p.contractValue, p.f.revenue, p.f.materials, p.f.labour, p.f.expenses, p.f.commission, p.f.costs, p.f.profit, p.receivable])]
+            : [['Project', 'Name', 'Status', 'Contract value', 'Delay deduction', 'Revenue recorded', 'Written off', 'Materials', 'Labour', 'Other expenses', 'Commission committed', 'Commission paid', 'Total costs', 'Profit', 'Basis', 'Receivable'],
+              ...rows.map((p) => [p.project.code, p.project.name, p.project.status, p.contractValue, p.deduction, p.revenueRecorded, p.writtenOff, p.costs.materialsDirect + p.costs.materialsStock, p.costs.labour, p.costs.expenses, p.commissionCommitted, p.commissionPaid, p.totalCosts, p.profit, p.profitBasis, p.receivable])]} />
+        </div>
       </div>
-      <KpiStrip items={[
+      <KpiStrip items={cash ? [
+        { label: 'Contract value', unit: 'LKR', value: T((p) => p.contractValue), basis: 'Agreed' },
+        { label: 'Received from clients', unit: 'LKR', value: T((p) => p.f.revenue), basis: 'Received' },
+        { label: 'Paid out for projects', unit: 'LKR', value: T((p) => p.f.costs), caption: 'incl. stock issued at cost' },
+        { label: 'Cash profit', unit: 'LKR', value: T((p) => p.f.profit), caption: `Accrual profit ${formatLKR(sum(rows, (p) => p.profit), { decimals: 0 })}` },
+        { label: 'Client receivables', unit: 'LKR', value: T((p) => p.receivable), caption: 'Not received — not in cash profit' },
+      ] : [
         { label: 'Contract value', unit: 'LKR', value: T((p) => p.contractValue), basis: 'Agreed' },
         { label: 'Revenue recorded', unit: 'LKR', value: T((p) => p.revenueRecorded), basis: 'Recorded' },
         { label: 'Project costs', unit: 'LKR', value: T((p) => p.totalCosts), basis: 'Recorded', caption: 'incl. committed commission' },
         { label: 'Profit to date', unit: 'LKR', value: T((p) => p.profit), basis: 'Estimated', caption: `${formatLKR(sum(rows.filter((p) => p.profitBasis === 'Recorded'), (p) => p.profit), { decimals: 0 })} on completed projects` },
         { label: 'Client receivables', unit: 'LKR', value: T((p) => p.receivable), caption: 'Not profit — still to collect' },
       ]} />
-      <Basis>
-        <strong className="text-foreground">Calculation basis.</strong> Profit = revenue recorded − written off − (materials + labour + other direct expenses + confirmed commission). Revenue recorded already excludes applied delay deductions. Contract value is shown for reference only and is not counted as revenue; outstanding receivables are not profit. Projects still in progress are <em>Estimated</em> because future costs are not yet known. Company-level expenses are excluded.
-      </Basis>
+      {cash ? (
+        <Basis>
+          <strong className="text-foreground">Cash basis.</strong> Cash profit = payments received from the client − money paid out for the project (expense, supplier, wage and commission payments, plus stock issued to it at FIFO cost, since that stock was already paid for). Unpaid bills, unpaid wages and committed but unpaid commission are left out, and so is money the client still owes. Salary advances and company-level expenses are not charged to projects.
+        </Basis>
+      ) : <Basis>
+        <strong className="text-foreground">Accrual basis.</strong> Profit = revenue recorded − written off − (materials + labour + other direct expenses + confirmed commission), whether paid or not. Revenue recorded already excludes applied delay deductions. Contract value is shown for reference only and is not counted as revenue; outstanding receivables are not profit. Projects still in progress are <em>Estimated</em> because future costs are not yet known. Company-level expenses are excluded.
+      </Basis>}
       <Card className="gap-0 py-0">
         <div className="overflow-x-auto text-[13px]">
           <Table className="text-[13px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Project</TableHead><TableHead className="text-right">Contract</TableHead><TableHead className="hidden text-right 2xl:table-cell">Deduction</TableHead><TableHead className="text-right">Revenue rec.</TableHead>
+                <TableHead className="pl-6">Project</TableHead><TableHead className="text-right">Contract</TableHead><TableHead className="hidden text-right 2xl:table-cell">Deduction</TableHead><TableHead className="text-right">{cash ? 'Received' : 'Revenue rec.'}</TableHead>
                 <TableHead className="text-right">Materials</TableHead><TableHead className="text-right">Labour</TableHead><TableHead className="text-right">Other exp.</TableHead><TableHead className="text-right">Commission</TableHead>
-                <TableHead className="text-right">Profit</TableHead><TableHead className="text-right">Margin</TableHead><TableHead>Basis</TableHead><TableHead className="pr-6 text-right">Receivable</TableHead>
+                <TableHead className="text-right">{cash ? 'Cash profit' : 'Profit'}</TableHead><TableHead className="text-right">Margin</TableHead><TableHead>Basis</TableHead><TableHead className="pr-6 text-right">Receivable</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -224,14 +266,14 @@ export function ProfitabilityReport() {
                   <TableCell className="min-w-52 pl-6 whitespace-normal"><CellMain title={<span className="line-clamp-2 whitespace-normal">{p.project.name}</span>} sub={<><Mono>{p.project.code}</Mono> · {p.project.status}</>} /></TableCell>
                   <TableCell className="text-right">{M0(p.contractValue)}</TableCell>
                   <TableCell className="hidden text-right 2xl:table-cell">{p.deduction ? <Money value={-p.deduction} decimals={0} currency={false} /> : '—'}</TableCell>
-                  <TableCell className="text-right">{M0(p.revenueRecorded - p.writtenOff)}</TableCell>
-                  <TableCell className="text-right">{M0(p.costs.materialsDirect + p.costs.materialsStock)}</TableCell>
-                  <TableCell className="text-right">{M0(p.costs.labour)}</TableCell>
-                  <TableCell className="text-right">{M0(p.costs.expenses)}</TableCell>
-                  <TableCell className="text-right">{M0(p.commissionCommitted)}{p.commissionCommitted > 0 && <div className="text-muted-foreground text-xs">{formatLKR(p.commissionPaid, { decimals: 0, currency: false })} paid</div>}</TableCell>
-                  <TableCell className="text-right font-semibold"><Money value={p.profit} decimals={0} currency={false} tone="auto" /></TableCell>
-                  <TableCell className={cn('tabular text-right', p.margin < 0 && 'text-destructive')}>{p.revenueRecorded ? `${p.margin.toFixed(1)}%` : '—'}</TableCell>
-                  <TableCell><StatusBadge status={p.profitBasis} /></TableCell>
+                  <TableCell className="text-right">{M0(p.f.revenue)}</TableCell>
+                  <TableCell className="text-right">{M0(p.f.materials)}</TableCell>
+                  <TableCell className="text-right">{M0(p.f.labour)}</TableCell>
+                  <TableCell className="text-right">{M0(p.f.expenses)}</TableCell>
+                  <TableCell className="text-right">{M0(p.f.commission)}{!cash && p.commissionCommitted > 0 && <div className="text-muted-foreground text-xs">{formatLKR(p.commissionPaid, { decimals: 0, currency: false })} paid</div>}</TableCell>
+                  <TableCell className="text-right font-semibold"><Money value={p.f.profit} decimals={0} currency={false} tone="auto" /></TableCell>
+                  <TableCell className={cn('tabular text-right', p.f.margin < 0 && 'text-destructive')}>{p.f.revenue ? `${p.f.margin.toFixed(1)}%` : '—'}</TableCell>
+                  <TableCell><StatusBadge status={cash ? 'Received' : p.profitBasis} /></TableCell>
                   <TableCell className="pr-6 text-right">{M0(p.receivable)}</TableCell>
                 </TableRow>
               ))}
@@ -239,21 +281,21 @@ export function ProfitabilityReport() {
             <TableFooter>
               <TableRow>
                 <TableCell className="pl-6">Total ({rows.length})</TableCell><TableCell className="text-right">{T((p) => p.contractValue)}</TableCell><TableCell className="hidden text-right 2xl:table-cell"><Money value={-sum(rows, (p) => p.deduction)} decimals={0} currency={false} /></TableCell>
-                <TableCell className="text-right">{T((p) => p.revenueRecorded - p.writtenOff)}</TableCell><TableCell className="text-right">{T((p) => p.costs.materialsDirect + p.costs.materialsStock)}</TableCell><TableCell className="text-right">{T((p) => p.costs.labour)}</TableCell>
-                <TableCell className="text-right">{T((p) => p.costs.expenses)}</TableCell><TableCell className="text-right">{T((p) => p.commissionCommitted)}</TableCell><TableCell className="text-right">{T((p) => p.profit)}</TableCell><TableCell /><TableCell /><TableCell className="pr-6 text-right">{T((p) => p.receivable)}</TableCell>
+                <TableCell className="text-right">{T((p) => p.f.revenue)}</TableCell><TableCell className="text-right">{T((p) => p.f.materials)}</TableCell><TableCell className="text-right">{T((p) => p.f.labour)}</TableCell>
+                <TableCell className="text-right">{T((p) => p.f.expenses)}</TableCell><TableCell className="text-right">{T((p) => p.f.commission)}</TableCell><TableCell className="text-right">{T((p) => p.f.profit)}</TableCell><TableCell /><TableCell /><TableCell className="pr-6 text-right">{T((p) => p.receivable)}</TableCell>
               </TableRow>
             </TableFooter>
           </Table>
         </div>
       </Card>
       <Card>
-        <CardHeader><CardTitle>Profit to date by project</CardTitle><CardDescription>LKR, estimated for projects still running</CardDescription></CardHeader>
+        <CardHeader><CardTitle>{cash ? 'Cash profit by project' : 'Profit to date by project'}</CardTitle><CardDescription>{cash ? 'LKR, received less paid out' : 'LKR, estimated for projects still running'}</CardDescription></CardHeader>
         <CardContent style={{ height: rows.length * 32 + 30 }}>
           <ResponsiveContainer>
-            <BarChart data={rows.map((p) => ({ code: p.project.code, name: p.project.name, profit: Math.round(p.profit), basis: p.profitBasis }))} layout="vertical">
+            <BarChart data={rows.map((p) => ({ code: p.project.code, name: p.project.name, profit: Math.round(p.f.profit), basis: p.profitBasis }))} layout="vertical">
               <XAxis type="number" {...moneyAxis} height={20} /><YAxis type="category" dataKey="code" {...axisProps} width={100} tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontFamily: 'var(--font-mono)' }} />
               <Tooltip cursor={{ fill: 'var(--muted)', opacity: 0.6 }} content={<ChartTooltip />} />
-              <Bar dataKey="profit" name="Profit to date" radius={[0, 3, 3, 0]} maxBarSize={18}>{rows.map((p) => <Cell key={p.project.id} fill={p.profit < 0 ? 'var(--destructive)' : p.profitBasis === 'Recorded' ? 'var(--chart-5)' : 'var(--chart-3)'} />)}</Bar>
+              <Bar dataKey="profit" name={cash ? 'Cash profit' : 'Profit to date'} radius={[0, 3, 3, 0]} maxBarSize={18}>{rows.map((p) => <Cell key={p.project.id} fill={p.f.profit < 0 ? 'var(--destructive)' : cash || p.profitBasis === 'Recorded' ? 'var(--chart-5)' : 'var(--chart-3)'} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
