@@ -33,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 // numbers are compared as before/after deltas so other data in the db doesn't matter. Rolls back.
 //
 // Fixture, construction project P1 (contract 1,000,000), IN_PROGRESS:
-//   installments 600,000 due 2026-10-01 (billed 2026-10-20) and 400,000 due 2027-06-30 (unbilled)
+//   installments 600,000 planned for 2026-10-01 (billed 2026-10-20) and 400,000 due 2027-06-30 (unbilled)
 //   applied delay deduction 20,000 on the first -> revenue recorded 580,000
 //   receipts 250,000 (active) and 50,000 (voided); write-off 100,000 -> outstanding 230,000
 //   manual project expense 30,000 (10,000 paid); company expense 5,000
@@ -268,7 +268,7 @@ class ReportApiIntegrationTest {
     @Test
     void theReceivablesReportShowsAgingFromTheRevenueModule() throws Exception {
         buildFixture();
-        long days = ChronoUnit.DAYS.between(LocalDate.of(2026, 10, 1), today);
+        long days = ChronoUnit.DAYS.between(LocalDate.of(2026, 10, 20), today); // counted from the billing day, not the planned date
         String bucket = days <= 30 ? "DAYS_1_30" : days <= 60 ? "DAYS_31_60" : days <= 90 ? "DAYS_61_90" : "DAYS_OVER_90";
         mockMvc.perform(get(REPORTS + "/receivables").param("projectId", String.valueOf(p1)))
                 .andExpect(status().isOk())

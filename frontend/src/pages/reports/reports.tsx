@@ -316,7 +316,7 @@ export function ReceivablesReport() {
   }).filter((x) => x.due > 0).sort((a, b) => b.owed - a.owed)
   return (
     <>
-      <div className="flex justify-end"><ExportMenu name="client-receivables" rows={() => [['Client', 'Project', 'Installment', 'Due date', 'Amount due', 'Received', 'Written off', 'Remaining', 'Days overdue', 'Status'], ...billed.map((i) => [i.client.name, i.project.code, i.inst.description, formatDate(i.inst.dueDate), i.net, i.paid, i.writtenOff, i.remaining, i.daysOverdue, i.status])]} /></div>
+      <div className="flex justify-end"><ExportMenu name="client-receivables" rows={() => [['Client', 'Project', 'Installment', 'Billed on', 'Amount due', 'Received', 'Written off', 'Remaining', 'Days overdue', 'Status'], ...billed.map((i) => [i.client.name, i.project.code, i.inst.description, formatDate(i.inst.billedOn ?? i.inst.dueDate), i.net, i.paid, i.writtenOff, i.remaining, i.daysOverdue, i.status])]} /></div>
       <KpiStrip items={[
         { label: 'Amounts owed', unit: 'LKR', value: M0(sum(open, (i) => i.remaining)), basis: 'Recorded', caption: `${open.length} installments` },
         { label: 'Overdue', unit: 'LKR', value: M0(sum(open.filter((i) => i.status === 'Overdue'), (i) => i.remaining)), tone: 'destructive' },
@@ -324,7 +324,7 @@ export function ReceivablesReport() {
         { label: 'Written off', unit: 'LKR', value: M0(d.totals.writtenOff), caption: `${d.s.writeOffs.length} write-offs — not received` },
       ]} />
       <Card className="gap-4">
-        <CardHeader><CardTitle>Ageing summary</CardTitle><CardDescription>Outstanding by days past the due date</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Ageing summary</CardTitle><CardDescription>Outstanding by days since billing</CardDescription></CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-5">
           {ageing.map((a, i) => (
             <div key={a.label} className="grid gap-1">

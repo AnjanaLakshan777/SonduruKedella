@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-// dueDate is optional, no due date = never overdue
+// dueDate is optional and only kept for older records: overdue now counts from the income date
 public record OtherIncomeCreateRequest(
         @NotNull(message = "Enter the income date.") LocalDate date,
         @NotBlank(message = "Describe the income.") @Size(max = 300) String description,

@@ -55,10 +55,11 @@ export interface InstallmentView {
   daysToDue: number
 }
 
-function installmentStatus(billed: boolean, remaining: number, paid: number, writtenOff: number, dueDate: string): ReceivableStatus {
+// No separate due dates: anything still owed after the day it was billed is overdue.
+function installmentStatus(billed: boolean, remaining: number, paid: number, writtenOff: number, billedOn: string): ReceivableStatus {
   if (!billed) return 'Upcoming'
   if (remaining <= 0.005) return writtenOff > 0 ? 'Written Off' : 'Paid'
-  if (dueDate < TODAY) return 'Overdue'
+  if (billedOn < TODAY) return 'Overdue'
   if (paid > 0) return 'Partially Paid'
   return 'Due'
 }
@@ -377,10 +378,10 @@ export function derive(s: DataState) {
     const deduction = project.delay?.appliedAmount && project.delay.appliedToInstallmentId === inst.id ? project.delay.appliedAmount : 0
     const net = inst.amount - deduction
     const remaining = r2(Math.max(0, net - paid - writtenOff))
-    const status = installmentStatus(inst.billed, remaining, paid, writtenOff, inst.dueDate)
+    const status = installmentStatus(inst.billed, remaining, paid, writtenOff, inst.billedOn ?? inst.dueDate)
     return {
       inst, project, client, payments, writeOffs, paid, writtenOff, deduction, net, remaining, status,
-      daysOverdue: status === 'Overdue' ? diffDays(TODAY, inst.dueDate) : 0,
+      daysOverdue: status === 'Overdue' ? diffDays(TODAY, inst.billedOn ?? inst.dueDate) : 0,
       daysToDue: diffDays(inst.dueDate, TODAY),
     }
   })
@@ -628,12 +629,13 @@ export function derive(s: DataState) {
     const receipts = oirByInc.get(inc.id) ?? []
     const received = sum(receipts, (r) => r.amount)
     const remaining = Math.max(0, inc.amount - received)
-    const status: ReceivableStatus = remaining <= 0 ? 'Paid' : inc.dueDate && inc.dueDate < TODAY ? 'Overdue' : received > 0 ? 'Partially Paid' : 'Due'
+    const status: ReceivableStatus = remaining <= 0 ? 'Paid' : inc.date < TODAY ? 'Overdue' : received > 0 ? 'Partially Paid' : 'Due'
     return { income: inc, receipts, received, remaining, status }
   })
 
   // totals
-  const active = projects.filter((p) => p.project.status === 'In Progress' || p.project.status === 'On Hold')
+  // "active" means work is going on: on-hold projects are left out (owner decision)
+  const active = projects.filter((p) => p.project.status === 'In Progress')
   const billed = installments.filter((i) => i.inst.billed)
   const receivables = billed.filter((i) => i.remaining > 0)
   const totals = {

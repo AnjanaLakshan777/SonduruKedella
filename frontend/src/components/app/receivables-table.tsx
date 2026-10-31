@@ -14,14 +14,14 @@ import { CellMain, Mono, Pagination, SortableHead, usePaged, useSort } from './d
 import { PaymentDialog } from './payment-dialog'
 import { WriteOffDialog } from './write-off-dialog'
 
-/** Client receivables: original amount due, received, remaining, due date, days overdue, status. */
+/** Client receivables: original amount, received, remaining, billing date, days overdue (counted from the day after billing), status. */
 export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { rows: InstallmentView[]; showClient?: boolean; pageSize?: number }) {
   const navigate = useNavigate()
   const recordClientPayment = useStore((s) => s.recordClientPayment)
   const [payFor, setPayFor] = useState<InstallmentView | undefined>()
   const [woFor, setWoFor] = useState<InstallmentView | undefined>()
   const { sorted, sort, toggle } = useSort(rows, { key: 'days', dir: 'desc' }, {
-    client: (i) => i.client.name, due: (i) => i.inst.dueDate, remaining: (i) => i.remaining, days: (i) => i.daysOverdue * 1e6 - i.daysToDue, original: (i) => i.net,
+    client: (i) => i.client.name, due: (i) => i.inst.billedOn ?? i.inst.dueDate, remaining: (i) => i.remaining, days: (i) => i.daysOverdue * 1e6 - i.daysToDue, original: (i) => i.net,
   })
   const paged = usePaged(sorted, pageSize)
   return (
@@ -34,7 +34,7 @@ export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { r
             <SortableHead label="Amount Due (LKR)" sortKey="original" sort={sort} onSort={toggle} align="right" className="hidden md:table-cell" />
             <TableHead className="hidden text-right md:table-cell">Received (LKR)</TableHead>
             <SortableHead label="Remaining (LKR)" sortKey="remaining" sort={sort} onSort={toggle} align="right" />
-            <SortableHead label="Due Date" sortKey="due" sort={sort} onSort={toggle} />
+            <SortableHead label="Billed On" sortKey="due" sort={sort} onSort={toggle} />
             <SortableHead label="Days Overdue" sortKey="days" sort={sort} onSort={toggle} align="right" className="hidden sm:table-cell" />
             <TableHead>Status</TableHead>
             <TableHead className="w-12 pr-4"><span className="sr-only">Actions</span></TableHead>
@@ -48,7 +48,7 @@ export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { r
               <TableCell className="hidden text-right md:table-cell"><Money value={i.net} currency={false} />{i.deduction > 0 && <div className="text-muted-foreground text-xs">after {formatLKR(i.deduction, { decimals: 0 })} deduction</div>}</TableCell>
               <TableCell className="hidden text-right md:table-cell">{i.paid ? <Money value={i.paid} currency={false} /> : <span className="text-muted-foreground">—</span>}{i.writtenOff > 0 && <div className="text-muted-foreground text-xs">{formatLKR(i.writtenOff, { decimals: 0 })} written off</div>}</TableCell>
               <TableCell className="text-right font-medium">{i.inst.billed ? <Money value={i.remaining} currency={false} /> : <span className="text-muted-foreground font-normal">not billed</span>}</TableCell>
-              <TableCell>{formatDate(i.inst.dueDate)}</TableCell>
+              <TableCell>{formatDate(i.inst.billedOn ?? i.inst.dueDate)}</TableCell>
               <TableCell className="tabular hidden text-right sm:table-cell">{i.daysOverdue ? <span className="text-destructive-soft-foreground font-medium">{i.daysOverdue}</span> : <span className="text-muted-foreground">—</span>}</TableCell>
               <TableCell><StatusBadge status={i.status} title={i.status === 'Overdue' && i.paid > 0 ? 'Partially paid' : undefined} /></TableCell>
               <TableCell className="pr-4" onClick={(e) => e.stopPropagation()}>

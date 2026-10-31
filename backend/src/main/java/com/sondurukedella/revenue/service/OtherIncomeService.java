@@ -196,7 +196,8 @@ public class OtherIncomeService {
         BigDecimal received = Money.amount(receivedAmount);
         BigDecimal outstanding = Money.amount(i.getAmount().subtract(received).max(BigDecimal.ZERO));
         Status status = outstanding.signum() == 0 ? Status.PAID
-                : i.getDueDate() != null && i.getDueDate().isBefore(today) ? Status.OVERDUE
+                // same rule as installments: unpaid after the day it was recorded is overdue (no due dates)
+                : i.getIncomeDate().isBefore(today) ? Status.OVERDUE
                 : received.signum() > 0 ? Status.PARTIALLY_PAID : Status.DUE;
         return new OtherIncomeResponse(i.getId(), i.getIncomeDate(), i.getDescription(), i.getPayer(), Money.amount(i.getAmount()),
                 i.getDueDate(), i.getReference(), i.getNotes(), received, outstanding, status, i.getCreatedAt(), i.getVersion());

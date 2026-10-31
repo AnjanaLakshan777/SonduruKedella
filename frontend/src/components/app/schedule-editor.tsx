@@ -25,7 +25,7 @@ export function ScheduleEditor({ rows, onChange, contractValue, showErrors }: { 
           <TableHeader>
             <TableRow>
               <TableHead className="pl-4">Installment</TableHead>
-              <TableHead className="w-44">Due date</TableHead>
+              <TableHead className="w-44">Planned date</TableHead>
               <TableHead className="w-24 text-right">Share</TableHead>
               <TableHead className="w-52 text-right">Amount</TableHead>
               <TableHead className="w-12"><span className="sr-only">Remove</span></TableHead>

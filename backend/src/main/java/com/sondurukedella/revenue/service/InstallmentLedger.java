@@ -38,7 +38,7 @@ class InstallmentLedger {
     }
 
     Receivable receivable(Installment installment, LocalDate today) {
-        return ReceivableCalculator.of(installment.getAmount(), installment.isBilled(), installment.getDueDate(),
+        return ReceivableCalculator.of(installment.getAmount(), installment.isBilled(), installment.getBilledOn(),
                 deductionOn(installment.getId()), payments.sumActive(installment.getId()),
                 writeOffs.sumFor(installment.getId()), today);
     }

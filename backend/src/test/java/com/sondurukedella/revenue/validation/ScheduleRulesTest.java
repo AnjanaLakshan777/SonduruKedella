@@ -62,7 +62,7 @@ class ScheduleRulesTest {
         assertThatThrownBy(() -> ScheduleRules.validateInitialSchedule(contract,
                 List.of(new InstallmentDraft(" ", DUE, contract)))).hasMessageContaining("Describe installment 1");
         assertThatThrownBy(() -> ScheduleRules.validateInitialSchedule(contract,
-                List.of(new InstallmentDraft("All", null, contract)))).hasMessageContaining("due date");
+                List.of(new InstallmentDraft("All", null, contract)))).hasMessageContaining("planned date");
         assertThatThrownBy(() -> ScheduleRules.validateInitialSchedule(contract,
                 List.of(row("A", "1000"), new InstallmentDraft("B", DUE, null)))).hasMessageContaining("Installment 2");
         assertThatThrownBy(() -> ScheduleRules.validateInitialSchedule(contract,

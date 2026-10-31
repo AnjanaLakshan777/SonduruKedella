@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.sondurukedella.config.ClockConfig;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,11 +53,12 @@ class OtherIncomeApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.description").value("Scrap sale"))
                 .andExpect(jsonPath("$.payer").doesNotExist())
-                .andExpect(jsonPath("$.status").value("DUE"))
+                // dated before today and unpaid, so already overdue - the due date it was sent with is ignored
+                .andExpect(jsonPath("$.status").value("OVERDUE"))
                 .andExpect(jsonPath("$.outstanding").value(15000.00)));
 
         receive(id, UUID.randomUUID(), "5000").andExpect(status().isCreated()).andExpect(jsonPath("$.method").value("Cash"));
-        mockMvc.perform(get(URL + "/" + id)).andExpect(jsonPath("$.status").value("PARTIALLY_PAID")).andExpect(jsonPath("$.outstanding").value(10000.00));
+        mockMvc.perform(get(URL + "/" + id)).andExpect(jsonPath("$.status").value("OVERDUE")).andExpect(jsonPath("$.outstanding").value(10000.00));
         receive(id, UUID.randomUUID(), "10000.01").andExpect(status().isBadRequest());
 
         UUID request = UUID.randomUUID();
@@ -106,12 +109,19 @@ class OtherIncomeApiIntegrationTest {
         create("{\"date\":\"2026-09-01\",\"description\":\"Old rent\",\"amount\":3000,\"dueDate\":\"2026-09-10\"}").andExpect(status().isCreated());
         create("{\"date\":\"2026-09-02\",\"description\":\"No due date\",\"amount\":2000}").andExpect(status().isCreated());
         mockMvc.perform(get(URL).param("from", "2026-09-01").param("to", "2026-09-02").param("status", "OVERDUE"))
-                .andExpect(jsonPath("$.totalElements").value(1)).andExpect(jsonPath("$.content[0].description").value("Old rent"));
+                .andExpect(jsonPath("$.totalElements").value(2)); // both unpaid after the day they were recorded, due date or not
         mockMvc.perform(get(URL + "/summary").param("from", "2026-09-01").param("to", "2026-09-02"))
                 .andExpect(jsonPath("$.count").value(2))
                 .andExpect(jsonPath("$.amount").value(5000.00))
                 .andExpect(jsonPath("$.outstanding").value(5000.00))
-                .andExpect(jsonPath("$.overdue").value(3000.00));
+                .andExpect(jsonPath("$.overdue").value(5000.00));
+    }
+
+    @Test
+    void incomeRecordedTodayIsDueUntilTomorrow() throws Exception {
+        String today = LocalDate.now(ClockConfig.BUSINESS_ZONE).toString();
+        create("{\"date\":\"" + today + "\",\"description\":\"Site visit fee\",\"amount\":4000}")
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("DUE"));
     }
 
     @Test

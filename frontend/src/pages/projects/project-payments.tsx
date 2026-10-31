@@ -44,7 +44,7 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
           <CircleAlert className="mt-0.5 size-4 shrink-0" />
           <div className="flex-1">
             <div className="font-medium">{formatLKR(sum(overdue, (i) => i.remaining))} overdue from {pf.client.name}</div>
-            <div>{overdue.map((i) => `${i.inst.description} — ${i.daysOverdue} days past ${formatDate(i.inst.dueDate)}`).join(' · ')}</div>
+            <div>{overdue.map((i) => `${i.inst.description} — ${i.daysOverdue} days since billed on ${formatDate(i.inst.billedOn ?? i.inst.dueDate)}`).join(' · ')}</div>
           </div>
           <Button size="sm" variant="outline" className="bg-card text-foreground" onClick={() => setPayFor(overdue[0].inst.id)}>Record Payment</Button>
         </div>
@@ -60,7 +60,7 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
           <TableHeader>
             <TableRow>
               <TableHead className="pl-6">Installment</TableHead>
-              <TableHead>Due date</TableHead>
+              <TableHead>Billed / planned</TableHead>
               <TableHead className="text-right">Scheduled (LKR)</TableHead>
               <TableHead className="hidden text-right lg:table-cell">Deduction (LKR)</TableHead>
               <TableHead className="text-right">Received (LKR)</TableHead>
@@ -76,7 +76,7 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
                   <span className="grid"><span className="truncate font-medium">{n + 1}. {i.inst.description}</span>
                     <span className="text-muted-foreground text-xs">{i.inst.billed ? `Billed ${formatDate(i.inst.billedOn)}` : 'Not billed yet'}{i.writtenOff ? ` · ${formatLKR(i.writtenOff)} written off` : ''}</span></span>
                 </TableCell>
-                <TableCell>{formatDate(i.inst.dueDate)}{i.status === 'Overdue' && <div className="text-destructive-soft-foreground text-xs">{i.daysOverdue} days overdue</div>}</TableCell>
+                <TableCell>{formatDate(i.inst.billedOn ?? i.inst.dueDate)}{!i.inst.billed && <div className="text-muted-foreground text-xs">planned</div>}{i.status === 'Overdue' && <div className="text-destructive-soft-foreground text-xs">{i.daysOverdue} days overdue</div>}</TableCell>
                 <TableCell className="text-right"><Money value={i.inst.amount} currency={false} /></TableCell>
                 <TableCell className="hidden text-right lg:table-cell">{i.deduction ? <Money value={-i.deduction} currency={false} /> : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell className="text-right">{i.paid ? <Money value={i.paid} currency={false} /> : <span className="text-muted-foreground">—</span>}</TableCell>
@@ -162,7 +162,7 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
           <AlertDialogHeader>
             <AlertDialogTitle>Bill {billFor?.inst.description} now?</AlertDialogTitle>
             <AlertDialogDescription>
-              {formatLKR(billFor?.net ?? 0)} is recorded as revenue today and becomes receivable from {pf.client.name}, due {formatDate(billFor?.inst.dueDate)}. Payments against it will not be counted as revenue again.
+              {formatLKR(billFor?.net ?? 0)} is recorded as revenue today and becomes receivable from {pf.client.name} straight away; if it is still unpaid tomorrow it shows as overdue. Payments against it will not be counted as revenue again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

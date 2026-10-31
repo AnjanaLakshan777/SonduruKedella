@@ -18,21 +18,21 @@ class ReceivableCalculatorTest {
         Receivable r = of("100000", false, TODAY.minusDays(30), ZERO, ZERO, ZERO);
 
         assertThat(r.status()).isEqualTo(ReceivableStatus.UNBILLED);
-        assertThat(r.outstanding()).isEqualByComparingTo("0"); // even though it's past due
+        assertThat(r.outstanding()).isEqualByComparingTo("0"); // however old its planned date
         assertThat(r.daysOverdue()).isZero();
     }
 
     @Test
-    void billedWithNothingReceivedAndNotYetDueIsBilled() {
+    void billedTodayWithNothingReceivedIsBilledNotOverdue() {
         Receivable r = of("100000", true, TODAY, ZERO, ZERO, ZERO);
 
-        assertThat(r.status()).isEqualTo(ReceivableStatus.BILLED); // due today is not overdue yet
+        assertThat(r.status()).isEqualTo(ReceivableStatus.BILLED); // billed today: late only from tomorrow
         assertThat(r.outstanding()).isEqualByComparingTo("100000.00");
     }
 
     @Test
-    void someReceivedIsPartiallyPaidUntilItIsOverdue() {
-        assertThat(of("100000", true, TODAY.plusDays(5), ZERO, big("40000"), ZERO).status())
+    void someReceivedOnTheBillingDayIsPartiallyPaid() {
+        assertThat(of("100000", true, TODAY, ZERO, big("40000"), ZERO).status())
                 .isEqualTo(ReceivableStatus.PARTIALLY_PAID);
         Receivable late = of("100000", true, TODAY.minusDays(3), ZERO, big("40000"), ZERO);
         assertThat(late.status()).isEqualTo(ReceivableStatus.OVERDUE);
@@ -41,8 +41,18 @@ class ReceivableCalculatorTest {
     }
 
     @Test
+    void everyDayUnpaidAfterTheBillingDayIsOverdueWithNoSeparateDueDate() {
+        Receivable dayAfter = of("100000", true, TODAY.minusDays(1), ZERO, ZERO, ZERO);
+        assertThat(dayAfter.status()).isEqualTo(ReceivableStatus.OVERDUE);
+        assertThat(dayAfter.daysOverdue()).isEqualTo(1);
+
+        Receivable monthOld = of("100000", true, TODAY.minusDays(30), ZERO, ZERO, ZERO);
+        assertThat(monthOld.daysOverdue()).isEqualTo(30);
+    }
+
+    @Test
     void aWriteOffAlsoCountsAsSettlementButIsNotReceived() {
-        Receivable r = of("100000", true, TODAY.plusDays(5), ZERO, ZERO, big("30000"));
+        Receivable r = of("100000", true, TODAY, ZERO, ZERO, big("30000"));
 
         assertThat(r.status()).isEqualTo(ReceivableStatus.PARTIALLY_PAID);
         assertThat(r.received()).isEqualByComparingTo("0");
@@ -83,9 +93,9 @@ class ReceivableCalculatorTest {
         assertThat(r.outstanding().scale()).isEqualTo(2);
     }
 
-    private static Receivable of(String amount, boolean billed, LocalDate due, BigDecimal deduction,
+    private static Receivable of(String amount, boolean billed, LocalDate billedOn, BigDecimal deduction,
             BigDecimal received, BigDecimal writtenOff) {
-        return ReceivableCalculator.of(big(amount), billed, due, deduction, received, writtenOff, TODAY);
+        return ReceivableCalculator.of(big(amount), billed, billedOn, deduction, received, writtenOff, TODAY);
     }
 
     private static BigDecimal big(String value) {

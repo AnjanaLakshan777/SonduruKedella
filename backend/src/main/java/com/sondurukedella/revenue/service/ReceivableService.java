@@ -113,7 +113,7 @@ public class ReceivableService {
                 .collect(Collectors.toMap(DelayDeductionTerms::getAppliedInstallmentId, DelayDeductionTerms::getAppliedAmount));
         LocalDate today = LocalDate.now(clock);
         return list.stream().map(i -> {
-            Receivable r = ReceivableCalculator.of(i.getAmount(), i.isBilled(), i.getDueDate(),
+            Receivable r = ReceivableCalculator.of(i.getAmount(), i.isBilled(), i.getBilledOn(),
                     deductions.getOrDefault(i.getId(), BigDecimal.ZERO), received.getOrDefault(i.getId(), BigDecimal.ZERO),
                     written.getOrDefault(i.getId(), BigDecimal.ZERO), today);
             return mapper.toReceivable(i, r);

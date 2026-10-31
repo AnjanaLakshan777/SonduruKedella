@@ -52,7 +52,7 @@ public final class ScheduleRules {
             throw new InvalidRequestException("The description of installment " + number + " is too long.");
         }
         if (row.dueDate() == null) {
-            throw new InvalidRequestException("Choose a due date for installment " + number + ".");
+            throw new InvalidRequestException("Choose a planned date for installment " + number + ".");
         }
         BigDecimal amount = row.amount();
         if (amount == null || amount.signum() <= 0) {

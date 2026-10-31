@@ -15,7 +15,7 @@ import { CellMain, Mono } from '@/components/app/data-table'
 import { axisProps, ChartTooltip, Legend, moneyAxis } from '@/components/app/chart'
 import { BasisToggle, useBasis } from '@/components/app/basis-toggle'
 import { useData } from '@/store/store'
-import { addDays, diffDays, formatDate, formatDateShort, fyLabel, monthLabel, monthsBetween, TODAY } from '@/lib/dates'
+import { addDays, addMonths, diffDays, formatDate, formatDateShort, monthLabel, monthsBetween, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { sum } from '@/lib/finance'
 import { cn } from '@/lib/utils'
@@ -37,7 +37,7 @@ export default function Dashboard() {
   const t = d.totals
 
   const monthly = useMemo(
-    () => monthsBetween(d.s.settings.financialYearStart.slice(0, 7), TODAY.slice(0, 7)).map((k) => ({ month: k, label: monthLabel(k), revenue: d.monthly.get(k)?.revenue ?? 0, expenses: d.monthly.get(k)?.expenses ?? 0 })),
+    () => monthsBetween(addMonths(TODAY.slice(0, 7), -11), TODAY.slice(0, 7)).map((k) => ({ month: k, label: monthLabel(k), revenue: d.monthly.get(k)?.revenue ?? 0, expenses: d.monthly.get(k)?.expenses ?? 0 })),
     [d],
   )
   const byType = useMemo(() => {
@@ -50,6 +50,8 @@ export default function Dashboard() {
 
   const [basis, setBasis] = useBasis()
   const cash = basis === 'cash'
+  const activeClients = new Set(d.projects.filter((p) => p.project.status === 'In Progress').map((p) => p.client.id)).size
+  const expensesRecorded = sum(d.expenseLines, (l) => l.amount)
   const profitRows = d.projects
     .filter((p) => (cash ? p.received > 0 || p.cash.costs > 0 : p.revenueRecorded > 0))
     .map((p) => ({ id: p.project.id, name: p.project.name, code: p.project.code, profit: Math.round(cash ? p.cash.profit : p.profit), basis: p.profitBasis }))
@@ -57,8 +59,8 @@ export default function Dashboard() {
 
   const attention = d.projects.filter((p) => p.attention.length && p.project.status !== 'Planning').sort((a, b) => b.overdue - a.overdue).slice(0, 6)
   const overdue = [
-    ...d.installments.filter((i) => i.status === 'Overdue').map((i) => ({ id: i.inst.id, client: i.client.name, sub: `${i.project.code} · ${i.inst.description}`, remaining: i.remaining, due: i.inst.dueDate, days: i.daysOverdue, to: `/projects/${i.project.id}?tab=payments` })),
-    ...d.otherIncome.filter((o) => o.status === 'Overdue').map((o) => ({ id: o.income.id, client: o.income.payer ?? 'Other income', sub: `Other income · ${o.income.description}`, remaining: o.remaining, due: o.income.dueDate!, days: diffDays(TODAY, o.income.dueDate!), to: '/revenue' })),
+    ...d.installments.filter((i) => i.status === 'Overdue').map((i) => ({ id: i.inst.id, client: i.client.name, sub: `${i.project.code} · ${i.inst.description}`, remaining: i.remaining, due: i.inst.billedOn ?? i.inst.dueDate, days: i.daysOverdue, to: `/projects/${i.project.id}?tab=payments` })),
+    ...d.otherIncome.filter((o) => o.status === 'Overdue').map((o) => ({ id: o.income.id, client: o.income.payer ?? 'Other income', sub: `Other income · ${o.income.description}`, remaining: o.remaining, due: o.income.date, days: diffDays(TODAY, o.income.date), to: '/revenue' })),
   ].sort((a, b) => b.days - a.days)
   // the next two weeks
   const payablesBy = addDays(TODAY, 14)
@@ -83,17 +85,21 @@ export default function Dashboard() {
     <>
       <PageHeader
         title="Dashboard"
-        description={`Financial year ${fyLabel(d.s.settings.financialYearStart)} to date · ${formatDate(d.s.settings.financialYearStart)} – ${formatDate(TODAY)}`}
+        description={`All figures to date · as of ${formatDate(TODAY)}`}
         actions={<><BasisToggle value={basis} onChange={setBasis} /><Button asChild><Link to="/projects/new"><Plus />Create Project</Link></Button></>}
       />
 
       <KpiStrip
         items={[
           { label: 'Active Projects', value: t.activeProjects, caption: `${t.activeByType.Construction} construction · ${t.activeByType.Design} design · ${t.activeByType.Consultation} consultation` },
-          { label: 'Contract Value (active)', unit: 'LKR', value: M(t.activeContractValue), basis: 'Agreed', caption: 'Not revenue until billed', hint: 'Total agreed contract value of In Progress and On Hold projects. Only billed installments count as revenue.' },
-          { label: 'Revenue Recorded', unit: 'LKR', value: M(t.revenueRecorded), basis: 'Recorded', caption: `incl. ${formatLKR(t.revenueOther, { decimals: 0, currency: false })} other income`, hint: 'Billed installments (net of delay deductions) plus other income. An installment is counted once, however many payments it takes.' },
-          { label: 'Payments Received', unit: 'LKR', value: M(t.paymentsReceived), basis: 'Received', caption: 'From clients and other income' },
-          { label: 'Outstanding Receivables', unit: 'LKR', value: M(t.receivable), basis: 'Recorded', caption: <span className="text-destructive-soft-foreground font-medium">{formatLKR(t.overdue, { decimals: 0, currency: false })} overdue</span>, hint: 'Revenue recorded − payments received − amounts written off.' },
+          { label: 'Contract Value (active)', unit: 'LKR', value: M(t.activeContractValue), basis: 'Agreed', caption: 'Not revenue until billed', hint: 'Total agreed contract value of In Progress projects. Only billed installments count as revenue.' },
+          { label: 'Total Clients', value: d.s.clients.length, caption: `${activeClients} with active projects` },
+          cash
+            ? { label: 'Total Revenue', unit: 'LKR', value: M(t.paymentsReceived), basis: 'Received', caption: `Accrual: ${formatLKR(t.revenueRecorded, { decimals: 0, currency: false })}`, hint: 'Money actually received: client payments plus other income receipts, on the day they came in.' }
+            : { label: 'Total Revenue', unit: 'LKR', value: M(t.revenueRecorded), basis: 'Recorded', caption: <><span>{formatLKR(t.receivable, { decimals: 0, currency: false })} still owed</span>{t.overdue > 0 && <span className="text-destructive-soft-foreground font-medium"> · {formatLKR(t.overdue, { decimals: 0, currency: false })} overdue</span>}</>, hint: 'Billed installments (net of delay deductions) plus other income. An installment is counted once, however many payments it takes.' },
+          cash
+            ? { label: 'Total Expenses', unit: 'LKR', value: M(t.cashPaidOut), basis: 'Received', caption: `Accrual: ${formatLKR(expensesRecorded, { decimals: 0, currency: false })}`, hint: 'Money actually paid out: expense, supplier (incl. stock purchases), wage, salary advance and commission payments, on the day they were paid.' }
+            : { label: 'Total Expenses', unit: 'LKR', value: M(expensesRecorded), basis: 'Recorded', caption: `incl. ${formatLKR(t.companyExpenses, { decimals: 0, currency: false })} company-level`, hint: 'Project costs (direct expenses, materials to site, stock issued at cost, wages, confirmed commission) plus company-level expenses, whether paid or not. Stock purchases count only when issued.' },
           cash
             ? { label: 'Cash Project Profit', unit: 'LKR', value: M(t.projectCashProfit), basis: 'Received', caption: `Accrual: ${formatLKR(t.projectProfit, { decimals: 0, currency: false })}`, hint: 'Client payments received − money paid out for projects (expense, supplier, wage and commission payments, plus stock issued at cost). Unpaid bills and amounts still owed by clients are left out. Excludes company-level expenses.' }
             : { label: 'Est. Project Profit', unit: 'LKR', value: M(t.projectProfit), basis: 'Estimated', caption: `Cash basis: ${formatLKR(t.projectCashProfit, { decimals: 0, currency: false })}`, hint: 'Revenue recorded − written off − project costs (materials, labour, expenses, confirmed commissions), whether paid or not. Excludes costs not yet incurred and company-level expenses.' },
@@ -104,7 +110,7 @@ export default function Dashboard() {
         <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle>Monthly Revenue vs Expenses</CardTitle>
-            <CardDescription>Revenue recorded against all expenses recorded (project and company), by month</CardDescription>
+            <CardDescription>Revenue recorded against all expenses recorded (project and company), last 12 months</CardDescription>
             <CardAction><Legend items={[{ label: 'Revenue recorded', color: 'var(--chart-3)' }, { label: 'Expenses', color: 'var(--muted-foreground)' }]} /></CardAction>
           </CardHeader>
           <CardContent className="h-72">
@@ -124,7 +130,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Revenue by Type</CardTitle>
-            <CardDescription>Revenue recorded this financial year</CardDescription>
+            <CardDescription>Revenue recorded to date</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="flex h-3 overflow-hidden rounded-full" role="img" aria-label="Revenue share by project type">
@@ -197,11 +203,11 @@ export default function Dashboard() {
         <Card className="gap-4 pb-0">
           <CardHeader>
             <CardTitle>Overdue Client Receivables</CardTitle>
-            <CardDescription>Due date passed and money still unpaid · total {formatLKR(sum(overdue, (i) => i.remaining))}</CardDescription>
+            <CardDescription>Unpaid after the day it was billed · total {formatLKR(sum(overdue, (i) => i.remaining))}</CardDescription>
             <ViewAll to="/clients?tab=receivables" label="All receivables" />
           </CardHeader>
           <Table>
-            <TableHeader><TableRow><TableHead className="pl-6">Client</TableHead><TableHead className="text-right">Remaining (LKR)</TableHead><TableHead>Due</TableHead><TableHead className="pr-6 text-right">Days</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead className="pl-6">Client</TableHead><TableHead className="text-right">Remaining (LKR)</TableHead><TableHead>Billed</TableHead><TableHead className="pr-6 text-right">Days</TableHead></TableRow></TableHeader>
             <TableBody>
               {overdue.map((i) => (
                 <TableRow key={i.id} className="cursor-pointer" onClick={() => navigate(i.to)}>

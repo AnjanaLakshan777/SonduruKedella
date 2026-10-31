@@ -87,7 +87,7 @@ export default function ClientsPage() {
         <TabsContent value="receivables" className="grid gap-4">
           <KpiStrip items={[
             { label: 'Outstanding', unit: 'LKR', value: <Money value={sum(billed, (i) => i.remaining)} decimals={0} currency={false} />, basis: 'Recorded', caption: `${billed.filter((i) => i.remaining > 0).length} installments still owed` },
-            { label: 'Overdue', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.status === 'Overdue'), (i) => i.remaining)} decimals={0} currency={false} />, tone: 'destructive', caption: 'Due date passed, still unpaid' },
+            { label: 'Overdue', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.status === 'Overdue'), (i) => i.remaining)} decimals={0} currency={false} />, tone: 'destructive', caption: 'Unpaid after the billing day' },
             { label: 'Partially paid', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.paid > 0 && i.remaining > 0), (i) => i.remaining)} decimals={0} currency={false} />, caption: `${billed.filter((i) => i.paid > 0 && i.remaining > 0).length} installments part-paid` },
             { label: 'Written off (bad debt)', unit: 'LKR', value: <Money value={d.totals.writtenOff} decimals={0} currency={false} />, caption: 'Not money received' },
           ]} />

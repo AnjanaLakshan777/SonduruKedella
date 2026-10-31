@@ -16,7 +16,7 @@ public final class ReceivableCalculator {
     // net         = amount - deduction applied to this installment
     // outstanding = net - receipts - write-offs, never below 0; and 0 for unbilled installments,
     //               because only billed installments are receivables at all
-    public static Receivable of(BigDecimal amount, boolean billed, LocalDate dueDate, BigDecimal deduction,
+    public static Receivable of(BigDecimal amount, boolean billed, LocalDate billedOn, BigDecimal deduction,
             BigDecimal received, BigDecimal writtenOff, LocalDate today) {
         BigDecimal net = Money.amount(amount.subtract(deduction)).max(BigDecimal.ZERO.setScale(Money.SCALE));
         BigDecimal settled = received.add(writtenOff);
@@ -29,15 +29,16 @@ public final class ReceivableCalculator {
             status = ReceivableStatus.UNBILLED;
         } else if (outstanding.signum() == 0) {
             status = ReceivableStatus.PAID;
-        } else if (dueDate.isBefore(today)) {
-            // overdue wins over partially paid, as in the UI: a late part-payment is still late
+        } else if (billedOn != null && billedOn.isBefore(today)) {
+            // there are no separate due dates: anything still owed after the day it was billed is late.
+            // Overdue wins over partially paid, as in the UI: a late part-payment is still late
             status = ReceivableStatus.OVERDUE;
         } else if (settled.signum() > 0) {
             status = ReceivableStatus.PARTIALLY_PAID;
         } else {
             status = ReceivableStatus.BILLED;
         }
-        long daysOverdue = status == ReceivableStatus.OVERDUE ? ChronoUnit.DAYS.between(dueDate, today) : 0;
+        long daysOverdue = status == ReceivableStatus.OVERDUE ? ChronoUnit.DAYS.between(billedOn, today) : 0;
         return new Receivable(Money.amount(deduction), net, Money.amount(received), Money.amount(writtenOff),
                 outstanding, status, daysOverdue);
     }

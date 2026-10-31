@@ -168,7 +168,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
     - The applied amount cannot exceed the target installment's amount.
     - Clearing the applied columns reverses the deduction, as the UI's reverse action does. The activity log records both events.
     - Implemented (2026-10-24): applying and reversing lock the terms row; applying locks the target installment first, in the same order receipts use. The calculation and limits are under [Calculations](#calculations).
-- **other_income**: `income_date`, `description`, `payer`, `amount > 0`, `due_date`, `reference`, `notes`. It is not linked to a project.
+- **other_income**: `income_date`, `description`, `payer`, `amount > 0`, `due_date`, `reference`, `notes`. It is not linked to a project. It is overdue when something is still owed after `income_date`; `due_date` is optional, only kept for older rows and no longer used (2026-10-31).
 - **other_income_receipts**: `other_income_id` plus the common payment columns.
 
 ## Commission
@@ -486,10 +486,11 @@ These follow `lib/finance.ts` unless noted.
 - Status, worked out on every read and never stored. "Today" is the Asia/Colombo date from the injected `Clock`.
   - `UNBILLED`: `billed_on` is null.
   - `PAID`: billed and outstanding is 0, whether settled by receipts, write-offs or both.
-  - `OVERDUE`: billed, outstanding > 0 and `due_date < today`. This takes precedence over partly paid, as in the UI.
+  - `OVERDUE`: billed, outstanding > 0 and `billed_on < today`. There are no separate due dates (owner decision, 2026-10-31): anything still owed after the day it was billed is late. This takes precedence over partly paid, as in the UI.
   - `PARTIALLY_PAID`: billed, outstanding > 0, not overdue, and something is settled (received + written off > 0).
   - `BILLED`: billed, outstanding > 0, not overdue, nothing settled.
-  - `daysOverdue` = `today − due_date` for `OVERDUE`, otherwise 0.
+  - `daysOverdue` = `today − billed_on` for `OVERDUE`, otherwise 0.
+  - `installments.due_date` is kept as the **planned billing date** shown on the schedule. It no longer affects overdue.
 - Mapping to the frontend's `ReceivableStatus` labels:
 
   | API | Frontend |
@@ -643,7 +644,7 @@ The purchases never appear as project cost.
 - The final installment is 2,000,000 and is billed, so revenue is 2,000,000.
 - Delivery is 13 days late with 3 grace days: 10 chargeable days × 15,000 = a 150,000 deduction, applied to that installment.
 - Net amount and revenue: 1,850,000.
-- Payments of 1,000,000 and 500,000 leave 350,000 remaining. It is overdue once the due date passes.
+- Payments of 1,000,000 and 500,000 leave 350,000 remaining. It is overdue from the day after it was billed.
 - The contract value does not change.
 
 **Design commission**

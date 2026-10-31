@@ -98,20 +98,21 @@ class RevenueApiIntegrationTest {
         bill(advance, null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.billed").value(true))
                 .andExpect(jsonPath("$.billedOn").value("2026-10-25"))
-                .andExpect(jsonPath("$.status").value("OVERDUE"))
-                .andExpect(jsonPath("$.daysOverdue").value(54))
+                // billed today: owed, but not late until tomorrow, whatever the planned date was
+                .andExpect(jsonPath("$.status").value("BILLED"))
+                .andExpect(jsonPath("$.daysOverdue").value(0))
                 .andExpect(jsonPath("$.outstanding").value(300000.00));
         bill(advance, null).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(containsString("already billed")));
 
         mockMvc.perform(post(base() + "/installments/" + roof + "/bill").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"version\":7}")).andExpect(status().isConflict());
-        // due on the 24th: overdue only because "today" is the Colombo date, the 25th
+        // billed on the 20th and "today" is the Colombo date, the 25th: 5 days late, counted from billing
         mockMvc.perform(post(base() + "/installments/" + roof + "/bill").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"billedOn\":\"2026-10-20\",\"version\":0}"))
                 .andExpect(jsonPath("$.billedOn").value("2026-10-20"))
                 .andExpect(jsonPath("$.status").value("OVERDUE"))
-                .andExpect(jsonPath("$.daysOverdue").value(1));
+                .andExpect(jsonPath("$.daysOverdue").value(5));
 
         assertThat(contractValue()).isEqualByComparingTo("1000000.00");
         assertThat(activity("NOTE")).containsExactly("Installment billed: Advance (LKR 300,000.00).",
@@ -315,9 +316,9 @@ class RevenueApiIntegrationTest {
 
     @Test
     void totalsAndTheSummaryAddUp() throws Exception {
-        bill(advance, null);   // 300,000, overdue
-        bill(roof, null);      // 400,000, overdue (Colombo)
-        bill(handover, null);  // 300,000, not due
+        bill(advance, null);   // 300,000, paid in full below
+        bill(roof, "2026-10-20"); // 400,000, billed 5 days ago so overdue
+        bill(handover, null);  // 300,000, billed today so not late yet
         receipt(advance, UUID.randomUUID(), "300000");                 // paid
         receipt(roof, UUID.randomUUID(), "150000");                    // overdue, partly paid
         writeOff(roof, "50000", "Agreed discount for snagging works on the roof.");

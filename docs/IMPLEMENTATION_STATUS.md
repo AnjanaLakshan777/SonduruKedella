@@ -1521,3 +1521,36 @@ For each completed task, record the date, files or migrations changed, verificat
   - a wage payment split across projects, with the advance kept at company level;
   - commission counted when paid, not when confirmed.
 - Verified: `tsc -b` is clean and 28 Vitest tests pass. Not checked against the development data (the stack was down) and not tried in a browser.
+- Dashboard tiles: the top row is now Active Projects, Contract Value and **Total Clients** (with how many have active projects). The bottom row is **Total Revenue**, **Total Expenses** and Profit, and all three follow the basis toggle.
+  - Revenue: billed revenue plus other income on accrual, and money received on cash. The amount still owed and the amount overdue moved into the accrual revenue caption.
+  - Expenses: all expense lines, project and company-level, on accrual, and `totals.cashPaidOut` on cash. Cash includes stock purchases and salary advances.
+  - Profit is still project profit, so company-level expenses are not deducted from it. That is why revenue − expenses on the dashboard does not equal the profit tile.
+  - Checked against the development data: 9 clients. Accrual revenue is 54.2M and cash revenue 45.4M. Accrual expenses are 28.9M and cash expenses 25.2M. Wage payments split across projects add back exactly to the payments recorded.
+- Active projects on the dashboard now means **In Progress only**; On Hold projects are no longer counted (owner decision). This applies to the Active Projects tile, its per-type caption, Contract Value (active) and the "with active projects" count under Total Clients. The attendance and stock-issue project pickers still offer On Hold projects.
+- The dashboard no longer mentions the financial year (owner decision). Its figures were always all-time, so the old "Financial year … to date" header was misleading.
+  - The header now reads "All figures to date · as of <today>".
+  - Revenue by Type says "Revenue recorded to date".
+  - The monthly revenue vs expenses chart shows the last 12 months instead of starting at the financial year start.
+  - The financial year setting itself is unchanged.
+
+### 2026-10-31: Overdue counts from the billing day, with no separate due dates
+- Owner decision: revenue is recorded when billed (accrual), whether paid or not, and counted as cash once paid (both unchanged). Revenue no longer has a separate due date. Anything still unpaid after the day it was recorded is overdue.
+- Backend:
+  - `ReceivableCalculator` now marks an installment `OVERDUE` when it is billed, still owed and `billed_on < today`. `daysOverdue` = today − `billed_on`. Ageing buckets, report sorts and totals follow from this unchanged.
+  - Other income (`OtherIncomeService`) is overdue when still owed after `income_date`. Its `due_date` column stays nullable and is still accepted, but it no longer affects anything.
+  - Schedule validation messages now say "planned date".
+- Frontend:
+  - `lib/finance.ts` uses the same rule. A billed installment with no `billedOn` falls back to the planned date.
+  - The installment schedule's date is now the **Planned date** (schedule editor, the Revenue page's upcoming list, the bill picker, client history).
+  - Receivable lists show **Billed on**: the receivables table, the dashboard's overdue list, the project payments table, the notifications menu and the receivables CSV/PDF/Excel. "N days past <due>" became "N days since billed on <date>".
+  - Add Revenue no longer asks for a "Payment due" date. A variation sends its billing date as the stored date.
+- No migration: `installments.due_date` stays `NOT NULL` and holds the planned date.
+- Tests:
+  - backend `ReceivableCalculatorTest`: billed today is not overdue, every day after billing is overdue and counted, and an unbilled installment is never overdue whatever its planned date;
+  - frontend `lib/finance.test.ts` (2 new tests): installments and other income.
+  - Six backend integration tests were rewritten for the new rule (other income, the revenue API, receivables ageing, the schedule message). One new test checks that income recorded today is still Due.
+- Verified:
+  - backend: 673 tests, all passing on the isolated copy;
+  - frontend: `tsc -b` is clean and 30 Vitest tests pass;
+  - the dev backend was rebuilt.
+  - Not tried in a browser.

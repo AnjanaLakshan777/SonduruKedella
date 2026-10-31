@@ -23,7 +23,7 @@ import { EmptyState } from '@/components/app/empty-state'
 import { PaymentDialog } from '@/components/app/payment-dialog'
 import { useData, useStore } from '@/store/store'
 import { sum } from '@/lib/finance'
-import { addDays, formatDate, TODAY } from '@/lib/dates'
+import { formatDate, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
 
@@ -46,9 +46,9 @@ export default function RevenuePage() {
   const all: Row[] = useMemo(() => [
     ...d.installments.filter((i) => i.inst.billed).map((i) => ({
       id: i.inst.id, date: i.inst.billedOn ?? i.inst.dueDate, category: i.project.type, projectId: i.project.id, code: i.project.code, project: i.project.name, client: i.client.name,
-      description: i.inst.description, amount: i.net, received: i.paid, outstanding: i.remaining, status: i.status, due: i.inst.dueDate,
+      description: i.inst.description, amount: i.net, received: i.paid, outstanding: i.remaining, status: i.status, due: i.inst.billedOn ?? i.inst.dueDate,
     })),
-    ...d.otherIncome.map((o) => ({ id: o.income.id, otherId: o.income.id, date: o.income.date, category: 'Other Income', client: o.income.payer ?? '—', description: o.income.description, amount: o.income.amount, received: o.received, outstanding: o.remaining, status: o.status, due: o.income.dueDate })),
+    ...d.otherIncome.map((o) => ({ id: o.income.id, otherId: o.income.id, date: o.income.date, category: 'Other Income', client: o.income.payer ?? '—', description: o.income.description, amount: o.income.amount, received: o.received, outstanding: o.remaining, status: o.status, due: o.income.date })),
   ], [d])
   const rows = all.filter((r) => inRange(r.date, range) && (cat === ALL || r.category === cat) && (proj === ALL || r.projectId === proj) && (client === ALL || r.client === client) && (status === ALL || r.status === status)
     && (!q || `${r.description} ${r.client} ${r.code ?? ''} ${r.project ?? ''}`.toLowerCase().includes(q.toLowerCase())))
@@ -127,7 +127,7 @@ export default function RevenuePage() {
         <TabsContent value="scheduled">
           <Card className="gap-0 py-0">
             <Table>
-              <TableHeader><TableRow><TableHead className="pl-6">Due date</TableHead><TableHead>Installment</TableHead><TableHead className="hidden md:table-cell">Client</TableHead><TableHead className="text-right">Amount (LKR)</TableHead><TableHead className="pr-6">Status</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="pl-6">Planned date</TableHead><TableHead>Installment</TableHead><TableHead className="hidden md:table-cell">Client</TableHead><TableHead className="text-right">Amount (LKR)</TableHead><TableHead className="pr-6">Status</TableHead></TableRow></TableHeader>
               <TableBody>
                 {scheduled.map((i) => (
                   <TableRow key={i.inst.id} className="cursor-pointer" onClick={() => navigate(`/projects/${i.project.id}?tab=payments`)}>
@@ -165,7 +165,6 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const [payer, setPayer] = useState('')
   const [amount, setAmount] = useState<number | ''>('')
   const [date, setDate] = useState(TODAY)
-  const [due, setDue] = useState(addDays(TODAY, 14))
   const [reference, setReference] = useState('')
   const [notes, setNotes] = useState('')
   const [receivedNow, setReceivedNow] = useState<number | ''>('')
@@ -173,7 +172,7 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const [busy, setBusy] = useState(false)
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
   const [tried, setTried] = useState(false)
-  useEffect(() => { if (open) { setRequestId(crypto.randomUUID()); setCategory('Construction'); setMode('bill'); setProjectId(''); setInstId(''); setDescription(''); setPayer(''); setAmount(''); setDate(TODAY); setDue(addDays(TODAY, 14)); setReference(''); setNotes(''); setReceivedNow(''); setTried(false) } }, [open])
+  useEffect(() => { if (open) { setRequestId(crypto.randomUUID()); setCategory('Construction'); setMode('bill'); setProjectId(''); setInstId(''); setDescription(''); setPayer(''); setAmount(''); setDate(TODAY); setReference(''); setNotes(''); setReceivedNow(''); setTried(false) } }, [open])
   const isProject = category !== 'Other Income'
   const projects = d.projects.filter((p) => p.project.type === category && p.project.status !== 'Cancelled')
   const pf = d.projectFinById.get(projectId)
@@ -196,11 +195,11 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         await billInstallment(inst.inst.id, date)
         toast.success('Revenue recorded', { description: `${formatLKR(inst.net)} billed to ${pf!.client.name} — ${inst.inst.description}. Record payments as they arrive.` })
       } else if (isProject && pf) {
-        await addVariation(pf.project.id, { description: `Variation: ${description.trim()}`, amount: amt, dueDate: due!, billedOn: date })
+        await addVariation(pf.project.id, { description: `Variation: ${description.trim()}`, amount: amt, dueDate: date, billedOn: date })
         toast.success('Additional work billed', { description: `${formatLKR(amt)} added to ${pf.project.code} as a variation. The original contract value is unchanged.` })
       } else {
         await addOtherIncome(
-          { date, description: description.trim(), payer: payer || undefined, amount: amt, dueDate: due, reference: reference || undefined, notes: notes || undefined },
+          { date, description: description.trim(), payer: payer || undefined, amount: amt, reference: reference || undefined, notes: notes || undefined },
           typeof receivedNow === 'number' && receivedNow > 0 ? { requestId, amount: receivedNow, method, date } : undefined,
         )
         toast.success('Other income recorded', { description: `${formatLKR(amt)} · ${description.trim()}` })
@@ -236,14 +235,13 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               )}
               {pf && mode === 'bill' && (
                 <Field label="Installment" required error={tried ? err.inst : undefined} className="sm:col-span-2">
-                  <SelectField value={instId} onChange={setInstId} invalid={tried && !!err.inst} placeholder={unbilled.length ? 'Select installment' : 'Every installment is already billed'} options={unbilled.map((i) => ({ value: i.inst.id, label: `${i.inst.description} — ${formatLKR(i.net)} · due ${formatDate(i.inst.dueDate)}` }))} />
+                  <SelectField value={instId} onChange={setInstId} invalid={tried && !!err.inst} placeholder={unbilled.length ? 'Select installment' : 'Every installment is already billed'} options={unbilled.map((i) => ({ value: i.inst.id, label: `${i.inst.description} — ${formatLKR(i.net)} · planned ${formatDate(i.inst.dueDate)}` }))} />
                 </Field>
               )}
               {pf && mode === 'variation' && (
                 <>
                   <Field label="Description" required error={tried ? err.description : undefined} className="sm:col-span-2"><Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Extra boundary wall, 40 ft" /></Field>
                   <Field label="Amount" required error={tried ? err.amount : undefined}><AmountInput value={amount} onChange={setAmount} invalid={tried && !!err.amount} /></Field>
-                  <Field label="Payment due"><DatePicker value={due} onChange={setDue} /></Field>
                 </>
               )}
             </>
@@ -254,7 +252,6 @@ function AddRevenueDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               <Field label="Amount" required error={tried ? err.amount : undefined}><AmountInput value={amount} onChange={setAmount} invalid={tried && !!err.amount} /></Field>
               <Field label="Received now" optional error={tried ? err.received : undefined} hint="Leave empty if it will be paid later."><AmountInput value={receivedNow} onChange={setReceivedNow} /></Field>
               <Field label="Method"><SelectField value={method} onChange={setMethod} options={d.s.settings.paymentMethods} /></Field>
-              <Field label="Payment due" optional><DatePicker value={due} onChange={setDue} /></Field>
               <Field label="Reference" optional><Input value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
             </>
           )}

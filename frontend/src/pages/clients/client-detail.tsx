@@ -32,7 +32,7 @@ export default function ClientDetail() {
   const history = s.installments.flatMap((i) => [
     ...i.payments.map((p) => ({ id: p.id, date: p.date, kind: 'Payment received', ref: `${i.project.code} · ${i.inst.description}`, detail: `${p.method}${p.reference ? ` · ${p.reference}` : ''}`, amount: p.amount, wo: false, pid: i.project.id })),
     ...i.writeOffs.map((w) => ({ id: w.id, date: w.date, kind: 'Written off', ref: `${i.project.code} · ${i.inst.description}`, detail: w.reason, amount: w.amount, wo: true, pid: i.project.id })),
-    ...(i.inst.billed ? [{ id: `b${i.inst.id}`, date: i.inst.billedOn ?? i.inst.dueDate, kind: 'Billed', ref: `${i.project.code} · ${i.inst.description}`, detail: `Due ${formatDate(i.inst.dueDate)}`, amount: i.net, wo: false, pid: i.project.id }] : []),
+    ...(i.inst.billed ? [{ id: `b${i.inst.id}`, date: i.inst.billedOn ?? i.inst.dueDate, kind: 'Billed', ref: `${i.project.code} · ${i.inst.description}`, detail: `Planned ${formatDate(i.inst.dueDate)}`, amount: i.net, wo: false, pid: i.project.id }] : []),
   ]).sort((a, b) => b.date.localeCompare(a.date))
   const openRows = s.installments.filter((i) => i.inst.billed && i.remaining > 0)
 
