@@ -1630,3 +1630,24 @@ For each completed task, record the date, files or migrations changed, verificat
 - Wording: "0 days since billed" now reads "billed today". The Payments tab says "unpaid since today". The bill dialog no longer says "overdue if still unpaid tomorrow". Captions read "Billed and still unpaid". The ageing bucket is "0–30 days".
 - `BILLED` / `PARTIALLY_PAID` (backend) and `Due` / `Partially Paid` (frontend) stay in the code but only apply to a future billing date, which the app never sets.
 - Tests: backend unit and integration tests updated (673 pass); Vitest updated (35 pass). `tsc -b` is clean. The dev backend container was rebuilt. Not tried in a browser.
+
+### 2026-10-31: Notification bell: newest first, mark as read, scrolling
+- The bell list now comes from `lib/notifications.ts` (`notifications()`). It covers:
+  - overdue installments;
+  - installments past their planned date and not billed;
+  - supplier and expense payments due within 3 days;
+  - overtime awaiting approval.
+- Order: newest first, by the day each item came up.
+  - Overdue: the billing day.
+  - Billing late: the day after the planned date.
+  - A payable: 3 days before it is due.
+  - Overtime: the latest entry.
+  - Same-day items keep money owed on top.
+- All items are listed (no more top-4 limit) in a scrolling panel (`max-h: min(28rem, 70vh)`). Each item shows its date.
+- Read state:
+  - "Mark all as read" clears the badge. Clicking an item marks it read and opens it.
+  - Unread items have a dot and bold title. The badge counts unread only.
+  - Kept in this browser's localStorage per user (`sk.notifications.read.<userId>`, guarded with try/catch). It is not shared across devices.
+  - An item stays read while its cause lasts. A new overtime entry or a new due date brings it back as unread.
+- The bell moved into `components/app/notifications-menu.tsx`.
+- Tests: 2 new Vitest tests (37 pass). `tsc -b` is clean. Not tried in a browser.

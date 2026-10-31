@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Bell, Calendar, ChevronDown, KeyRound, Moon, PanelLeft, RotateCcw, Search, Sun, CircleAlert, Clock, Truck, CalendarClock } from 'lucide-react'
+import { Calendar, ChevronDown, KeyRound, Moon, PanelLeft, RotateCcw, Search, Sun } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -8,9 +8,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useData, useStore } from '@/store/store'
 import { useAuth } from '@/store/auth'
 import { emptyState } from '@/data/api-load'
-import { addDays, formatDate, formatLongToday, TODAY } from '@/lib/dates'
+import { formatDate, formatLongToday } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
-import { billingLate } from '@/lib/finance'
+import { NotificationsMenu } from './notifications-menu'
 import { useTheme } from './theme'
 import { ChangePasswordDialog } from './change-password-dialog'
 import { cn } from '@/lib/utils'
@@ -37,7 +37,6 @@ function useSearch(q: string) {
 }
 
 export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: () => void }) {
-  const d = useData()
   const load = useStore((s) => s.load)
   const { user, logout } = useAuth()
   const [pwOpen, setPwOpen] = useState(false)
@@ -58,12 +57,6 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-
-  const overdue = d.installments.filter((i) => i.status === 'Overdue').sort((a, b) => b.daysOverdue - a.daysOverdue)
-  const dueSoon = d.payablesDue.filter((p) => p.status !== 'Overdue' && p.dueDate <= addDays(TODAY, 3))
-  const otPending = d.s.overtime.filter((o) => !o.approved)
-  const notBilled = billingLate(d.installments)
-  const count = overdue.length + dueSoon.length + notBilled.length + (otPending.length ? 1 : 0)
 
   return (
     <header className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-30 flex h-14 items-center gap-2 border-b px-3 backdrop-blur sm:px-4">
@@ -117,50 +110,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
         </Popover>
         <Button variant="ghost" size="icon" className="md:hidden" aria-label="Search" onClick={() => toast('Search', { description: 'Use a wider screen for global search, or the search box on each list page.' })}><Search /></Button>
         <span className="text-muted-foreground hidden items-center gap-1.5 text-[13px] whitespace-nowrap xl:inline-flex"><Calendar className="size-3.5" />{formatLongToday()}</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={`${count} notifications`} className="relative">
-              <Bell className="size-[18px]" />
-              {count > 0 && <span className="bg-destructive dark:bg-destructive/70 tabular absolute top-0.5 right-0 min-w-4 rounded-full px-1 text-[10px] leading-4 font-semibold text-white">{count}</span>}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-[min(380px,calc(100vw-2rem))]">
-            <DropdownMenuLabel>Needs attention</DropdownMenuLabel>
-            {overdue.slice(0, 4).map((i) => (
-              <DropdownMenuItem key={i.inst.id} onSelect={() => navigate(`/projects/${i.project.id}?tab=payments`)} className="items-start">
-                <CircleAlert className="text-destructive! mt-0.5" />
-                <span className="grid">
-                  <span>{i.client.name} — {formatLKR(i.remaining)} overdue</span>
-                  <span className="text-muted-foreground text-xs">{i.inst.description} · {i.daysOverdue ? `${i.daysOverdue} days since billed on ${formatDate(i.inst.billedOn ?? i.inst.dueDate)}` : 'billed today'}</span>
-                </span>
-              </DropdownMenuItem>
-            ))}
-            {notBilled.slice(0, 4).map((i) => (
-              <DropdownMenuItem key={i.inst.id} onSelect={() => navigate(`/projects/${i.project.id}?tab=payments`)} className="items-start">
-                <CalendarClock className="text-warning! mt-0.5" />
-                <span className="grid">
-                  <span>{i.project.name} — {i.inst.description} not billed</span>
-                  <span className="text-muted-foreground text-xs">{formatLKR(i.inst.amount)} · planned {formatDate(i.inst.dueDate)}, {i.daysLate} {i.daysLate === 1 ? 'day' : 'days'} ago</span>
-                </span>
-              </DropdownMenuItem>
-            ))}
-            {dueSoon.map((p) => (
-              <DropdownMenuItem key={p.id} onSelect={() => navigate('/suppliers?tab=payables')} className="items-start">
-                <Truck className="mt-0.5" />
-                <span className="grid">
-                  <span>{p.payee} — {formatLKR(p.amount)} due {formatDate(p.dueDate)}</span>
-                  <span className="text-muted-foreground text-xs">{p.kind} {p.ref}</span>
-                </span>
-              </DropdownMenuItem>
-            ))}
-            {otPending.length > 0 && (
-              <DropdownMenuItem onSelect={() => navigate('/labour/overtime')} className="items-start">
-                <Clock className="mt-0.5" />
-                <span className="grid"><span>{otPending.length} overtime entries awaiting approval</span><span className="text-muted-foreground text-xs">Recorded by the site supervisor</span></span>
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <NotificationsMenu />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" className="hover:bg-accent focus-visible:ring-ring/50 flex items-center gap-2 rounded-md p-0.5 pr-1.5 text-left outline-none focus-visible:ring-[3px]" aria-label="Account menu">
