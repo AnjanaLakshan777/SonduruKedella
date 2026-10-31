@@ -46,6 +46,7 @@ export default function ClientDetail() {
         actions={<><Button variant="outline" onClick={() => setEdit(true)}><Pencil />Edit</Button><Button asChild><Link to="/projects/new"><Plus />New project</Link></Button></>}
       />
       <KpiStrip items={[
+        { label: 'Total Projects', value: s.projects.length, caption: `${s.projects.filter((p) => p.project.status === 'In Progress').length} in progress` },
         { label: 'Contract Value', unit: 'LKR', value: M(s.contractValue), basis: 'Agreed', caption: 'All projects' },
         { label: 'Revenue Recorded', unit: 'LKR', value: M(s.revenueRecorded - s.writtenOff), basis: 'Recorded', caption: s.writtenOff ? `After ${formatLKR(s.writtenOff, { decimals: 0, currency: false })} written off` : undefined },
         { label: 'Payments Received', unit: 'LKR', value: M(s.received), basis: 'Received' },

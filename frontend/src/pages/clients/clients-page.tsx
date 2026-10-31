@@ -86,9 +86,11 @@ export default function ClientsPage() {
         </TabsContent>
         <TabsContent value="receivables" className="grid gap-4">
           <KpiStrip items={[
-            { label: 'Outstanding', unit: 'LKR', value: <Money value={sum(billed, (i) => i.remaining)} decimals={0} currency={false} />, basis: 'Recorded', caption: `${billed.filter((i) => i.remaining > 0).length} installments still owed` },
+            // outstanding and overdue are the same money now (unpaid is overdue from the billing day), so this tile counts items instead
+            { label: 'Overdue Items', value: billed.filter((i) => i.status === 'Overdue').length, caption: `Across ${new Set(billed.filter((i) => i.status === 'Overdue').map((i) => i.client.id)).size} clients` },
             { label: 'Overdue', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.status === 'Overdue'), (i) => i.remaining)} decimals={0} currency={false} />, tone: 'destructive', caption: 'Billed and still unpaid' },
-            { label: 'Partially paid', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.paid > 0 && i.remaining > 0), (i) => i.remaining)} decimals={0} currency={false} />, caption: `${billed.filter((i) => i.paid > 0 && i.remaining > 0).length} installments part-paid` },
+            // paid so far on the installments still owed, so it sits next to the overdue amount
+            { label: 'Received', unit: 'LKR', value: <Money value={sum(billed.filter((i) => i.remaining > 0), (i) => i.paid)} decimals={0} currency={false} />, basis: 'Received', caption: `Paid so far on ${billed.filter((i) => i.remaining > 0 && i.paid > 0).length} unpaid installments` },
             { label: 'Written off (bad debt)', unit: 'LKR', value: <Money value={d.totals.writtenOff} decimals={0} currency={false} />, caption: 'Not money received' },
           ]} />
           <div className="bg-card grid overflow-hidden rounded-xl border sm:grid-cols-5" aria-label="Ageing">

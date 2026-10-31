@@ -1651,3 +1651,16 @@ For each completed task, record the date, files or migrations changed, verificat
   - An item stays read while its cause lasts. A new overtime entry or a new due date brings it back as unread.
 - The bell moved into `components/app/notifications-menu.tsx`.
 - Tests: 2 new Vitest tests (37 pass). `tsc -b` is clean. Not tried in a browser.
+
+### 2026-10-31: Client page shows total projects
+- The client detail KPI strip has a new first tile, "Total Projects": the count of the client's projects, with "N in progress" underneath. The other five tiles moved one place right; the strip now lays out 6 across on wide screens.
+- `tsc -b` is clean. Not tried in a browser.
+
+### 2026-10-31: Clients receivables tab counts overdue items
+- The first tile on Clients → Receivables showed "Outstanding", which is now always the same amount as "Overdue" (unpaid is overdue from the billing day).
+  - It now shows "Overdue Items": the number of overdue installments, with "Across N clients" underneath.
+  - The Overdue amount tile next to it is unchanged.
+- `tsc -b` is clean. Not tried in a browser.
+- Same tab: the third tile, "Partially paid" (what was still owed on part-paid installments), is replaced by "Received".
+  - It shows the amount already paid on installments that are still owed (live: 2,615,000 across 4 installments).
+  - It sits next to the overdue amount: paid so far versus still owed.
