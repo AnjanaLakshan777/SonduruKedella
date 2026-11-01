@@ -1751,3 +1751,25 @@ For each completed task, record the date, files or migrations changed, verificat
   - It is used on Revenue Recorded on the client page, the project page, the Revenue page and the Income report. `clientSummary` now carries `deduction`.
   - Income report: a "Delay deduction" column in Revenue by project (wide screens) and in the export. The note now says deductions and write-offs both come off revenue.
 - Tests: 2 new Vitest tests (39 pass) covering the caption and the rule "deduction comes off revenue, contract value unchanged". `tsc -b` is clean. Not tried in a browser.
+
+### 2026-11-01: Accrual / Cash toggle back on Project Profitability only
+- Owner request: the Profitability report gets the Accrual / Cash toggle again. The Expense report stays without one.
+  - Accrual: revenue after write-offs, costs, profit to date (Estimated or Recorded) and receivable.
+  - Cash: received from clients, paid out for projects (plus stock issued at cost) and cash profit, with the accrual profit underneath.
+  - The tiles, table, chart and export all follow the toggle. The choice is shared with the Dashboard and Project page (`useBasis`).
+- The separate "Cash profit" tile added earlier is gone from the accrual view. Cash profit is now the main figure of the cash view.
+- `tsc -b` is clean and 39 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-01: Profitability by period, project filter, change vs last period
+- The Project Profitability report has a date range filter (default: this financial year) and a Projects filter, as on the Income and Expense reports. The Type and Status filters stay.
+- Figures now cover the chosen period only. They come from `projectPeriodFigures()` in `lib/finance.ts`:
+  - Accrual: revenue by billing date (net, less its write-offs) and costs by the date they were incurred (`expenseLines`).
+  - Cash: client payments and money paid out (`cashLines`) on the day they moved, with stock issued at cost for the project.
+  - Checked live: summed over the full financial year, the figures equal the all-time project totals on both bases.
+- New tile "Change vs last period", added after the profit tile:
+  - profit (or cash profit) in this period minus the previous period, with the % change and the previous range underneath, in red when down;
+  - `previousPeriod()` steps back whole months for month, quarter or year ranges (October to September), and the same number of days otherwise.
+- Accrual profit is labelled "Profit in period". Receivables are labelled "as of today", since they are a current balance. The commission "paid" sub-line was all-time, so it is gone from the table. The exports carry the period figures and the range.
+- Every project that matches the filters stays listed, even with nothing in the period. Contract value and receivables don't depend on the period, and they showed 0 for an empty month while those projects were hidden (fixed the same day).
+- The change tile reads "Last period N · range". It adds a % only when last period made a profit; a % against a loss read as "+100%" and looked like growth.
+- Tests: 2 new Vitest tests (41 pass). `tsc -b` is clean. Not tried in a browser.

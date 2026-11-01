@@ -16,7 +16,7 @@ import type {
   Advance, Client, ClientPayment, CommissionArrangement, CommissionPayment, DataState, Employee, Expense, ExpenseGroup,
   ExpenseScope, Installment, Material, OtherIncome, Project, StockMovement, Supplier, SupplierInvoice, SupplierPayment, WriteOff,
 } from '@/data/types'
-import { addDays, diffDays, formatRange, TODAY, weekStart as weekStartOf, monthKey } from './dates'
+import { addDays, addMonths, diffDays, formatRange, monthEnd, monthKey, monthStart, TODAY, weekStart as weekStartOf } from './dates'
 import { formatLKR } from './format'
 import { replayFifo, stockOf, type CostLayer } from './fifo'
 
@@ -769,3 +769,35 @@ export function projectActivity(d: Derived, projectId: string) {
 }
 
 export { sum }
+
+// One project's figures for a date range, so profit can be compared period by period.
+// Accrual: revenue by billing date (net, less its write-offs, as on the income report) and costs by the
+// date they were incurred. Cash: client payments and money paid out on the day they moved.
+export function projectPeriodFigures(d: Derived, projectId: string, range: { from: string; to: string }, basis: ProfitBasis) {
+  const within = (date: string) => date >= range.from && date <= range.to
+  const insts = d.installments.filter((i) => i.project.id === projectId)
+  const lines: { source: string; amount: number }[] = basis === 'cash'
+    ? d.cashLines.filter((l) => l.projectId === projectId && within(l.date))
+    : d.expenseLines.filter((l) => l.projectId === projectId && within(l.date))
+  const of = (...sources: string[]) => sum(lines.filter((l) => sources.includes(l.source)), (l) => l.amount)
+  const revenue = basis === 'cash'
+    ? sum(insts.flatMap((i) => i.payments).filter((p) => within(p.date)), (p) => p.amount)
+    : sum(insts.filter((i) => i.inst.billed && within(i.inst.billedOn ?? i.inst.dueDate)), (i) => i.net - i.writtenOff)
+  const materials = of('Supplier invoice', 'Stock issue'), labour = of('Payroll'), expenses = of('Manual'), commission = of('Commission')
+  const costs = sum(lines, (l) => l.amount)
+  const profit = r2(revenue - costs)
+  return { revenue, materials, labour, expenses, commission, costs, profit, margin: revenue > 0 ? (profit / revenue) * 100 : 0 }
+}
+
+// the period straight before this one, for "compared with last period": whole months step back by whole
+// months (October -> September, a quarter -> the quarter before), anything else by the same number of days
+export function previousPeriod(range: { from: string; to: string }) {
+  const first = range.from.slice(0, 7), last = range.to.slice(0, 7)
+  if (range.from === monthStart(first) && range.to === monthEnd(last)) {
+    const months = (Number(last.slice(0, 4)) - Number(first.slice(0, 4))) * 12 + Number(last.slice(5)) - Number(first.slice(5)) + 1
+    return { from: monthStart(addMonths(first, -months)), to: monthEnd(addMonths(first, -1)) }
+  }
+  const days = diffDays(range.to, range.from) + 1
+  const to = addDays(range.from, -1)
+  return { from: addDays(to, -(days - 1)), to }
+}

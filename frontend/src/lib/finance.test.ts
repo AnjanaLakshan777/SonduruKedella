@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createSeed } from '@/data/seed'
 import type { DataState } from '@/data/types'
 import { addDays, TODAY, weekStart } from './dates'
-import { billingLate, derive, projectActivity, projectFigures, scheduleStatus } from './finance'
+import { billingLate, derive, previousPeriod, projectActivity, projectFigures, projectPeriodFigures, scheduleStatus } from './finance'
 
 // the seed with every money record cleared, so a test only sees what it adds
 function blank(): DataState {
@@ -210,5 +210,36 @@ describe('project timeline', () => {
       { id: '100', date: '2026-10-30', projectId: 'p1', kind: 'note', text: 'newer', createdAt: '2026-10-30T05:13:09Z' },
     ]
     expect(projectActivity(derive(s), 'p1').map((a) => a.text)).toEqual(['newer', 'older'])
+  })
+})
+
+describe('profit by period', () => {
+  it('counts revenue and costs in the period they belong to, on both bases', () => {
+    const s = blank()
+    const before = addDays(TODAY, -40), inside = addDays(TODAY, -5)
+    s.installments = [
+      { id: 'i1', projectId: 'p1', description: 'Old', dueDate: before, amount: 100000, billed: true, billedOn: before },
+      { id: 'i2', projectId: 'p1', description: 'New', dueDate: inside, amount: 80000, billed: true, billedOn: inside },
+    ]
+    // the old bill is paid inside the period: cash then, but its revenue belongs to the earlier period
+    s.clientPayments = [{ id: 'cp1', installmentId: 'i1', date: inside, amount: 100000, method: 'Cash' }]
+    s.expenses = [
+      { id: 'x1', date: before, scope: 'Project', projectId: 'p1', group: 'Construction', category: 'Transport', description: 'Old lorry', payee: 'Lorry', amount: 20000 },
+      { id: 'x2', date: inside, scope: 'Project', projectId: 'p1', group: 'Construction', category: 'Transport', description: 'New lorry', payee: 'Lorry', amount: 30000 },
+    ]
+    s.expensePayments = [{ id: 'xp1', expenseId: 'x1', date: inside, amount: 20000, method: 'Cash' }]
+    const d = derive(s)
+    const now = { from: addDays(TODAY, -29), to: TODAY }
+    expect(projectPeriodFigures(d, 'p1', now, 'accrual')).toMatchObject({ revenue: 80000, costs: 30000, profit: 50000 })
+    expect(projectPeriodFigures(d, 'p1', previousPeriod(now), 'accrual')).toMatchObject({ revenue: 100000, costs: 20000, profit: 80000 })
+    // cash inside the period: the 100,000 received and the 20,000 paid on the old lorry bill
+    expect(projectPeriodFigures(d, 'p1', now, 'cash')).toMatchObject({ revenue: 100000, costs: 20000, profit: 80000 })
+  })
+
+  it('steps back whole months for month ranges and the same number of days otherwise', () => {
+    expect(previousPeriod({ from: '2026-10-01', to: '2026-10-31' })).toEqual({ from: '2026-09-01', to: '2026-09-30' })
+    expect(previousPeriod({ from: '2026-04-01', to: '2027-03-31' })).toEqual({ from: '2025-04-01', to: '2026-03-31' })
+    expect(previousPeriod({ from: '2026-08-01', to: '2026-10-31' })).toEqual({ from: '2026-05-01', to: '2026-07-31' })
+    expect(previousPeriod({ from: '2026-10-11', to: '2026-10-20' })).toEqual({ from: '2026-10-01', to: '2026-10-10' })
   })
 })
