@@ -315,7 +315,16 @@ export function ProfitabilityReport() {
 // ---------------------------------------------------------------- receivables
 export function ReceivablesReport() {
   const d = useData()
-  const billed = d.installments.filter((i) => i.inst.billed)
+  const [range, setRange] = useState(defaultRange())
+  const [client, setClient] = useState(ALL)
+  const [proj, setProj] = useState(ALL)
+  const [status, setStatus] = useState(ALL)
+  const who = (i: { client: { id: string }; project: { id: string } }) => (client === ALL || i.client.id === client) && (proj === ALL || i.project.id === proj)
+  // the period picks installments by the day they were billed
+  const billed = d.installments.filter((i) => i.inst.billed && inRange(i.inst.billedOn ?? i.inst.dueDate, range) && who(i) && (status === ALL
+    || (status === 'part' ? i.paid > 0 && i.remaining > 0 : i.status === status)))
+  // write-offs follow the client and project filters, and the period by the day they were written off
+  const writeOffs = d.s.writeOffs.map((w) => ({ w, i: d.installments.find((x) => x.inst.id === w.installmentId)! })).filter((x) => who(x.i) && inRange(x.w.date, range))
   const open = billed.filter((i) => i.remaining > 0)
   const ageing = ageingBuckets(billed)
   const byClient = d.s.clients.map((c) => {
@@ -324,12 +333,20 @@ export function ReceivablesReport() {
   }).filter((x) => x.due > 0).sort((a, b) => b.owed - a.owed)
   return (
     <>
-      <div className="flex justify-end"><ExportMenu name="client-receivables" rows={() => [['Client', 'Project', 'Installment', 'Billed on', 'Amount due', 'Received', 'Written off', 'Remaining', 'Days overdue', 'Status'], ...billed.map((i) => [i.client.name, i.project.code, i.inst.description, formatDate(i.inst.billedOn ?? i.inst.dueDate), i.net, i.paid, i.writtenOff, i.remaining, i.daysOverdue, i.status])]} /></div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <FilterBar>
+          <DateRangeFilter value={range} onChange={setRange} />
+          <FilterSelect label="Clients" value={client} onChange={(v) => { setClient(v); setProj(ALL) }} options={d.s.clients.filter((c) => d.installments.some((i) => i.inst.billed && i.client.id === c.id)).map((c) => ({ value: c.id, label: c.name }))} />
+          <FilterSelect label="Projects" value={proj} onChange={setProj} options={d.projects.filter((p) => (client === ALL || p.client.id === client) && d.installments.some((i) => i.inst.billed && i.project.id === p.project.id)).map((p) => ({ value: p.project.id, label: `${p.project.code} · ${p.project.name}` }))} />
+          <FilterSelect label="Statuses" value={status} onChange={setStatus} options={['Overdue', { value: 'part', label: 'Part-paid' }, 'Paid', 'Written Off']} />
+        </FilterBar>
+        <ExportMenu subtitle={formatRange(range.from, range.to)} name="client-receivables" rows={() => [['Client', 'Project', 'Installment', 'Billed on', 'Amount due', 'Received', 'Written off', 'Remaining', 'Days overdue', 'Status'], ...billed.map((i) => [i.client.name, i.project.code, i.inst.description, formatDate(i.inst.billedOn ?? i.inst.dueDate), i.net, i.paid, i.writtenOff, i.remaining, i.daysOverdue, i.status])]} />
+      </div>
       <KpiStrip items={[
-        { label: 'Amounts owed', unit: 'LKR', value: M0(sum(open, (i) => i.remaining)), basis: 'Recorded', caption: `${open.length} installments`, hint: 'Billed installments that are still unpaid.' },
+        { label: 'Overdue items', value: open.filter((i) => i.status === 'Overdue').length, caption: `Across ${new Set(open.filter((i) => i.status === 'Overdue').map((i) => i.client.id)).size} clients`, hint: 'Billed installments with money still unpaid. Underneath: how many clients they belong to. The amount is in the next tile (unpaid billed money is overdue from the billing day).' },
         { label: 'Overdue', unit: 'LKR', value: M0(sum(open.filter((i) => i.status === 'Overdue'), (i) => i.remaining)), tone: 'destructive', hint: 'Unpaid billed money. It is overdue from the billing day.' },
         { label: 'Partially paid', value: open.filter((i) => i.paid > 0).length, caption: `${formatLKR(sum(open.filter((i) => i.paid > 0), (i) => i.remaining), { decimals: 0 })} still owed on them`, hint: 'Unpaid installments that have had some payment. Underneath: what is still owed on them.' },
-        { label: 'Written off', unit: 'LKR', value: M0(d.totals.writtenOff), caption: `${d.s.writeOffs.length} write-offs — not received`, hint: 'Total written off as bad debt. Taken off revenue; not money received.' },
+        { label: 'Written off', unit: 'LKR', value: M0(sum(writeOffs, (x) => x.w.amount)), caption: `${writeOffs.length} write-offs — not received`, hint: 'Total written off as bad debt. Taken off revenue; not money received.' },
       ]} />
       <Card className="gap-4">
         <CardHeader><CardTitle>Ageing summary</CardTitle><CardDescription>Outstanding by days since billing</CardDescription></CardHeader>
@@ -354,9 +371,9 @@ export function ReceivablesReport() {
       </Card>
       <Card className="gap-4 pb-0">
         <CardHeader><CardTitle>Bad-debt write-offs</CardTitle><CardDescription>Formally abandoned amounts — kept separate from payments</CardDescription></CardHeader>
-        {d.s.writeOffs.length ? (
-          <Table><TableBody>{d.s.writeOffs.map((w) => { const i = d.installments.find((x) => x.inst.id === w.installmentId)!; return <TableRow key={w.id}><TableCell className="pl-6">{formatDate(w.date)}</TableCell><TableCell><CellMain title={i.client.name} code={i.project.code} sub={i.inst.description} /></TableCell><TableCell className="text-muted-foreground hidden max-w-80 truncate md:table-cell">{w.reason}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(w.amount)}</TableCell></TableRow> })}</TableBody></Table>
-        ) : <CardContent className="text-muted-foreground pb-6 text-sm">No debts have been written off this year.</CardContent>}
+        {writeOffs.length ? (
+          <Table><TableBody>{writeOffs.map(({ w, i }) => { return <TableRow key={w.id}><TableCell className="pl-6">{formatDate(w.date)}</TableCell><TableCell><CellMain title={i.client.name} code={i.project.code} sub={i.inst.description} /></TableCell><TableCell className="text-muted-foreground hidden max-w-80 truncate md:table-cell">{w.reason}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(w.amount)}</TableCell></TableRow> })}</TableBody></Table>
+        ) : <CardContent className="text-muted-foreground pb-6 text-sm">No debts have been written off.</CardContent>}
       </Card>
     </>
   )

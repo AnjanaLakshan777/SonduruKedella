@@ -1773,3 +1773,13 @@ For each completed task, record the date, files or migrations changed, verificat
 - Every project that matches the filters stays listed, even with nothing in the period. Contract value and receivables don't depend on the period, and they showed 0 for an empty month while those projects were hidden (fixed the same day).
 - The change tile reads "Last period N · range". It adds a % only when last period made a profit; a % against a loss read as "+100%" and looked like growth.
 - Tests: 2 new Vitest tests (41 pass). `tsc -b` is clean. Not tried in a browser.
+
+### 2026-11-01: Receivables report counts overdue items
+- Client Receivables report: "Amounts owed" always matched "Overdue", so the first tile is now "Overdue items". It is the number of overdue installments, with "Across N clients" underneath, the same as on Clients → Receivables. The Overdue amount tile is unchanged.
+- `tsc -b` is clean. Not tried in a browser.
+- Follow-up: the Client Receivables report has Clients, Projects and Statuses filters (Overdue, Part-paid, Paid, Written Off).
+  - The Projects list narrows to the chosen client.
+  - The filters apply to the tiles, ageing, the by-client table and the export.
+  - The write-offs tile and list follow the client and project filters.
+  - The empty write-off text no longer says "this year"; the list was never limited to a year.
+  - A period filter (default: this financial year) picks installments by billing date and write-offs by write-off date. It applies to the tiles, ageing, the by-client table and the export. Added at owner request.
