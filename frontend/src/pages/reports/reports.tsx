@@ -17,7 +17,7 @@ import { ageingBuckets } from '@/components/app/receivables-table'
 import { useData, useStore } from '@/store/store'
 import { sum } from '@/lib/finance'
 import { formatDate, formatRange, monthEnd, monthKey, monthLabel, monthsBetween, monthStart, TODAY } from '@/lib/dates'
-import { formatLKR } from '@/lib/format'
+import { formatLKR, revenueAfterNote } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { downloadPdf, downloadXlsx } from '@/lib/export'
 
@@ -81,8 +81,8 @@ export function IncomeReport() {
   // 'other' = other income, which belongs to no project
   const forProject = (projectId?: string) => proj === ALL || (proj === 'other' ? !projectId : projectId === proj)
   const rows = useMemo(() => [
-    ...d.installments.filter((i) => i.inst.billed).map((i) => ({ date: i.inst.billedOn ?? i.inst.dueDate, category: i.project.type as string, project: i.project, amount: i.net - i.writtenOff, received: i.paid, writtenOff: i.writtenOff, remaining: i.remaining })),
-    ...d.otherIncome.map((o) => ({ date: o.income.date, category: 'Other Income', project: undefined, amount: o.income.amount, received: o.received, writtenOff: 0, remaining: o.remaining })),
+    ...d.installments.filter((i) => i.inst.billed).map((i) => ({ date: i.inst.billedOn ?? i.inst.dueDate, category: i.project.type as string, project: i.project, amount: i.net - i.writtenOff, received: i.paid, deduction: i.deduction, writtenOff: i.writtenOff, remaining: i.remaining })),
+    ...d.otherIncome.map((o) => ({ date: o.income.date, category: 'Other Income', project: undefined, amount: o.income.amount, received: o.received, deduction: 0, writtenOff: 0, remaining: o.remaining })),
   ].filter((r) => inRange(r.date, range) && (cat === ALL || r.category === cat) && forProject(r.project?.id)), [d, range, cat, proj])
   const instProject = useMemo(() => new Map(d.installments.map((i) => [i.inst.id, i.project.id])), [d])
   const received = d.s.clientPayments.filter((p) => inRange(p.date, range) && forProject(instProject.get(p.installmentId)))
@@ -92,8 +92,8 @@ export function IncomeReport() {
   const byCat = d.s.settings.revenueCategories.map((c) => ({ c, v: sum(rows.filter((r) => r.category === c), (r) => r.amount), rec: sum(rows.filter((r) => r.category === c), (r) => r.received) }))
   const byProject = d.projects.map((p) => {
     const mine = rows.filter((r) => r.project?.id === p.project.id)
-    return { p, v: sum(mine, (r) => r.amount), rec: sum(mine, (r) => r.received), wo: sum(mine, (r) => r.writtenOff), rem: sum(mine, (r) => r.remaining) }
-  }).filter((x) => x.v > 0 || x.wo > 0).sort((a, b) => b.v - a.v)
+    return { p, v: sum(mine, (r) => r.amount), rec: sum(mine, (r) => r.received), ded: sum(mine, (r) => r.deduction), wo: sum(mine, (r) => r.writtenOff), rem: sum(mine, (r) => r.remaining) }
+  }).filter((x) => x.v > 0 || x.wo > 0 || x.ded > 0).sort((a, b) => b.v - a.v)
   const months = monthsBetween(range.from.slice(0, 7), (range.to < TODAY ? range.to : TODAY).slice(0, 7)).map((k) => ({
     label: monthLabel(k), recorded: sum(rows.filter((r) => monthKey(r.date) === k), (r) => r.amount), received: sum(received.filter((p) => monthKey(p.date) === k), (p) => p.amount) + sum(otherReceived.filter((p) => monthKey(p.date) === k), (p) => p.amount),
   }))
@@ -105,17 +105,17 @@ export function IncomeReport() {
           <FilterSelect label="Projects" value={proj} onChange={setProj} options={[{ value: 'other', label: 'Other income only' }, ...d.s.projects.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} />
           <FilterSelect label="Categories" value={cat} onChange={setCat} options={d.s.settings.revenueCategories} />
         </FilterBar>
-        <ExportMenu subtitle={formatRange(range.from, range.to)} name="income-report" rows={() => [['Date', 'Category', 'Project', 'Revenue recorded, after write-offs (LKR)', 'Received (LKR)', 'Written off (LKR)', 'Outstanding (LKR)'], ...rows.map((r) => [formatDate(r.date), r.category, r.project?.code ?? '', r.amount, r.received, r.writtenOff, r.remaining])]} />
+        <ExportMenu subtitle={formatRange(range.from, range.to)} name="income-report" rows={() => [['Date', 'Category', 'Project', 'Revenue recorded, after deductions and write-offs (LKR)', 'Received (LKR)', 'Delay deduction (LKR)', 'Written off (LKR)', 'Outstanding (LKR)'], ...rows.map((r) => [formatDate(r.date), r.category, r.project?.code ?? '', r.amount, r.received, r.deduction, r.writtenOff, r.remaining])]} />
       </div>
       <KpiStrip items={[
-        { label: 'Revenue recorded', unit: 'LKR', value: M0(sum(rows, (r) => r.amount)), basis: 'Recorded', hint: 'Billed installments and other income in the range, less write-offs.' },
+        { label: 'Revenue recorded', unit: 'LKR', value: M0(sum(rows, (r) => r.amount)), basis: 'Recorded', caption: revenueAfterNote(sum(rows, (r) => r.deduction), sum(rows, (r) => r.writtenOff)), hint: 'Billed installments and other income in the range, less delay deductions and write-offs.' },
         { label: 'Received against it', unit: 'LKR', value: M0(sum(rows, (r) => r.received)), basis: 'Received', hint: 'Payments received against those records, whenever they came in.' },
         { label: 'Written off', unit: 'LKR', value: M0(sum(rows, (r) => r.writtenOff)), caption: 'Bad debt — not received', hint: 'Amounts given up as bad debt on those records. Already taken off revenue recorded; never counted as money received.' },
         { label: 'Still outstanding', unit: 'LKR', value: M0(sum(rows, (r) => r.remaining)), hint: 'What is still unpaid on those records.' },
         { label: 'Cash received in period', unit: 'LKR', value: M0(sum(months, (m) => m.received)), caption: 'Includes payments for earlier billing', hint: 'Payments dated within the range, whichever period the revenue was recorded in.' },
         { label: 'Scheduled, not billed', unit: 'LKR', value: M0(sum(scheduled, (i) => i.net)), basis: 'Expected', caption: `${scheduled.length} installments — not revenue yet`, hint: 'Installments on project schedules that are not billed yet (cancelled projects left out). Follows the project and category filters; the date filter does not apply.' },
       ]} />
-      <Basis>Revenue is recorded when an installment is billed (net of any applied delay deduction), plus other income, less any amount written off as bad debt. Payments received are shown separately; an installment paid in several payments is counted as revenue once. Contract value is not revenue.</Basis>
+      <Basis>Revenue is recorded when an installment is billed, plus other income. Delay deductions and amounts written off as bad debt both come off revenue. Payments received are shown separately; an installment paid in several payments is counted as revenue once. Contract value is not revenue.</Basis>
       <div className="grid gap-6 xl:grid-cols-5">
         <Card className="xl:col-span-3">
           <CardHeader><CardTitle>Revenue by period</CardTitle><CardDescription>Recorded versus received, by month</CardDescription><CardAction><Legend items={[{ label: 'Recorded', color: 'var(--chart-3)' }, { label: 'Received', color: 'var(--chart-5)' }]} /></CardAction></CardHeader>
@@ -135,8 +135,8 @@ export function IncomeReport() {
       <Card className="gap-4 pb-0">
         <CardHeader><CardTitle>Revenue by project</CardTitle></CardHeader>
         <Table>
-          <TableHeader><TableRow><TableHead className="pl-6">Project</TableHead><TableHead className="hidden md:table-cell">Type</TableHead><TableHead className="text-right">Recorded (LKR)</TableHead><TableHead className="text-right">Received (LKR)</TableHead><TableHead className="text-right">Written off (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
-          <TableBody>{byProject.map((x) => <TableRow key={x.p.project.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.project.name} code={x.p.project.code} /></TableCell><TableCell className="hidden md:table-cell">{x.p.project.type}</TableCell><TableCell className="text-right">{M0(x.v)}</TableCell><TableCell className="text-right">{M0(x.rec)}</TableCell><TableCell className="text-right">{x.wo ? M0(x.wo) : <span className="text-muted-foreground">—</span>}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(x.rem)}</TableCell></TableRow>)}</TableBody>
+          <TableHeader><TableRow><TableHead className="pl-6">Project</TableHead><TableHead className="hidden md:table-cell">Type</TableHead><TableHead className="text-right">Recorded (LKR)</TableHead><TableHead className="text-right">Received (LKR)</TableHead><TableHead className="hidden text-right lg:table-cell">Delay deduction (LKR)</TableHead><TableHead className="text-right">Written off (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
+          <TableBody>{byProject.map((x) => <TableRow key={x.p.project.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.project.name} code={x.p.project.code} /></TableCell><TableCell className="hidden md:table-cell">{x.p.project.type}</TableCell><TableCell className="text-right">{M0(x.v)}</TableCell><TableCell className="text-right">{M0(x.rec)}</TableCell><TableCell className="hidden text-right lg:table-cell">{x.ded ? M0(x.ded) : <span className="text-muted-foreground">—</span>}</TableCell><TableCell className="text-right">{x.wo ? M0(x.wo) : <span className="text-muted-foreground">—</span>}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(x.rem)}</TableCell></TableRow>)}</TableBody>
         </Table>
       </Card>
     </>
@@ -213,18 +213,19 @@ export function ProfitabilityReport() {
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <FilterBar><FilterSelect label="Types" value={type} onChange={setType} options={['Design', 'Construction', 'Consultation']} /><FilterSelect label="Statuses" value={status} onChange={setStatus} options={['In Progress', 'On Hold', 'Completed']} /></FilterBar>
-        <ExportMenu name="project-profitability" rows={() => [['Project', 'Name', 'Status', 'Contract value', 'Delay deduction', 'Revenue recorded', 'Written off', 'Materials', 'Labour', 'Other expenses', 'Commission committed', 'Commission paid', 'Total costs', 'Profit', 'Basis', 'Receivable'],
-          ...rows.map((p) => [p.project.code, p.project.name, p.project.status, p.contractValue, p.deduction, p.revenueRecorded, p.writtenOff, p.costs.materialsDirect + p.costs.materialsStock, p.costs.labour, p.costs.expenses, p.commissionCommitted, p.commissionPaid, p.totalCosts, p.profit, p.profitBasis, p.receivable])]} />
+        <ExportMenu name="project-profitability" rows={() => [['Project', 'Name', 'Status', 'Contract value', 'Delay deduction', 'Revenue recorded, after write-offs', 'Written off', 'Materials', 'Labour', 'Other expenses', 'Commission committed', 'Commission paid', 'Total costs', 'Profit', 'Basis', 'Receivable'],
+          ...rows.map((p) => [p.project.code, p.project.name, p.project.status, p.contractValue, p.deduction, (p.revenueRecorded - p.writtenOff), p.writtenOff, p.costs.materialsDirect + p.costs.materialsStock, p.costs.labour, p.costs.expenses, p.commissionCommitted, p.commissionPaid, p.totalCosts, p.profit, p.profitBasis, p.receivable])]} />
       </div>
       <KpiStrip items={[
         { label: 'Contract value', unit: 'LKR', value: T((p) => p.contractValue), basis: 'Agreed', hint: 'Agreed contract value of the projects in this report.' },
-        { label: 'Revenue recorded', unit: 'LKR', value: T((p) => p.revenueRecorded), basis: 'Recorded', hint: 'Billed installments, net of delay deductions, before write-offs.' },
+        { label: 'Revenue recorded', unit: 'LKR', value: T((p) => (p.revenueRecorded - p.writtenOff)), basis: 'Recorded', hint: 'Billed installments, net of delay deductions, less amounts written off as bad debt.' },
         { label: 'Project costs', unit: 'LKR', value: T((p) => p.totalCosts), basis: 'Recorded', caption: 'incl. committed commission', hint: 'Materials, labour, expenses and confirmed commission, paid or not.' },
-        { label: 'Profit to date', unit: 'LKR', value: T((p) => p.profit), basis: 'Estimated', caption: `${formatLKR(sum(rows.filter((p) => p.profitBasis === 'Recorded'), (p) => p.profit), { decimals: 0 })} on completed projects`, hint: 'Revenue recorded − written off − project costs. An estimate while projects are still in progress.' },
+        { label: 'Profit to date', unit: 'LKR', value: T((p) => p.profit), basis: 'Estimated', caption: `${formatLKR(sum(rows.filter((p) => p.profitBasis === 'Recorded'), (p) => p.profit), { decimals: 0 })} on completed projects`, hint: 'Revenue recorded (after write-offs) − project costs. An estimate while projects are still in progress.' },
+        { label: 'Cash profit', unit: 'LKR', value: T((p) => p.cash.profit), basis: 'Received', caption: `${formatLKR(sum(rows, (p) => p.cash.received), { decimals: 0, currency: false })} received − ${formatLKR(sum(rows, (p) => p.cash.costs), { decimals: 0, currency: false })} paid out`, hint: 'Client payments received − money paid out for these projects (expense, supplier, wage and commission payments, plus stock issued at cost). Unpaid bills and money still owed by clients are left out.' },
         { label: 'Client receivables', unit: 'LKR', value: T((p) => p.receivable), caption: 'Not profit — still to collect', hint: 'Billed but not received yet. Still to collect, not profit.' },
       ]} />
       <Basis>
-        Profit = revenue recorded − written off − (materials + labour + other direct expenses + confirmed commission), whether paid or not. Revenue recorded already excludes applied delay deductions. Contract value is shown for reference only and is not counted as revenue; outstanding receivables are not profit. Projects still in progress are <em>Estimated</em> because future costs are not yet known. Company-level expenses are excluded.
+        Profit = revenue recorded after write-offs − (materials + labour + other direct expenses + confirmed commission), whether paid or not. Revenue recorded already excludes applied delay deductions. Contract value is shown for reference only and is not counted as revenue; outstanding receivables are not profit. Projects still in progress are <em>Estimated</em> because future costs are not yet known. Company-level expenses are excluded.
       </Basis>
       <Card className="gap-0 py-0">
         <div className="overflow-x-auto text-[13px]">
@@ -242,13 +243,13 @@ export function ProfitabilityReport() {
                   <TableCell className="min-w-52 pl-6 whitespace-normal"><CellMain title={<span className="line-clamp-2 whitespace-normal">{p.project.name}</span>} code={p.project.code} sub={p.project.status} /></TableCell>
                   <TableCell className="text-right">{M0(p.contractValue)}</TableCell>
                   <TableCell className="hidden text-right 2xl:table-cell">{p.deduction ? <Money value={-p.deduction} decimals={0} currency={false} /> : '—'}</TableCell>
-                  <TableCell className="text-right">{M0(p.revenueRecorded)}</TableCell>
+                  <TableCell className="text-right">{M0((p.revenueRecorded - p.writtenOff))}</TableCell>
                   <TableCell className="text-right">{M0(p.costs.materialsDirect + p.costs.materialsStock)}</TableCell>
                   <TableCell className="text-right">{M0(p.costs.labour)}</TableCell>
                   <TableCell className="text-right">{M0(p.costs.expenses)}</TableCell>
                   <TableCell className="text-right">{M0(p.commissionCommitted)}{p.commissionCommitted > 0 && <div className="text-muted-foreground text-xs">{formatLKR(p.commissionPaid, { decimals: 0, currency: false })} paid</div>}</TableCell>
                   <TableCell className="text-right font-semibold"><Money value={p.profit} decimals={0} currency={false} tone="auto" /></TableCell>
-                  <TableCell className={cn('tabular text-right', p.margin < 0 && 'text-destructive')}>{p.revenueRecorded ? `${p.margin.toFixed(1)}%` : '—'}</TableCell>
+                  <TableCell className={cn('tabular text-right', p.margin < 0 && 'text-destructive')}>{p.revenueRecorded - p.writtenOff > 0 ? `${p.margin.toFixed(1)}%` : '—'}</TableCell>
                   <TableCell><StatusBadge status={p.profitBasis} /></TableCell>
                   <TableCell className="pr-6 text-right">{M0(p.receivable)}</TableCell>
                 </TableRow>
@@ -257,7 +258,7 @@ export function ProfitabilityReport() {
             <TableFooter>
               <TableRow>
                 <TableCell className="pl-6">Total ({rows.length})</TableCell><TableCell className="text-right">{T((p) => p.contractValue)}</TableCell><TableCell className="hidden text-right 2xl:table-cell"><Money value={-sum(rows, (p) => p.deduction)} decimals={0} currency={false} /></TableCell>
-                <TableCell className="text-right">{T((p) => p.revenueRecorded)}</TableCell><TableCell className="text-right">{T((p) => p.costs.materialsDirect + p.costs.materialsStock)}</TableCell><TableCell className="text-right">{T((p) => p.costs.labour)}</TableCell>
+                <TableCell className="text-right">{T((p) => (p.revenueRecorded - p.writtenOff))}</TableCell><TableCell className="text-right">{T((p) => p.costs.materialsDirect + p.costs.materialsStock)}</TableCell><TableCell className="text-right">{T((p) => p.costs.labour)}</TableCell>
                 <TableCell className="text-right">{T((p) => p.costs.expenses)}</TableCell><TableCell className="text-right">{T((p) => p.commissionCommitted)}</TableCell><TableCell className="text-right">{T((p) => p.profit)}</TableCell><TableCell /><TableCell /><TableCell className="pr-6 text-right">{T((p) => p.receivable)}</TableCell>
               </TableRow>
             </TableFooter>

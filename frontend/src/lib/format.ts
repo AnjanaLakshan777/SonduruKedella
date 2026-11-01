@@ -42,3 +42,12 @@ export function parseAmount(input: string) {
 }
 
 export const round2 = (n: number) => Math.round(n * 100) / 100
+
+// "After 150,000 delay deduction · 30,000 written off": what was taken off billed revenue, or undefined
+export function revenueAfterNote(deducted: number, writtenOff: number) {
+  const parts = [
+    deducted > 0 ? `${formatLKR(deducted, { decimals: 0, currency: false })} delay deduction` : '',
+    writtenOff > 0 ? `${formatLKR(writtenOff, { decimals: 0, currency: false })} written off` : '',
+  ].filter(Boolean)
+  return parts.length ? `After ${parts.join(' · ')}` : undefined
+}

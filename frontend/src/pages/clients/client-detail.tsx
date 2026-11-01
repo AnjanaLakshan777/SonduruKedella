@@ -17,7 +17,7 @@ import { ClientDialog } from '@/components/app/client-dialog'
 import { useData } from '@/store/store'
 import { clientSummary } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
-import { formatLKR } from '@/lib/format'
+import { revenueAfterNote } from '@/lib/format'
 
 const M = (v: number) => <Money value={v} decimals={0} currency={false} />
 
@@ -48,7 +48,7 @@ export default function ClientDetail() {
       <KpiStrip items={[
         { label: 'Total Projects', value: s.projects.length, caption: `${s.projects.filter((p) => p.project.status === 'In Progress').length} in progress`, hint: 'Number of projects for this client, any status. Underneath: how many are In Progress.' },
         { label: 'Contract Value', unit: 'LKR', value: M(s.contractValue), basis: 'Agreed', caption: 'All projects', hint: 'Agreed contract value of all projects for this client. Not revenue until installments are billed.' },
-        { label: 'Revenue Recorded', unit: 'LKR', value: M(s.revenueRecorded - s.writtenOff), basis: 'Recorded', caption: s.writtenOff ? `After ${formatLKR(s.writtenOff, { decimals: 0, currency: false })} written off` : undefined, hint: 'Billed installments for this client (net of delay deductions), less amounts written off.' },
+        { label: 'Revenue Recorded', unit: 'LKR', value: M(s.revenueRecorded - s.writtenOff), basis: 'Recorded', caption: revenueAfterNote(s.deduction, s.writtenOff), hint: 'Billed installments for this client (net of delay deductions), less amounts written off.' },
         { label: 'Payments Received', unit: 'LKR', value: M(s.received), basis: 'Received', hint: 'Money actually received from this client against billed installments.' },
         { label: 'Owed Now', unit: 'LKR', value: M(s.receivable), basis: 'Recorded', caption: s.overdue ? <span className="text-destructive-soft-foreground font-medium">{s.overdue.toLocaleString('en-LK')} overdue</span> : 'Nothing overdue', hint: 'Billed and not yet paid or written off. Unpaid billed money is overdue from the billing day.' },
         { label: 'Written Off', unit: 'LKR', value: M(s.writtenOff), caption: 'Bad debt — not received', hint: 'Amounts given up as bad debt. Taken off revenue; never counted as money received or as an expense.' },

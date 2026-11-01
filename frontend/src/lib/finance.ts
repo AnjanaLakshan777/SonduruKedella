@@ -638,7 +638,8 @@ export function derive(s: DataState) {
       directCosts, totalCosts, commissionCommitted, commissionPaid,
       commissionPendingRate: sum(pc.filter((c) => c.arr.status === 'Pending'), (c) => c.arr.rate),
       payables, cash, profit, profitBasis: project.status === 'Completed' ? 'Recorded' : 'Estimated',
-      margin: revenueRecorded > 0 ? (profit / revenueRecorded) * 100 : 0,
+      // against revenue after write-offs, the figure the screens show as revenue
+      margin: revenueRecorded - writtenOff > 0 ? (profit / (revenueRecorded - writtenOff)) * 100 : 0,
       collectedPct: adjustedValue > 0 ? (received / adjustedValue) * 100 : 0,
       attention,
     }
@@ -747,6 +748,7 @@ export function clientSummary(d: Derived, clientId: string) {
     revenueRecorded: sum(projects, (p) => p.revenueRecorded),
     received: sum(projects, (p) => p.received),
     writtenOff: sum(projects, (p) => p.writtenOff),
+    deduction: sum(projects, (p) => p.deduction),
     receivable: sum(projects, (p) => p.receivable),
     overdue: sum(projects, (p) => p.overdue),
   }

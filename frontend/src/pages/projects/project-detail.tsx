@@ -21,7 +21,7 @@ import { useData, useStore } from '@/store/store'
 import { projectActivity, scheduleStatus } from '@/lib/finance'
 import { diffDays, formatDate, TODAY } from '@/lib/dates'
 import { apiUrl, errorMessage } from '@/lib/api'
-import { formatLKR } from '@/lib/format'
+import { formatLKR, revenueAfterNote } from '@/lib/format'
 import type { ProjectStatus } from '@/data/types'
 import { cn } from '@/lib/utils'
 import { ProjectPayments } from './project-payments'
@@ -85,7 +85,7 @@ export default function ProjectDetail() {
       <KpiStrip
         items={[
           { label: 'Contract Value', unit: 'LKR', value: M(pf.contractValue), basis: 'Agreed', caption: pf.deduction ? `Adjusted ${formatLKR(pf.adjustedValue, { decimals: 0, currency: false })} after deduction` : 'Unchanged by deductions', hint: 'The agreed contract value. A delay deduction lowers the amount payable, never the contract value.' },
-          { label: 'Revenue Recorded', unit: 'LKR', value: M(pf.revenueRecorded - pf.writtenOff), basis: 'Recorded', caption: pf.writtenOff ? `After ${formatLKR(pf.writtenOff, { decimals: 0, currency: false })} written off` : `${pf.installments.filter((i) => i.inst.billed).length} of ${pf.installments.length} installments billed`, hint: 'Billed installments for this project (net of delay deductions), less amounts written off.' },
+          { label: 'Revenue Recorded', unit: 'LKR', value: M(pf.revenueRecorded - pf.writtenOff), basis: 'Recorded', caption: revenueAfterNote(pf.deduction, pf.writtenOff) ?? `${pf.installments.filter((i) => i.inst.billed).length} of ${pf.installments.length} installments billed`, hint: 'Billed installments for this project (net of delay deductions), less amounts written off.' },
           { label: 'Payments Received', unit: 'LKR', value: M(pf.received), basis: 'Received', caption: `${pf.collectedPct.toFixed(0)}% of amount payable`, hint: 'Money received from the client against billed installments. Underneath: the share of the amount payable.' },
           { label: 'Receivable', unit: 'LKR', value: M(pf.receivable), basis: 'Recorded', caption: pf.overdue ? <span className="text-destructive-soft-foreground font-medium">{formatLKR(pf.overdue, { decimals: 0, currency: false })} overdue</span> : 'Nothing overdue', hint: 'Billed and not yet paid or written off. Unpaid billed money is overdue from the billing day.' },
           { label: 'Project Costs', unit: 'LKR', value: M(pf.totalCosts), basis: 'Recorded', caption: pf.payables.total ? `${formatLKR(pf.payables.total, { decimals: 0, currency: false })} still to pay` : 'All paid', hint: 'Materials (site deliveries and stock issued at cost), labour, other expenses and confirmed commission, paid or not.' },

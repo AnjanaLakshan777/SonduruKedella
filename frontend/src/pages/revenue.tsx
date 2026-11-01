@@ -24,10 +24,10 @@ import { PaymentDialog } from '@/components/app/payment-dialog'
 import { useData, useStore } from '@/store/store'
 import { scheduleStatus, sum } from '@/lib/finance'
 import { formatDate, TODAY } from '@/lib/dates'
-import { formatLKR } from '@/lib/format'
+import { formatLKR, revenueAfterNote } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
 
-interface Row { id: string; date: string; category: string; projectId?: string; code?: string; project?: string; client: string; description: string; amount: number; received: number; writtenOff: number; outstanding: number; status: string; due?: string; otherId?: string }
+interface Row { id: string; date: string; category: string; projectId?: string; code?: string; project?: string; client: string; description: string; amount: number; received: number; deduction: number; writtenOff: number; outstanding: number; status: string; due?: string; otherId?: string }
 
 export default function RevenuePage() {
   useCrumbs([{ label: 'Revenue' }])
@@ -46,9 +46,9 @@ export default function RevenuePage() {
   const all: Row[] = useMemo(() => [
     ...d.installments.filter((i) => i.inst.billed).map((i) => ({
       id: i.inst.id, date: i.inst.billedOn ?? i.inst.dueDate, category: i.project.type, projectId: i.project.id, code: i.project.code, project: i.project.name, client: i.client.name,
-      description: i.inst.description, amount: i.net, received: i.paid, writtenOff: i.writtenOff, outstanding: i.remaining, status: i.status, due: i.inst.billedOn ?? i.inst.dueDate,
+      description: i.inst.description, amount: i.net, received: i.paid, deduction: i.deduction, writtenOff: i.writtenOff, outstanding: i.remaining, status: i.status, due: i.inst.billedOn ?? i.inst.dueDate,
     })),
-    ...d.otherIncome.map((o) => ({ id: o.income.id, otherId: o.income.id, date: o.income.date, category: 'Other Income', client: o.income.payer ?? '—', description: o.income.description, amount: o.income.amount, received: o.received, writtenOff: 0, outstanding: o.remaining, status: o.status, due: o.income.date })),
+    ...d.otherIncome.map((o) => ({ id: o.income.id, otherId: o.income.id, date: o.income.date, category: 'Other Income', client: o.income.payer ?? '—', description: o.income.description, amount: o.income.amount, received: o.received, deduction: 0, writtenOff: 0, outstanding: o.remaining, status: o.status, due: o.income.date })),
   ], [d])
   const rows = all.filter((r) => inRange(r.date, range) && (cat === ALL || r.category === cat) && (proj === ALL || r.projectId === proj) && (client === ALL || r.client === client) && (status === ALL || r.status === status)
     && (!q || `${r.description} ${r.client} ${r.code ?? ''} ${r.project ?? ''}`.toLowerCase().includes(q.toLowerCase())))
@@ -62,7 +62,7 @@ export default function RevenuePage() {
     <>
       <PageHeader title="Revenue" description="Income recorded for work done, and how much of it has been received. Each installment is counted once, however many payments it takes." actions={<Button onClick={() => setAddOpen(true)}><Plus />Add Revenue</Button>} />
       <KpiStrip items={[
-        { label: 'Revenue Recorded', unit: 'LKR', value: <Money value={sum(rows, (r) => r.amount - r.writtenOff)} decimals={0} currency={false} />, basis: 'Recorded', caption: sum(rows, (r) => r.writtenOff) ? `After ${formatLKR(sum(rows, (r) => r.writtenOff), { decimals: 0, currency: false })} written off` : `${rows.length} records in view`, hint: 'Billed installments (net of delay deductions) and other income in the current view, less amounts written off as bad debt.' },
+        { label: 'Revenue Recorded', unit: 'LKR', value: <Money value={sum(rows, (r) => r.amount - r.writtenOff)} decimals={0} currency={false} />, basis: 'Recorded', caption: revenueAfterNote(sum(rows, (r) => r.deduction), sum(rows, (r) => r.writtenOff)) ?? `${rows.length} records in view`, hint: 'Billed installments and other income in the current view, less delay deductions and amounts written off as bad debt.' },
         { label: 'Received', unit: 'LKR', value: <Money value={sum(rows, (r) => r.received)} decimals={0} currency={false} />, basis: 'Received', caption: 'Against these records', hint: 'Payments received against these records.' },
         { label: 'Outstanding', unit: 'LKR', value: <Money value={sum(rows, (r) => r.outstanding)} decimals={0} currency={false} />, caption: `${formatLKR(sum(rows.filter((r) => r.status === 'Overdue'), (r) => r.outstanding), { decimals: 0 })} overdue`, hint: 'Still unpaid on these records. Unpaid billed money is overdue from the billing day.' },
         { label: 'Scheduled, not billed', unit: 'LKR', value: <Money value={sum(scheduled, (i) => i.net)} decimals={0} currency={false} />, basis: 'Expected', caption: 'Future installments — not revenue yet', hint: 'Installments on project schedules that are not billed yet (cancelled projects left out). Not revenue until billed; the date filter does not apply.' },

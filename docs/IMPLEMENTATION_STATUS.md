@@ -1734,3 +1734,20 @@ For each completed task, record the date, files or migrations changed, verificat
 - Revenue page: the "Revenue Recorded" tile now subtracts write-offs (it showed billed amounts before write-offs). When something is written off, it says "After N written off" underneath. The table rows still show each record's billed amount.
 - Income report: a sixth tile, "Scheduled, not billed", follows "Cash received in period". It shows unbilled installments on non-cancelled projects and follows the project and category filters, but not the date range, as on the Revenue page. It shows 0 for "Other income only".
 - `tsc -b` is clean. Not tried in a browser.
+
+### 2026-11-01: Profitability report revenue after write-offs
+- Project Profitability report: the "Revenue recorded" tile, column and total now subtract write-offs, the same as the rest of the app. The export column is "Revenue recorded, after write-offs", with "Written off" still next to it. Profit is unchanged; it already took write-offs off.
+- Margin (`ProjectFinance.margin`, also shown on the project page) is now profit ÷ revenue after write-offs, so it matches the revenue shown beside it. Before, it divided by revenue before write-offs.
+- `tsc -b` is clean and 37 Vitest tests pass. Not tried in a browser.
+- Follow-up: the Profitability report has a "Cash profit" tile after "Profit to date". It shows client payments received − money paid out for these projects (from `ProjectFinance.cash`), with both amounts underneath. That makes six tiles; the other tiles are unchanged.
+
+### 2026-11-01: Delay deductions shown like write-offs
+- Owner rule: a delay deduction reduces revenue, the same as a write-off. Checked: the calculation already did this.
+  - A deduction can only be applied to a billed installment (`DelayDeductionService`).
+  - Revenue is the billed `net` = amount − deduction, in both the backend and the frontend.
+  - The contract value is never changed.
+- What changed is visibility. Wherever write-offs were named, deductions are named too:
+  - New `revenueAfterNote()` in `lib/format.ts` gives the caption, e.g. "After 20,000 delay deduction · 10,000 written off".
+  - It is used on Revenue Recorded on the client page, the project page, the Revenue page and the Income report. `clientSummary` now carries `deduction`.
+  - Income report: a "Delay deduction" column in Revenue by project (wide screens) and in the export. The note now says deductions and write-offs both come off revenue.
+- Tests: 2 new Vitest tests (39 pass) covering the caption and the rule "deduction comes off revenue, contract value unchanged". `tsc -b` is clean. Not tried in a browser.

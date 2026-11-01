@@ -32,6 +32,22 @@ describe('revenue after write-offs', () => {
   })
 })
 
+describe('delay deductions', () => {
+  it('come off revenue like a write-off, and the contract value stays as agreed', () => {
+    const s = blank()
+    s.projects = s.projects.map((p) => (p.id === 'p2' ? { ...p, delay: { enabled: true, contractDeadline: addDays(TODAY, -30), rule: 'Fixed amount' as never, appliedAmount: 20000, appliedToInstallmentId: 'i1' } } : p))
+    s.installments = [{ id: 'i1', projectId: 'p2', description: 'Handover', dueDate: TODAY, amount: 300000, billed: true, billedOn: TODAY }]
+    s.writeOffs = [{ id: 'w1', installmentId: 'i1', date: TODAY, amount: 10000, reason: 'Snagging' }]
+    const d = derive(s)
+    const p = d.projectFinById.get('p2')!
+    // 300,000 billed − 20,000 deduction = 280,000 recorded; − 10,000 written off = 270,000 shown as revenue
+    expect(p.revenueRecorded).toBe(280000)
+    expect(d.totals.revenueNet).toBe(270000)
+    expect(p.contractValue).toBe(s.projects.find((x) => x.id === 'p2')!.contractValue)
+    expect(p.receivable).toBe(270000)
+  })
+})
+
 describe('overdue', () => {
   it('counts from the billing day, whatever the planned date says', () => {
     const s = blank()
