@@ -1783,3 +1783,13 @@ For each completed task, record the date, files or migrations changed, verificat
   - The write-offs tile and list follow the client and project filters.
   - The empty write-off text no longer says "this year"; the list was never limited to a year.
   - A period filter (default: this financial year) picks installments by billing date and write-offs by write-off date. It applies to the tiles, ageing, the by-client table and the export. Added at owner request.
+
+### 2026-11-01: Supplier Payables report: filters and supplier count
+- Filters, matching Client Receivables:
+  - Period (default: this financial year), by invoice date;
+  - Suppliers;
+  - Projects, with "Stock purchases only" for invoices bought into stock;
+  - the existing Statuses filter.
+- The invoice tiles, table and export follow the filters (before, the tiles always showed every invoice). "Other payables" (unpaid expenses, commission and wages) stays company-wide and says so.
+- New first tile "Total suppliers": every supplier on record, with how many have unpaid invoices in view underneath. The existing tiles moved one place right; there are now six.
+- `tsc -b` is clean. Not tried in a browser.

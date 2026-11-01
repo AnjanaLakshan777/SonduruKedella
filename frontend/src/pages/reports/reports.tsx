@@ -382,20 +382,32 @@ export function ReceivablesReport() {
 // ---------------------------------------------------------------- payables
 export function PayablesReport() {
   const d = useData()
+  const [range, setRange] = useState(defaultRange())
+  const [supplier, setSupplier] = useState(ALL)
+  const [proj, setProj] = useState(ALL)
   const [status, setStatus] = useState(ALL)
-  const rows = d.invoices.filter((v) => status === ALL || (status === 'open' ? v.remaining > 0 : v.status === status)).sort((a, b) => a.invoice.dueDate.localeCompare(b.invoice.dueDate))
+  // the period picks invoices by invoice date; 'stock' = invoices bought into stock, not for a project
+  const rows = d.invoices.filter((v) => inRange(v.invoice.date, range) && (supplier === ALL || v.supplier.id === supplier)
+    && (proj === ALL || (proj === 'stock' ? !v.project : v.project?.id === proj))
+    && (status === ALL || (status === 'open' ? v.remaining > 0 : v.status === status))).sort((a, b) => a.invoice.dueDate.localeCompare(b.invoice.dueDate))
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <FilterSelect label="Statuses" value={status} onChange={setStatus} options={[{ value: 'open', label: 'Unpaid (all)' }, 'Overdue', 'Partially Paid', 'Unpaid', 'Paid']} />
-        <ExportMenu name="supplier-payables" rows={() => [['Supplier', 'Invoice', 'Invoice date', 'Due date', 'Allocated to', 'Total', 'Paid', 'Remaining', 'Status'], ...rows.map((v) => [v.supplier.name, v.invoice.invoiceNo, formatDate(v.invoice.date), formatDate(v.invoice.dueDate), v.project?.code ?? 'Stock', v.total, v.paid, v.remaining, v.status])]} />
+        <FilterBar>
+          <DateRangeFilter value={range} onChange={setRange} />
+          <FilterSelect label="Suppliers" value={supplier} onChange={setSupplier} options={d.s.suppliers.filter((s) => d.invoices.some((v) => v.supplier.id === s.id)).map((s) => ({ value: s.id, label: s.name }))} />
+          <FilterSelect label="Projects" value={proj} onChange={setProj} options={[{ value: 'stock', label: 'Stock purchases only' }, ...d.s.projects.filter((p) => d.invoices.some((v) => v.project?.id === p.id)).map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} />
+          <FilterSelect label="Statuses" value={status} onChange={setStatus} options={[{ value: 'open', label: 'Unpaid (all)' }, 'Overdue', 'Partially Paid', 'Unpaid', 'Paid']} />
+        </FilterBar>
+        <ExportMenu subtitle={formatRange(range.from, range.to)} name="supplier-payables" rows={() => [['Supplier', 'Invoice', 'Invoice date', 'Due date', 'Allocated to', 'Total', 'Paid', 'Remaining', 'Status'], ...rows.map((v) => [v.supplier.name, v.invoice.invoiceNo, formatDate(v.invoice.date), formatDate(v.invoice.dueDate), v.project?.code ?? 'Stock', v.total, v.paid, v.remaining, v.status])]} />
       </div>
       <KpiStrip items={[
-        { label: 'Supplier invoices', unit: 'LKR', value: M0(sum(d.invoices, (v) => v.total)), basis: 'Recorded', caption: `${d.invoices.length} invoices`, hint: 'Total of all supplier invoices recorded.' },
-        { label: 'Amounts paid', unit: 'LKR', value: M0(sum(d.invoices, (v) => v.paid)), hint: 'Payments made against supplier invoices.' },
-        { label: 'Remaining payable', unit: 'LKR', value: M0(d.totals.supplierPayables), hint: 'Supplier invoice amounts not paid yet.' },
-        { label: 'Overdue', unit: 'LKR', value: M0(sum(d.invoices.filter((v) => v.status === 'Overdue'), (v) => v.remaining)), tone: 'destructive', hint: 'Unpaid supplier invoices past their due date.' },
-        { label: 'Other payables', unit: 'LKR', value: M0(d.totals.expensePayables + d.totals.commissionPayables + d.totals.payrollPayables), caption: 'Bills, commissions, wages', hint: 'Unpaid expenses, confirmed commission and wages.' },
+        { label: 'Total suppliers', value: d.s.suppliers.length, caption: `${new Set(rows.filter((v) => v.remaining > 0).map((v) => v.supplier.id)).size} with unpaid invoices in view`, hint: 'Every supplier on record. Underneath: how many of them have unpaid invoices matching the filters.' },
+        { label: 'Supplier invoices', unit: 'LKR', value: M0(sum(rows, (v) => v.total)), basis: 'Recorded', caption: `${rows.length} invoices`, hint: 'Total of the supplier invoices matching the filters.' },
+        { label: 'Amounts paid', unit: 'LKR', value: M0(sum(rows, (v) => v.paid)), hint: 'Payments made against those invoices.' },
+        { label: 'Remaining payable', unit: 'LKR', value: M0(sum(rows, (v) => v.remaining)), hint: 'Amounts not paid yet on those invoices.' },
+        { label: 'Overdue', unit: 'LKR', value: M0(sum(rows.filter((v) => v.status === 'Overdue'), (v) => v.remaining)), tone: 'destructive', hint: 'Unpaid supplier invoices past their due date.' },
+        { label: 'Other payables', unit: 'LKR', value: M0(d.totals.expensePayables + d.totals.commissionPayables + d.totals.payrollPayables), caption: 'Bills, commissions, wages — not filtered', hint: 'Unpaid expenses, confirmed commission and wages, company-wide. The supplier filters do not apply.' },
       ]} />
       <Card className="gap-0 py-0">
         <Table>
