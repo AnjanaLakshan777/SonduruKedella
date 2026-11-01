@@ -58,6 +58,7 @@ export function rangePresets(): { value: string; label: string; from: string; to
   return [
     { value: 'fy', label: `This financial year (${fyLabel(fy)})`, from: fy, to: monthEnd(addMonths(fyMonth, 11)) },
     { value: 'month', label: `This month (${monthLabel(month)})`, from: monthStart(month), to: monthEnd(month) },
+    { value: 'lastmonth', label: `Last month (${monthLabel(addMonths(month, -1))})`, from: monthStart(addMonths(month, -1)), to: monthEnd(addMonths(month, -1)) },
     { value: 'last3', label: 'Last 3 months', from: monthStart(addMonths(month, -2)), to: monthEnd(month) },
     ...quarters.filter((q) => q.from <= TODAY),
   ]

@@ -1793,3 +1793,18 @@ For each completed task, record the date, files or migrations changed, verificat
 - The invoice tiles, table and export follow the filters (before, the tiles always showed every invoice). "Other payables" (unpaid expenses, commission and wages) stays company-wide and says so.
 - New first tile "Total suppliers": every supplier on record, with how many have unpaid invoices in view underneath. The existing tiles moved one place right; there are now six.
 - `tsc -b` is clean. Not tried in a browser.
+
+### 2026-11-01: "Last month" in every period filter
+- The shared date-range presets (`rangePresets()` in `components/app/filters.tsx`) now include "Last month (<month>)" after "This month". Every period filter uses these presets, so the option appears on all of them: Revenue, Expenses and every report.
+- `tsc -b` is clean. Not tried in a browser.
+
+### 2026-11-01: Labour payments: an advance is no longer deducted twice
+- Found while checking labour outstanding: with two pay weeks not yet paid, the backend deducted the same advance in both. An advance from 20–21 Oct came off the 19–24 Oct week and again off the 26–31 Oct week (7,500).
+  - The Payroll page (backend figures) showed 29,500 for 26–31 Oct; the reports and dashboard (frontend `computePayroll`) showed 37,000.
+  - Total outstanding disagreed: 193,870 on the backend, 201,370 on the frontend.
+- Fix (`PayrollLedger.balancesAfterEarlierWeeks`): a live week's advance balance now also leaves out what the worker's earlier unpaid weeks deduct first, oldest week first, the same rule as the frontend. Frozen (paid) weeks still count through their recorded recoveries. `AdvanceBalance` carries the advance date so each week only uses advances given by its payday.
+  - Paying a later week first records only what was left for it.
+  - The employee's total outstanding advances (history screen) is unchanged.
+- Live after the fix: 26–31 Oct = 37,000 on both sides; open labour total 201,370 (20,000 + 144,370 + 37,000).
+- Test: new `PayrollApiIntegrationTest.anAdvanceIsDeductedOnceAcrossWeeksNotPaidYet` (three open weeks; 12,000 advance; 9,000 + 3,000 + 0, then paying the middle week first). Backend 674 tests pass. The dev backend was rebuilt. `DATABASE.md` payroll rule updated.
+- Not changed: the Labour report's default period is "This month". For November no pay week overlaps it, so it shows 0 outstanding until you pick October or a wider range.

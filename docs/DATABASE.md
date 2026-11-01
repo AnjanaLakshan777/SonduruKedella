@@ -608,7 +608,7 @@ The last of a pool therefore always takes exactly what is left. An emptied layer
 - `base_pay = payable_days × daily_wage`
 - `overtime_pay = Σ approved hours × hourly_rate`
 - `gross = base_pay + overtime_pay`
-- Advance deduction = the adjustment override, or else all outstanding advances given up to payday, but never more than gross.
+- Advance deduction = the adjustment override, or else all outstanding advances given up to payday, but never more than gross. "Outstanding" for a week not paid yet also leaves out what the worker's earlier unpaid weeks will deduct first (oldest week first), so two open weeks never deduct the same advance (fixed 2026-11-01).
 - `net = gross − advance deduction − other deduction`
 - Remaining = `net + Σ wage_delta − Σ payroll payments`. Corrections only exist on frozen weeks.
 

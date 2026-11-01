@@ -115,7 +115,7 @@ class PayrollLedger {
         Map<Long, PayrollAdjustment> adjustmentsByEmployee = adjustments.findByWeekStart(weekStart).stream()
                 .collect(Collectors.toMap(PayrollAdjustment::getEmployeeId, Function.identity()));
         Set<Long> open = ids.stream().filter(id -> !frozen.containsKey(id)).collect(Collectors.toSet());
-        Map<Long, List<AdvanceBalance>> balances = open.isEmpty() ? Map.of() : balances(open, payday);
+        Map<Long, List<AdvanceBalance>> balances = open.isEmpty() ? Map.of() : balancesAfterEarlierWeeks(open, weekStart);
         Map<Long, List<PayrollInputs.Day>> days = inputs.days().stream().collect(Collectors.groupingBy(PayrollInputs.Day::employeeId));
         Map<Long, List<PayrollInputs.Overtime>> ot = inputs.overtime().stream().collect(Collectors.groupingBy(PayrollInputs.Overtime::employeeId));
         Map<Long, FrozenParts> parts = frozenParts(frozen.values());
@@ -138,7 +138,7 @@ class PayrollLedger {
     private WorkerWeek live(EmployeeResponse employee, LocalDate weekStart, LocalDate payday, List<PayrollInputs.Day> days,
             List<PayrollInputs.Overtime> ot, PayrollAdjustment adjustment, List<AdvanceBalance> balances) {
         if (balances == null) {
-            balances = balances(List.of(employee.id()), payday).getOrDefault(employee.id(), List.of());
+            balances = balancesAfterEarlierWeeks(List.of(employee.id()), weekStart).getOrDefault(employee.id(), List.of());
         }
         BigDecimal outstanding = balances.stream().map(AdvanceBalance::outstanding).reduce(BigDecimal.ZERO, BigDecimal::add);
         Result r = PayrollCalculator.calculate(employee.dailyWage(),
@@ -166,10 +166,85 @@ class PayrollLedger {
         for (SalaryAdvance a : given) {
             BigDecimal left = a.getAmount().subtract(recovered.getOrDefault(a.getId(), BigDecimal.ZERO));
             if (left.signum() > 0) {
-                byEmployee.computeIfAbsent(a.getEmployeeId(), k -> new ArrayList<>()).add(new AdvanceBalance(a.getId(), left));
+                byEmployee.computeIfAbsent(a.getEmployeeId(), k -> new ArrayList<>()).add(new AdvanceBalance(a.getId(), a.getPaymentDate(), left));
             }
         }
         return byEmployee;
+    }
+
+    // What a live week may still deduct: the advances not yet recovered, less what the worker's earlier
+    // weeks that aren't paid yet will take first (oldest week first, as lib/finance.ts computePayroll does).
+    // Without this every unpaid week deducted the same advance again, so the open weeks added up to too little.
+    Map<Long, List<AdvanceBalance>> balancesAfterEarlierWeeks(Collection<Long> employeeIds, LocalDate weekStart) {
+        Map<Long, List<AdvanceBalance>> base = balances(employeeIds, payday(weekStart));
+        if (base.isEmpty()) {
+            return base;
+        }
+        // only weeks paid on or after the oldest open advance can deduct it
+        LocalDate oldest = base.values().stream().flatMap(List::stream).map(AdvanceBalance::date).min(Comparator.naturalOrder()).orElseThrow();
+        LocalDate from = oldest.with(DayOfWeek.MONDAY);
+        LocalDate lastEarlier = weekStart.minusWeeks(1);
+        if (from.isAfter(lastEarlier)) {
+            return base;
+        }
+        Set<Long> ids = base.keySet();
+        PayrollInputs inputs = attendance.payrollInputs(from, weekStart.minusDays(1), null);
+        Set<String> frozenWeeks = lines.findByWeekStartBetween(from, lastEarlier).stream()
+                .map(l -> l.getEmployeeId() + ":" + l.getWeekStart()).collect(Collectors.toSet());
+        Map<String, PayrollAdjustment> adjusted = adjustments.findByWeekStartBetweenOrderByWeekStartAscIdAsc(from, lastEarlier).stream()
+                .collect(Collectors.toMap(a -> a.getEmployeeId() + ":" + a.getWeekStart(), Function.identity(), (a, b) -> b));
+        Map<String, List<PayrollInputs.Day>> days = inputs.days().stream().filter(d -> ids.contains(d.employeeId()))
+                .collect(Collectors.groupingBy(d -> d.employeeId() + ":" + d.date().with(DayOfWeek.MONDAY)));
+        Map<String, List<PayrollInputs.Overtime>> ot = inputs.overtime().stream().filter(o -> ids.contains(o.employeeId()))
+                .collect(Collectors.groupingBy(o -> o.employeeId() + ":" + o.date().with(DayOfWeek.MONDAY)));
+        Map<Long, EmployeeResponse> people = employees.findAll(ids);
+
+        Map<Long, List<AdvanceBalance>> left = new LinkedHashMap<>();
+        base.forEach((id, list) -> left.put(id, new ArrayList<>(list)));
+        for (LocalDate ws = from; !ws.isAfter(lastEarlier); ws = ws.plusWeeks(1)) {
+            LocalDate wsPayday = payday(ws);
+            for (Long id : ids) {
+                String key = id + ":" + ws;
+                List<PayrollInputs.Day> d = days.getOrDefault(key, List.of());
+                List<PayrollInputs.Overtime> o = ot.getOrDefault(key, List.of());
+                // a frozen week already recorded its recoveries; a week with nothing in it deducts nothing
+                if (frozenWeeks.contains(key) || (d.isEmpty() && o.isEmpty())) {
+                    continue;
+                }
+                List<AdvanceBalance> mine = left.get(id);
+                BigDecimal usable = mine.stream().filter(b -> !b.date().isAfter(wsPayday))
+                        .map(AdvanceBalance::outstanding).reduce(BigDecimal.ZERO, BigDecimal::add);
+                if (usable.signum() <= 0) {
+                    continue;
+                }
+                PayrollAdjustment adj = adjusted.get(key);
+                Result r = PayrollCalculator.calculate(people.get(id).dailyWage(),
+                        d.stream().map(x -> new PayrollCalculator.Day(x.status(), x.projectId())).toList(),
+                        o.stream().map(x -> new PayrollCalculator.Overtime(x.hours(), x.hourlyRate(), x.approved(), x.projectId())).toList(),
+                        usable, adj == null ? null : adj.getAdvanceDeduction(), adj == null ? null : adj.getOtherDeduction());
+                left.put(id, consume(mine, r.advanceDeduction(), wsPayday));
+            }
+        }
+        left.values().removeIf(List::isEmpty);
+        return left;
+    }
+
+    // takes `amount` off the oldest advances usable by `payday`, dropping the ones used up
+    private static List<AdvanceBalance> consume(List<AdvanceBalance> balances, BigDecimal amount, LocalDate payday) {
+        List<AdvanceBalance> out = new ArrayList<>();
+        BigDecimal todo = amount;
+        for (AdvanceBalance b : balances) {
+            if (todo.signum() > 0 && !b.date().isAfter(payday)) {
+                BigDecimal take = todo.min(b.outstanding());
+                todo = todo.subtract(take);
+                if (b.outstanding().subtract(take).signum() > 0) {
+                    out.add(new AdvanceBalance(b.advanceId(), b.date(), b.outstanding().subtract(take)));
+                }
+            } else {
+                out.add(b);
+            }
+        }
+        return out;
     }
 
     private Map<Long, FrozenParts> frozenParts(Collection<PayrollLine> frozen) {
@@ -231,7 +306,7 @@ class PayrollLedger {
         return null;
     }
 
-    record AdvanceBalance(long advanceId, BigDecimal outstanding) {
+    record AdvanceBalance(long advanceId, LocalDate date, BigDecimal outstanding) {
     }
 
     private record FrozenParts(List<Cost> costs, List<PayrollCorrection> corrections, List<PayrollPayment> payments,

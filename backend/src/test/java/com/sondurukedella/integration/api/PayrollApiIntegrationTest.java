@@ -174,6 +174,27 @@ class PayrollApiIntegrationTest {
     }
 
     @Test
+    void anAdvanceIsDeductedOnceAcrossWeeksNotPaidYet() throws Exception {
+        advance(kamal, "2026-09-01", "12000");
+        threeDays(kamal, W1);   // 9,000
+        threeDays(kamal, W2);   // 9,000
+        threeDays(kamal, W3);   // 9,000
+
+        // nothing paid yet: the oldest week takes what it can, the next one the rest, none takes it twice
+        line(W1, kamal).andExpect(jsonPath("$.line.advanceDeduction").value(9000.0)).andExpect(jsonPath("$.line.netPay").value(0));
+        line(W2, kamal).andExpect(jsonPath("$.line.advancesOutstanding").value(3000.0))
+                .andExpect(jsonPath("$.line.advanceDeduction").value(3000.0)).andExpect(jsonPath("$.line.netPay").value(6000.0));
+        line(W3, kamal).andExpect(jsonPath("$.line.advanceDeduction").value(0)).andExpect(jsonPath("$.line.netPay").value(9000.0));
+        mockMvc.perform(get(URL + "/weeks").param("from", W1.toString()).param("to", W3.toString()))
+                .andExpect(jsonPath("$[*].remaining").value(Matchers.containsInAnyOrder(0.0, 6000.0, 9000.0)));
+
+        // paying the later week first records only what was left for it
+        pay(W2, kamal, "6000", UUID.randomUUID()).andExpect(status().isCreated());
+        line(W2, kamal).andExpect(jsonPath("$.recoveries[*].amount").value(Matchers.contains(3000.0)));
+        line(W1, kamal).andExpect(jsonPath("$.line.advanceDeduction").value(9000.0));
+    }
+
+    @Test
     void anAdvanceIsIdempotentAndOnlyForActiveWorkers() throws Exception {
         UUID requestId = UUID.randomUUID();
         long id = id(advanceWith(requestId, kamal, "2026-09-01", "2000").andExpect(status().isCreated()));
