@@ -1808,3 +1808,17 @@ For each completed task, record the date, files or migrations changed, verificat
 - Live after the fix: 26–31 Oct = 37,000 on both sides; open labour total 201,370 (20,000 + 144,370 + 37,000).
 - Test: new `PayrollApiIntegrationTest.anAdvanceIsDeductedOnceAcrossWeeksNotPaidYet` (three open weeks; 12,000 advance; 9,000 + 3,000 + 0, then paying the middle week first). Backend 674 tests pass. The dev backend was rebuilt. `DATABASE.md` payroll rule updated.
 - Not changed: the Labour report's default period is "This month". For November no pay week overlaps it, so it shows 0 outstanding until you pick October or a wider range.
+
+### 2026-11-01: Labour report reconciles for the chosen period
+- Owner check: base wages + OT − advances − paid for October (778,550 + 20,170 − 30,500 − 678,100) did not equal the outstanding amount.
+  - Wages and OT were counted by attendance date (1–31 Oct only).
+  - Paid and outstanding were counted by whole pay weeks overlapping the range, including the week 28 Sep–3 Oct.
+  - "Advances given" was cash handed over, not what was deducted.
+- Now every figure comes from the same pay weeks, those whose week end (payday) falls in the chosen period:
+  - the tiles: base wages, overtime, advances deducted (with advances given underneath), paid and outstanding;
+  - the per-worker table, which gains an Outstanding column and a totals row;
+  - the weekly table, which gains a totals row;
+  - the export.
+  - Base wages + OT − advances deducted − other deductions − paid = outstanding, always.
+- Live, October (weeks ending 3–31 Oct): 889,800 + 20,170 − 30,500 − 678,100 = 201,370, which matches outstanding. The week 28 Sep–3 Oct counts in October because it is paid in October.
+- `tsc -b` is clean and 41 Vitest tests pass. Not tried in a browser.
