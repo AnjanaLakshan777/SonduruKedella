@@ -77,27 +77,43 @@ export function IncomeReport() {
   const d = useData()
   const [range, setRange] = useState(defaultRange())
   const [cat, setCat] = useState(ALL)
+  const [proj, setProj] = useState(ALL)
+  // 'other' = other income, which belongs to no project
+  const forProject = (projectId?: string) => proj === ALL || (proj === 'other' ? !projectId : projectId === proj)
   const rows = useMemo(() => [
-    ...d.installments.filter((i) => i.inst.billed).map((i) => ({ date: i.inst.billedOn ?? i.inst.dueDate, category: i.project.type as string, project: i.project, amount: i.net - i.writtenOff, received: i.paid, remaining: i.remaining })),
-    ...d.otherIncome.map((o) => ({ date: o.income.date, category: 'Other Income', project: undefined, amount: o.income.amount, received: o.received, remaining: o.remaining })),
-  ].filter((r) => inRange(r.date, range) && (cat === ALL || r.category === cat)), [d, range, cat])
-  const received = useMemo(() => d.s.clientPayments.filter((p) => inRange(p.date, range)), [d, range])
+    ...d.installments.filter((i) => i.inst.billed).map((i) => ({ date: i.inst.billedOn ?? i.inst.dueDate, category: i.project.type as string, project: i.project, amount: i.net - i.writtenOff, received: i.paid, writtenOff: i.writtenOff, remaining: i.remaining })),
+    ...d.otherIncome.map((o) => ({ date: o.income.date, category: 'Other Income', project: undefined, amount: o.income.amount, received: o.received, writtenOff: 0, remaining: o.remaining })),
+  ].filter((r) => inRange(r.date, range) && (cat === ALL || r.category === cat) && forProject(r.project?.id)), [d, range, cat, proj])
+  const instProject = useMemo(() => new Map(d.installments.map((i) => [i.inst.id, i.project.id])), [d])
+  const received = d.s.clientPayments.filter((p) => inRange(p.date, range) && forProject(instProject.get(p.installmentId)))
+  const otherReceived = proj === ALL || proj === 'other' ? d.s.otherIncomeReceipts : []
+  // the pipeline still to bill; the date range doesn't apply, as on the Revenue page
+  const scheduled = d.installments.filter((i) => !i.inst.billed && i.project.status !== 'Cancelled' && (cat === ALL || i.project.type === cat) && proj !== 'other' && forProject(i.project.id))
   const byCat = d.s.settings.revenueCategories.map((c) => ({ c, v: sum(rows.filter((r) => r.category === c), (r) => r.amount), rec: sum(rows.filter((r) => r.category === c), (r) => r.received) }))
-  const byProject = d.projects.map((p) => ({ p, v: sum(rows.filter((r) => r.project?.id === p.project.id), (r) => r.amount), rec: sum(rows.filter((r) => r.project?.id === p.project.id), (r) => r.received) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v)
+  const byProject = d.projects.map((p) => {
+    const mine = rows.filter((r) => r.project?.id === p.project.id)
+    return { p, v: sum(mine, (r) => r.amount), rec: sum(mine, (r) => r.received), wo: sum(mine, (r) => r.writtenOff), rem: sum(mine, (r) => r.remaining) }
+  }).filter((x) => x.v > 0 || x.wo > 0).sort((a, b) => b.v - a.v)
   const months = monthsBetween(range.from.slice(0, 7), (range.to < TODAY ? range.to : TODAY).slice(0, 7)).map((k) => ({
-    label: monthLabel(k), recorded: sum(rows.filter((r) => monthKey(r.date) === k), (r) => r.amount), received: sum(received.filter((p) => monthKey(p.date) === k), (p) => p.amount) + sum(d.s.otherIncomeReceipts.filter((p) => monthKey(p.date) === k), (p) => p.amount),
+    label: monthLabel(k), recorded: sum(rows.filter((r) => monthKey(r.date) === k), (r) => r.amount), received: sum(received.filter((p) => monthKey(p.date) === k), (p) => p.amount) + sum(otherReceived.filter((p) => monthKey(p.date) === k), (p) => p.amount),
   }))
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <FilterBar><DateRangeFilter value={range} onChange={setRange} /><FilterSelect label="Categories" value={cat} onChange={setCat} options={d.s.settings.revenueCategories} /></FilterBar>
-        <ExportMenu subtitle={formatRange(range.from, range.to)} name="income-report" rows={() => [['Date', 'Category', 'Project', 'Revenue recorded, after write-offs (LKR)', 'Received (LKR)', 'Outstanding (LKR)'], ...rows.map((r) => [formatDate(r.date), r.category, r.project?.code ?? '', r.amount, r.received, r.remaining])]} />
+        <FilterBar>
+          <DateRangeFilter value={range} onChange={setRange} />
+          <FilterSelect label="Projects" value={proj} onChange={setProj} options={[{ value: 'other', label: 'Other income only' }, ...d.s.projects.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} />
+          <FilterSelect label="Categories" value={cat} onChange={setCat} options={d.s.settings.revenueCategories} />
+        </FilterBar>
+        <ExportMenu subtitle={formatRange(range.from, range.to)} name="income-report" rows={() => [['Date', 'Category', 'Project', 'Revenue recorded, after write-offs (LKR)', 'Received (LKR)', 'Written off (LKR)', 'Outstanding (LKR)'], ...rows.map((r) => [formatDate(r.date), r.category, r.project?.code ?? '', r.amount, r.received, r.writtenOff, r.remaining])]} />
       </div>
       <KpiStrip items={[
         { label: 'Revenue recorded', unit: 'LKR', value: M0(sum(rows, (r) => r.amount)), basis: 'Recorded', hint: 'Billed installments and other income in the range, less write-offs.' },
         { label: 'Received against it', unit: 'LKR', value: M0(sum(rows, (r) => r.received)), basis: 'Received', hint: 'Payments received against those records, whenever they came in.' },
+        { label: 'Written off', unit: 'LKR', value: M0(sum(rows, (r) => r.writtenOff)), caption: 'Bad debt — not received', hint: 'Amounts given up as bad debt on those records. Already taken off revenue recorded; never counted as money received.' },
         { label: 'Still outstanding', unit: 'LKR', value: M0(sum(rows, (r) => r.remaining)), hint: 'What is still unpaid on those records.' },
         { label: 'Cash received in period', unit: 'LKR', value: M0(sum(months, (m) => m.received)), caption: 'Includes payments for earlier billing', hint: 'Payments dated within the range, whichever period the revenue was recorded in.' },
+        { label: 'Scheduled, not billed', unit: 'LKR', value: M0(sum(scheduled, (i) => i.net)), basis: 'Expected', caption: `${scheduled.length} installments — not revenue yet`, hint: 'Installments on project schedules that are not billed yet (cancelled projects left out). Follows the project and category filters; the date filter does not apply.' },
       ]} />
       <Basis>Revenue is recorded when an installment is billed (net of any applied delay deduction), plus other income, less any amount written off as bad debt. Payments received are shown separately; an installment paid in several payments is counted as revenue once. Contract value is not revenue.</Basis>
       <div className="grid gap-6 xl:grid-cols-5">
@@ -119,8 +135,8 @@ export function IncomeReport() {
       <Card className="gap-4 pb-0">
         <CardHeader><CardTitle>Revenue by project</CardTitle></CardHeader>
         <Table>
-          <TableHeader><TableRow><TableHead className="pl-6">Project</TableHead><TableHead className="hidden md:table-cell">Type</TableHead><TableHead className="text-right">Recorded (LKR)</TableHead><TableHead className="text-right">Received (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
-          <TableBody>{byProject.map((x) => <TableRow key={x.p.project.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.project.name} code={x.p.project.code} /></TableCell><TableCell className="hidden md:table-cell">{x.p.project.type}</TableCell><TableCell className="text-right">{M0(x.v)}</TableCell><TableCell className="text-right">{M0(x.rec)}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(x.v - x.rec)}</TableCell></TableRow>)}</TableBody>
+          <TableHeader><TableRow><TableHead className="pl-6">Project</TableHead><TableHead className="hidden md:table-cell">Type</TableHead><TableHead className="text-right">Recorded (LKR)</TableHead><TableHead className="text-right">Received (LKR)</TableHead><TableHead className="text-right">Written off (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
+          <TableBody>{byProject.map((x) => <TableRow key={x.p.project.id}><TableCell className="max-w-80 pl-6"><CellMain title={x.p.project.name} code={x.p.project.code} /></TableCell><TableCell className="hidden md:table-cell">{x.p.project.type}</TableCell><TableCell className="text-right">{M0(x.v)}</TableCell><TableCell className="text-right">{M0(x.rec)}</TableCell><TableCell className="text-right">{x.wo ? M0(x.wo) : <span className="text-muted-foreground">—</span>}</TableCell><TableCell className="pr-6 text-right font-medium">{M0(x.rem)}</TableCell></TableRow>)}</TableBody>
         </Table>
       </Card>
     </>

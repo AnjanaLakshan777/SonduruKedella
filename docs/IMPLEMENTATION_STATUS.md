@@ -1718,3 +1718,19 @@ For each completed task, record the date, files or migrations changed, verificat
 - The cash basis stays on the Dashboard and the Project page, which keep their toggles. `ProjectFinance.cash` and the cash ledger are unchanged.
 - Reports page description: dropped the line about accrual and cash.
 - `tsc -b` is clean and 37 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-01: Income report: project filter and write-offs
+- New "Projects" filter on the Income report, like the Expense report. Choose one project, or "Other income only" (other income has no project).
+  - The filter applies to the tiles, both tables, the export and the monthly chart.
+  - In the chart, a project's client payments are matched through their installment, and other income receipts count only for "All" or "Other income only".
+- Write-offs are now shown:
+  - a new "Written off" tile (bad debt on the records in view, already taken off revenue recorded and never counted as received);
+  - a "Written off" column in Revenue by project;
+  - a "Written off (LKR)" column in the export.
+- No figure changed meaning. Revenue recorded is still net of write-offs, and Outstanding is still billed − received − written off.
+- `tsc -b` is clean and 37 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-01: Revenue page net of write-offs; Income report shows what's still to bill
+- Revenue page: the "Revenue Recorded" tile now subtracts write-offs (it showed billed amounts before write-offs). When something is written off, it says "After N written off" underneath. The table rows still show each record's billed amount.
+- Income report: a sixth tile, "Scheduled, not billed", follows "Cash received in period". It shows unbilled installments on non-cancelled projects and follows the project and category filters, but not the date range, as on the Revenue page. It shows 0 for "Other income only".
+- `tsc -b` is clean. Not tried in a browser.
