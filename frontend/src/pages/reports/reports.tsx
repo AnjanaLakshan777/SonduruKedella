@@ -427,8 +427,9 @@ export function LabourReport() {
   const [week, setWeek] = useState(ALL)
   // every figure comes from the same pay weeks: Monday to Sunday weeks whose Sunday falls in the period, so
   // wages + overtime − advances − other deductions − paid always equals what is still outstanding
-  // picking one pay week overrides the period
-  const weeks = (week === ALL ? d.payroll.filter((w) => inRange(addDays(w.weekStart, 6), range)) : d.payroll.filter((w) => w.weekStart === week)).slice().reverse()
+  // the weeks of the period; the Weeks filter only offers these, and narrows to one of them
+  const periodWeeks = d.payroll.filter((w) => inRange(addDays(w.weekStart, 6), range)).slice().reverse()
+  const weeks = week === ALL ? periodWeeks : periodWeeks.filter((w) => w.weekStart === week)
   const lines = weeks.flatMap((w) => w.lines)
   const emps = d.s.employees.map((e) => {
     const l = lines.filter((x) => x.employee.id === e.id)
@@ -446,7 +447,7 @@ export function LabourReport() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <FilterBar>
           <DateRangeFilter value={range} onChange={(r) => { setRange(r); setWeek(ALL) }} />
-          <FilterSelect label="Weeks" value={week} onChange={setWeek} options={d.payroll.slice().reverse().map((w) => ({ value: w.weekStart, label: formatRange(w.weekStart, addDays(w.weekStart, 6)) }))} />
+          <FilterSelect label="Weeks" value={week} onChange={setWeek} options={periodWeeks.map((w) => ({ value: w.weekStart, label: formatRange(w.weekStart, addDays(w.weekStart, 6)) }))} />
         </FilterBar>
         <ExportMenu subtitle={week === ALL ? `Pay weeks ending ${formatRange(range.from, range.to)}` : `Pay week ${span}`} name="labour-payments" rows={() => [['Worker', 'Present', 'Half days', 'Absent', 'Days', 'Base wages', 'OT hours', 'OT pay', 'Advances deducted', 'Other deductions', 'Paid', 'Outstanding'], ...emps.map((x) => [x.e.name, x.p, x.h, x.ab, x.days, x.wages, x.otH, x.otPay, x.adv, x.other, x.paid, x.owed])]} />
       </div>

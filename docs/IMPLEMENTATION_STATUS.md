@@ -1823,7 +1823,7 @@ For each completed task, record the date, files or migrations changed, verificat
 - Live, October (weeks ending 3–31 Oct): 889,800 + 20,170 − 30,500 − 678,100 = 201,370, which matches outstanding. The week 28 Sep–3 Oct counts in October because it is paid in October.
 - `tsc -b` is clean and 41 Vitest tests pass. Not tried in a browser.
 - Follow-up: new first tile "Total labourers" (every worker on record, with how many worked in the weeks shown and how many are active underneath). The other five tiles moved one place right.
-- A "Weeks" filter picks a single pay week and overrides the period. Changing the period clears it. The week choice drives the tiles, tables and export.
+- A "Weeks" filter picks a single pay week. It only lists the weeks of the chosen period (Sunday inside it), so a week from another month can't be combined with it. Changing the period clears it. The week choice drives the tiles, tables and export.
 
 ### 2026-11-01: Pay weeks shown Monday to Sunday
 - Owner rule: a week starts on Monday and ends on Sunday. The screens showed weeks as Monday to payday (e.g. "26–31 Oct", a Saturday).
