@@ -20,7 +20,7 @@ import { PaymentDialog } from '@/components/app/payment-dialog'
 import { VoidDialog } from '@/components/app/void-dialog'
 import { useShallow } from 'zustand/react/shallow'
 import { useData, useStore } from '@/store/store'
-import { formatDate, formatRange, TODAY } from '@/lib/dates'
+import { addDays, formatDate, formatRange, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { apiGet, errorMessage } from '@/lib/api'
 
@@ -146,12 +146,12 @@ export function PayrollView() {
     <>
       <Card className="gap-4">
         <CardHeader>
-          <CardTitle>Week {formatRange(nav.weekStart, nav.weekEnd)}</CardTitle>
+          <CardTitle>Week {formatRange(nav.weekStart, addDays(nav.weekStart, 6))}</CardTitle>
           <CardDescription>{w?.payable ? `Payday ${formatDate(w.weekEnd)}` : 'Current week — attendance still being recorded; figures update daily'}</CardDescription>
           <CardAction className="flex items-center gap-2">
             {weekStatus && <StatusBadge status={weekStatus} />}
             <Button variant="outline" size="icon" className="size-8" aria-label="Previous week" disabled={idx === 0} onClick={() => setIdx(idx - 1)}><ChevronLeft /></Button>
-            <SelectField size="sm" value={String(idx)} onChange={(v) => setIdx(Number(v))} className="w-48" options={weeks.map((x, i) => ({ value: String(i), label: formatRange(x.weekStart, x.weekEnd) })).reverse()} />
+            <SelectField size="sm" value={String(idx)} onChange={(v) => setIdx(Number(v))} className="w-48" options={weeks.map((x, i) => ({ value: String(i), label: formatRange(x.weekStart, addDays(x.weekStart, 6)) })).reverse()} />
             <Button variant="outline" size="icon" className="size-8" aria-label="Next week" disabled={idx >= weeks.length - 1} onClick={() => setIdx(idx + 1)}><ChevronRight /></Button>
           </CardAction>
         </CardHeader>
@@ -250,12 +250,12 @@ export function PayrollView() {
         </>
       )}
 
-      <LineSheet weekStart={nav.weekStart} weekEnd={nav.weekEnd} line={inspect} onClose={() => setInspectId(undefined)} payable={!!w?.payable}
+      <LineSheet weekStart={nav.weekStart} line={inspect} onClose={() => setInspectId(undefined)} payable={!!w?.payable}
         onPay={setPayFor} onAdjust={setAdjFor} onCorrect={setCorrectFor} onClosed={close} />
 
       <PaymentDialog
         open={!!payFor} onOpenChange={(o) => !o && setPayFor(undefined)} direction="out" successTitle="Wages paid" allowNotes={false}
-        title={`Pay ${payFor?.name ?? ''}`} description={`Week ${formatRange(nav.weekStart, nav.weekEnd)}`}
+        title={`Pay ${payFor?.name ?? ''}`} description={`Week ${formatRange(nav.weekStart, addDays(nav.weekStart, 6))}`}
         context={payFor ? [{ label: 'Net payable', value: payFor.owed }, { kind: 'less', label: 'Already paid', value: payFor.paid }, { kind: 'total', label: 'Remaining', value: payFor.remaining }] : undefined}
         outstanding={payFor?.remaining ?? 0}
         onSubmit={(p) => (payFor ? recordPayrollPayments([{ weekStart: nav.weekStart, employeeId: payFor.employeeId, ...p }]) : undefined)}
@@ -266,7 +266,7 @@ export function PayrollView() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Pay {formatLKR(unpaid.reduce((t, l) => t + l.remaining, 0))} to {unpaid.length} workers?</AlertDialogTitle>
-            <AlertDialogDescription>Records the remaining net pay for the week {formatRange(nav.weekStart, nav.weekEnd)}. Each worker's week is frozen at its first payment.</AlertDialogDescription>
+            <AlertDialogDescription>Records the remaining net pay for the week {formatRange(nav.weekStart, addDays(nav.weekStart, 6))}. Each worker's week is frozen at its first payment.</AlertDialogDescription>
           </AlertDialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Payment date"><DatePicker value={payDate} onChange={setPayDate} /></Field>
@@ -289,8 +289,8 @@ export function PayrollView() {
   )
 }
 
-function LineSheet({ weekStart, weekEnd, line, payable, onClose, onPay, onAdjust, onCorrect, onClosed }: {
-  weekStart: string; weekEnd: string; line?: Line; payable: boolean; onClose: () => void
+function LineSheet({ weekStart, line, payable, onClose, onPay, onAdjust, onCorrect, onClosed }: {
+  weekStart: string; line?: Line; payable: boolean; onClose: () => void
   onPay: (l: Line) => void; onAdjust: (l: Line) => void; onCorrect: (l: Line) => void; onClosed: (l: Line) => void
 }) {
   const d = useData()
@@ -305,7 +305,7 @@ function LineSheet({ weekStart, weekEnd, line, payable, onClose, onPay, onAdjust
           <>
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">{line.name}{line.frozen && <StatusBadge status="Frozen" />}</SheetTitle>
-              <SheetDescription>Week {formatRange(weekStart, weekEnd)} · {line.role}</SheetDescription>
+              <SheetDescription>Week {formatRange(weekStart, addDays(weekStart, 6))} · {line.role}</SheetDescription>
             </SheetHeader>
             <div className="grid gap-5 px-6 pb-6">
               <FigureList rows={[

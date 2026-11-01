@@ -17,7 +17,7 @@ import { ageingBuckets } from '@/components/app/receivables-table'
 import { BasisToggle, useBasis } from '@/components/app/basis-toggle'
 import { useData, useStore } from '@/store/store'
 import { previousPeriod, projectPeriodFigures, sum } from '@/lib/finance'
-import { formatDate, formatRange, monthEnd, monthKey, monthLabel, monthsBetween, monthStart, TODAY } from '@/lib/dates'
+import { addDays, formatDate, formatRange, monthEnd, monthKey, monthLabel, monthsBetween, monthStart, TODAY } from '@/lib/dates'
 import { formatLKR, revenueAfterNote } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { downloadPdf, downloadXlsx } from '@/lib/export'
@@ -424,9 +424,11 @@ export function PayablesReport() {
 export function LabourReport() {
   const d = useData()
   const [range, setRange] = useState(() => ({ from: monthStart(TODAY.slice(0, 7)), to: monthEnd(TODAY.slice(0, 7)), preset: 'month' }))
-  // every figure comes from the same pay weeks: those whose week ends (payday) inside the period, so
+  const [week, setWeek] = useState(ALL)
+  // every figure comes from the same pay weeks: Monday to Sunday weeks whose Sunday falls in the period, so
   // wages + overtime − advances − other deductions − paid always equals what is still outstanding
-  const weeks = d.payroll.filter((w) => inRange(w.weekEnd, range)).slice().reverse()
+  // picking one pay week overrides the period
+  const weeks = (week === ALL ? d.payroll.filter((w) => inRange(addDays(w.weekStart, 6), range)) : d.payroll.filter((w) => w.weekStart === week)).slice().reverse()
   const lines = weeks.flatMap((w) => w.lines)
   const emps = d.s.employees.map((e) => {
     const l = lines.filter((x) => x.employee.id === e.id)
@@ -438,15 +440,19 @@ export function LabourReport() {
   }).filter((x) => x.p + x.h + x.ab + x.wages + x.otPay > 0)
   const given = d.s.advances.filter((a) => inRange(a.date, range))
   const other = sum(weeks, (w) => w.other)
-  const span = weeks.length ? formatRange(weeks[weeks.length - 1].weekStart, weeks[0].weekEnd) : 'no pay weeks'
+  const span = weeks.length ? formatRange(weeks[weeks.length - 1].weekStart, addDays(weeks[0].weekStart, 6)) : 'no pay weeks'
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <DateRangeFilter value={range} onChange={setRange} />
-        <ExportMenu subtitle={`Pay weeks ending ${formatRange(range.from, range.to)}`} name="labour-payments" rows={() => [['Worker', 'Present', 'Half days', 'Absent', 'Days', 'Base wages', 'OT hours', 'OT pay', 'Advances deducted', 'Other deductions', 'Paid', 'Outstanding'], ...emps.map((x) => [x.e.name, x.p, x.h, x.ab, x.days, x.wages, x.otH, x.otPay, x.adv, x.other, x.paid, x.owed])]} />
+        <FilterBar>
+          <DateRangeFilter value={range} onChange={(r) => { setRange(r); setWeek(ALL) }} />
+          <FilterSelect label="Weeks" value={week} onChange={setWeek} options={d.payroll.slice().reverse().map((w) => ({ value: w.weekStart, label: formatRange(w.weekStart, addDays(w.weekStart, 6)) }))} />
+        </FilterBar>
+        <ExportMenu subtitle={week === ALL ? `Pay weeks ending ${formatRange(range.from, range.to)}` : `Pay week ${span}`} name="labour-payments" rows={() => [['Worker', 'Present', 'Half days', 'Absent', 'Days', 'Base wages', 'OT hours', 'OT pay', 'Advances deducted', 'Other deductions', 'Paid', 'Outstanding'], ...emps.map((x) => [x.e.name, x.p, x.h, x.ab, x.days, x.wages, x.otH, x.otPay, x.adv, x.other, x.paid, x.owed])]} />
       </div>
       <KpiStrip items={[
-        { label: 'Base wages', unit: 'LKR', value: M0(sum(emps, (x) => x.wages)), basis: 'Recorded', caption: `${sum(emps, (x) => x.days)} worker-days`, hint: 'Days worked × daily rate in the pay weeks that end in the period (a week belongs to the period its payday falls in).' },
+        { label: 'Total labourers', value: d.s.employees.length, caption: `${emps.filter((x) => x.p + x.h > 0).length} worked in ${weeks.length === 1 ? 'this week' : 'these weeks'} · ${d.s.employees.filter((e) => e.status === 'Active').length} active`, hint: 'Every worker on record. Underneath: how many worked in the pay weeks shown, and how many are active.' },
+        { label: 'Base wages', unit: 'LKR', value: M0(sum(emps, (x) => x.wages)), basis: 'Recorded', caption: `${sum(emps, (x) => x.days)} worker-days`, hint: 'Days worked × daily rate in the pay weeks of the period. A week runs Monday to Sunday and belongs to the period its Sunday falls in.' },
         { label: 'Overtime', unit: 'LKR', value: M0(sum(emps, (x) => x.otPay)), caption: `${sum(emps, (x) => x.otH)} approved hours`, hint: 'Pay for approved overtime in those pay weeks.' },
         { label: 'Advances deducted', unit: 'LKR', value: M0(sum(emps, (x) => x.adv)), caption: `${formatLKR(sum(given, (a) => a.amount), { decimals: 0, currency: false })} given in the period`, hint: 'Advances taken off pay in those weeks. Already paid out when given, so not a new cost. Underneath: advances handed over during the period.' },
         { label: 'Payroll paid', unit: 'LKR', value: M0(sum(weeks, (w) => w.paid)), caption: `${weeks.length} pay weeks · ${span}`, hint: 'Wage payments made for those pay weeks.' },
@@ -455,16 +461,16 @@ export function LabourReport() {
       <Card className="gap-4 pb-0">
         <CardHeader><CardTitle>Attendance summary</CardTitle><CardDescription>Pay weeks {span}</CardDescription></CardHeader>
         <Table>
-          <TableHeader><TableRow><TableHead className="pl-6">Worker</TableHead><TableHead className="text-right">Present</TableHead><TableHead className="text-right">Half</TableHead><TableHead className="text-right">Absent</TableHead><TableHead className="text-right">Base wages (LKR)</TableHead><TableHead className="hidden text-right md:table-cell">OT hrs</TableHead><TableHead className="hidden text-right md:table-cell">OT pay (LKR)</TableHead><TableHead className="text-right">Advances (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
-          <TableBody>{emps.map((x) => <TableRow key={x.e.id}><TableCell className="pl-6"><CellMain title={x.e.name} sub={x.e.role} /></TableCell><TableCell className="tabular text-right">{x.p}</TableCell><TableCell className="tabular text-right">{x.h}</TableCell><TableCell className="tabular text-right">{x.ab}</TableCell><TableCell className="text-right">{M0(x.wages)}</TableCell><TableCell className="tabular hidden text-right md:table-cell">{x.otH || '—'}</TableCell><TableCell className="hidden text-right md:table-cell">{x.otPay ? M0(x.otPay) : '—'}</TableCell><TableCell className="text-right">{x.adv ? <Money value={-x.adv} decimals={0} currency={false} /> : '—'}</TableCell><TableCell className="pr-6 text-right font-medium">{x.owed ? M0(x.owed) : '—'}</TableCell></TableRow>)}</TableBody>
-          <TableFooter><TableRow><TableCell className="pl-6">Total</TableCell><TableCell className="tabular text-right">{sum(emps, (x) => x.p)}</TableCell><TableCell className="tabular text-right">{sum(emps, (x) => x.h)}</TableCell><TableCell className="tabular text-right">{sum(emps, (x) => x.ab)}</TableCell><TableCell className="text-right">{M0(sum(emps, (x) => x.wages))}</TableCell><TableCell className="tabular hidden text-right md:table-cell">{sum(emps, (x) => x.otH)}</TableCell><TableCell className="hidden text-right md:table-cell">{M0(sum(emps, (x) => x.otPay))}</TableCell><TableCell className="text-right"><Money value={-sum(emps, (x) => x.adv)} decimals={0} currency={false} /></TableCell><TableCell className="pr-6 text-right">{M0(sum(emps, (x) => x.owed))}</TableCell></TableRow></TableFooter>
+          <TableHeader><TableRow><TableHead className="pl-6">Worker</TableHead><TableHead className="text-right">Present</TableHead><TableHead className="text-right">Half</TableHead><TableHead className="text-right">Absent</TableHead><TableHead className="text-right">Base wages (LKR)</TableHead><TableHead className="hidden text-right md:table-cell">OT hrs</TableHead><TableHead className="hidden text-right md:table-cell">OT pay (LKR)</TableHead><TableHead className="text-right">Advances (LKR)</TableHead><TableHead className="text-right">Paid (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
+          <TableBody>{emps.map((x) => <TableRow key={x.e.id}><TableCell className="pl-6"><CellMain title={x.e.name} sub={x.e.role} /></TableCell><TableCell className="tabular text-right">{x.p}</TableCell><TableCell className="tabular text-right">{x.h}</TableCell><TableCell className="tabular text-right">{x.ab}</TableCell><TableCell className="text-right">{M0(x.wages)}</TableCell><TableCell className="tabular hidden text-right md:table-cell">{x.otH || '—'}</TableCell><TableCell className="hidden text-right md:table-cell">{x.otPay ? M0(x.otPay) : '—'}</TableCell><TableCell className="text-right">{x.adv ? <Money value={-x.adv} decimals={0} currency={false} /> : '—'}</TableCell><TableCell className="text-right">{x.paid ? M0(x.paid) : '—'}</TableCell><TableCell className="pr-6 text-right font-medium">{x.owed ? M0(x.owed) : '—'}</TableCell></TableRow>)}</TableBody>
+          <TableFooter><TableRow><TableCell className="pl-6">Total</TableCell><TableCell className="tabular text-right">{sum(emps, (x) => x.p)}</TableCell><TableCell className="tabular text-right">{sum(emps, (x) => x.h)}</TableCell><TableCell className="tabular text-right">{sum(emps, (x) => x.ab)}</TableCell><TableCell className="text-right">{M0(sum(emps, (x) => x.wages))}</TableCell><TableCell className="tabular hidden text-right md:table-cell">{sum(emps, (x) => x.otH)}</TableCell><TableCell className="hidden text-right md:table-cell">{M0(sum(emps, (x) => x.otPay))}</TableCell><TableCell className="text-right"><Money value={-sum(emps, (x) => x.adv)} decimals={0} currency={false} /></TableCell><TableCell className="text-right">{M0(sum(emps, (x) => x.paid))}</TableCell><TableCell className="pr-6 text-right">{M0(sum(emps, (x) => x.owed))}</TableCell></TableRow></TableFooter>
         </Table>
       </Card>
       <Card className="gap-4 pb-0">
         <CardHeader><CardTitle>Weekly payroll</CardTitle></CardHeader>
         <Table>
           <TableHeader><TableRow><TableHead className="pl-6">Week</TableHead><TableHead className="text-right">Gross (LKR)</TableHead><TableHead className="text-right">Advances (LKR)</TableHead><TableHead className="text-right">Net (LKR)</TableHead><TableHead className="text-right">Paid (LKR)</TableHead><TableHead className="text-right">Outstanding (LKR)</TableHead><TableHead className="pr-6">Status</TableHead></TableRow></TableHeader>
-          <TableBody>{weeks.map((w) => <TableRow key={w.weekStart}><TableCell className="pl-6">{formatRange(w.weekStart, w.weekEnd)}</TableCell><TableCell className="text-right">{M0(w.gross)}</TableCell><TableCell className="text-right">{w.advances ? <Money value={-w.advances} decimals={0} currency={false} /> : '—'}</TableCell><TableCell className="text-right">{M0(w.net)}</TableCell><TableCell className="text-right">{M0(w.paid)}</TableCell><TableCell className="text-right font-medium">{M0(w.remaining)}</TableCell><TableCell className="pr-6"><StatusBadge status={w.status} /></TableCell></TableRow>)}</TableBody>
+          <TableBody>{weeks.map((w) => <TableRow key={w.weekStart}><TableCell className="pl-6">{formatRange(w.weekStart, addDays(w.weekStart, 6))}</TableCell><TableCell className="text-right">{M0(w.gross)}</TableCell><TableCell className="text-right">{w.advances ? <Money value={-w.advances} decimals={0} currency={false} /> : '—'}</TableCell><TableCell className="text-right">{M0(w.net)}</TableCell><TableCell className="text-right">{M0(w.paid)}</TableCell><TableCell className="text-right font-medium">{M0(w.remaining)}</TableCell><TableCell className="pr-6"><StatusBadge status={w.status} /></TableCell></TableRow>)}</TableBody>
           <TableFooter><TableRow><TableCell className="pl-6">Total ({weeks.length})</TableCell><TableCell className="text-right">{M0(sum(weeks, (w) => w.gross))}</TableCell><TableCell className="text-right"><Money value={-sum(weeks, (w) => w.advances)} decimals={0} currency={false} /></TableCell><TableCell className="text-right">{M0(sum(weeks, (w) => w.net))}</TableCell><TableCell className="text-right">{M0(sum(weeks, (w) => w.paid))}</TableCell><TableCell className="text-right">{M0(sum(weeks, (w) => w.remaining))}</TableCell><TableCell /></TableRow></TableFooter>
         </Table>
       </Card>

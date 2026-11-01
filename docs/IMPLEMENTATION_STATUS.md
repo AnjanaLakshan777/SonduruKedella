@@ -1822,3 +1822,13 @@ For each completed task, record the date, files or migrations changed, verificat
   - Base wages + OT − advances deducted − other deductions − paid = outstanding, always.
 - Live, October (weeks ending 3–31 Oct): 889,800 + 20,170 − 30,500 − 678,100 = 201,370, which matches outstanding. The week 28 Sep–3 Oct counts in October because it is paid in October.
 - `tsc -b` is clean and 41 Vitest tests pass. Not tried in a browser.
+- Follow-up: new first tile "Total labourers" (every worker on record, with how many worked in the weeks shown and how many are active underneath). The other five tiles moved one place right.
+- A "Weeks" filter picks a single pay week and overrides the period. Changing the period clears it. The week choice drives the tiles, tables and export.
+
+### 2026-11-01: Pay weeks shown Monday to Sunday
+- Owner rule: a week starts on Monday and ends on Sunday. The screens showed weeks as Monday to payday (e.g. "26–31 Oct", a Saturday).
+- The Payroll page (week title, week picker, pay dialog, worker sheet) and the Labour report (week filter, tables, ranges) now show Monday to Sunday (e.g. "26 Oct – 1 Nov"). The Payroll page still names the payday ("Payday 31 Oct").
+- Labour report: a week now belongs to the period its Sunday falls in. The week 26 Oct–1 Nov moves from October to November. October outstanding is now 164,370, and November shows that week's 37,000.
+- Payroll calculation and the backend are unchanged; the payday still decides when a week can be paid.
+- `tsc -b` is clean and 41 Vitest tests pass. Not tried in a browser.
+- Follow-up: the Labour report's worker table has a Paid column (with total) before Outstanding. Each row now reads base wages + OT − advances − paid = outstanding.
