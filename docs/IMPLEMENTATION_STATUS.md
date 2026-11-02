@@ -1846,3 +1846,9 @@ For each completed task, record the date, files or migrations changed, verificat
 - Follow-up: paying while recording an invoice already worked through "Amount paid now" in the Payment card. A "Pay full amount (LKR N)" button now fills in the invoice total in one click. It shows while the amount differs from the total.
 - Fix: switching a line to another material now replaces the description, unit and unit price with the new material's (its default cost, or empty if it has none). Before, values from the first pick stayed. The quantity stays.
 - New and cleared lines start with no unit (placeholder "Unit"). The unit is now required with the description, quantity and price.
+
+### 2026-11-02: Stock movement: what each type is for, and add a material while receiving
+- The Stock movement dialog shows a one-line note under the Movement choice for the type selected (Issue to project, Return from project, Stock received, Adjustment).
+- With **Stock received** selected, the Material menu ends with **"+ Add new material…"**. It opens the shared Add material dialog; the new material is then selected, and its default cost fills the unit cost. Other movement types don't offer it, since a new material has no stock to issue, return or adjust.
+- `tsc -b` is clean; 41 Vitest tests pass. Not tried in a browser.
+- Follow-up: Issue, Return and Stock received have an optional **Description** box. It is saved in the movement's existing `notes` column (the backend already accepted it), and shows in the movement history next to the project or invoice. Adjustments keep their required Reason, which uses the same column. Frontend only; `tsc -b` clean, 41 Vitest tests pass. Not tried in a browser.

@@ -160,7 +160,7 @@ function MovementsTable({ moves, compact }: { moves: StockMovement[]; compact?: 
               <TableCell className="pl-6">{formatDate(m.date)}</TableCell>
               {!compact && <TableCell><CellMain title={mat.name} code={mat.sku} /></TableCell>}
               <TableCell className="max-w-72">
-                <CellMain title={movementTitle(m, p?.code)} sub={m.type === 'Issued' || m.type === 'Returned' ? p?.name : m.type === 'Received' ? `Invoice ${m.reference ?? ''}` : m.reason} />
+                <CellMain title={movementTitle(m, p?.code)} sub={m.type === 'Adjustment' ? m.reason : [m.type === 'Received' ? `Invoice ${m.reference ?? ''}` : p?.name, m.reason].filter(Boolean).join(' · ')} />
               </TableCell>
               <TableCell className={cn('tabular text-right font-medium', m.qty < 0 && 'text-muted-foreground')}>{m.qty > 0 ? '+' : m.qty < 0 ? '−' : ''}{formatQty(Math.abs(m.qty), mat.unit)}</TableCell>
               <TableCell className="pr-6 text-right">
@@ -206,6 +206,16 @@ function LayersTable({ view }: { view: MaterialView }) {
   )
 }
 
+// shown under the movement choice so it's clear when each one is the right pick
+const MOVEMENT_HELP: Record<MovementType, string> = {
+  Issued: 'Material taken from the store to a site. Its FIFO cost becomes a cost of that project.',
+  Returned: 'Unused material coming back from a site. The project gets the cost back.',
+  Received: 'Opening stock, or a small cash purchase with no supplier invoice. Adds stock and value only: no project cost, no supplier payable.',
+  Adjustment: 'Fixes the count when it doesn\'t match: lost, damaged or found stock. Needs a reason.',
+}
+// material menu entry that opens Add material instead of picking one
+const NEW_MATERIAL = '__new'
+
 function MovementDialog({ state, onClose }: { state: { open: boolean; materialId?: string; type?: MovementType }; onClose: () => void }) {
   const d = useData()
   const addStockMovement = useStore((s) => s.addStockMovement)
@@ -219,10 +229,12 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
   const [issueId, setIssueId] = useState('')
   const [reason, setReason] = useState('')
   const [reference, setReference] = useState('')
+  const [notes, setNotes] = useState('')
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
-  useEffect(() => { if (state.open) { setRequestId(crypto.randomUUID()); setType(state.type ?? 'Issued'); setMaterialId(state.materialId ?? ''); setDate(TODAY); setQty(''); setDirection('remove'); setProjectId(''); setIssueId(''); setReason(''); setReference(''); setTried(false) } }, [state])
+  const [newOpen, setNewOpen] = useState(false)
+  useEffect(() => { if (state.open) { setRequestId(crypto.randomUUID()); setType(state.type ?? 'Issued'); setMaterialId(state.materialId ?? ''); setDate(TODAY); setQty(''); setDirection('remove'); setProjectId(''); setIssueId(''); setReason(''); setReference(''); setNotes(''); setTried(false) } }, [state])
   const mv = d.materials.find((m) => m.material.id === materialId)
   // the default unit cost only pre-fills a purchase; found stock (an increase) needs its cost stated
   useEffect(() => { setCost(type === 'Received' ? mv?.material.unitCost ?? '' : '') }, [mv?.material.unitCost, type])
@@ -255,6 +267,8 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
         projectId: type === 'Issued' ? projectId : type === 'Returned' ? issue?.movement.projectId : undefined,
         returnedFromId: type === 'Returned' ? issueId : undefined,
         reason: reason || undefined, reference: reference || undefined,
+        // adjustments carry their reason instead
+        notes: type !== 'Adjustment' ? notes.trim() || undefined : undefined,
       })
     } catch (e) {
       toast.error('Movement not saved', { description: errorMessage(e) })
@@ -282,9 +296,12 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
                 <Label key={t} className="has-[[data-state=checked]]:border-primary-text has-[[data-state=checked]]:bg-primary-soft/60 flex cursor-pointer items-center gap-2.5 rounded-md border p-2.5 font-normal"><RadioGroupItem value={t} />{t === 'Issued' ? 'Issue to project' : t === 'Returned' ? 'Return from project' : t === 'Received' ? 'Stock received' : 'Adjustment'}</Label>
               ))}
             </RadioGroup>
+            <p className="text-muted-foreground flex gap-2 text-xs"><Info className="size-3.5 shrink-0" />{MOVEMENT_HELP[type]}</p>
           </Field>
           <Field label="Material" required error={tried ? err.material : undefined} className="sm:col-span-2" hint={mv ? `${formatQty(mv.qty, mv.material.unit)} in stock · ${formatLKR(mv.value)} FIFO value` : undefined}>
-            <SelectField value={materialId} onChange={setMaterialId} invalid={tried && !!err.material} placeholder="Select material" options={d.materials.map((m) => ({ value: m.material.id, label: `${m.material.sku} · ${m.material.name}` }))} />
+            <SelectField value={materialId} onChange={(v) => (v === NEW_MATERIAL ? setNewOpen(true) : setMaterialId(v))} invalid={tried && !!err.material} placeholder="Select material"
+              // a brand-new item can only come in as stock received; it has nothing to issue, return or adjust yet
+              options={[...d.materials.map((m) => ({ value: m.material.id, label: `${m.material.sku} · ${m.material.name}` })), ...(type === 'Received' ? [{ value: NEW_MATERIAL, label: '+ Add new material…' }] : [])]} />
           </Field>
           {type === 'Issued' && <Field label="Project" required error={tried ? err.project : undefined} className="sm:col-span-2"><SelectField value={projectId} onChange={setProjectId} invalid={tried && !!err.project} placeholder="Select project" options={d.s.projects.filter((p) => p.type === 'Construction' && (p.status === 'In Progress' || p.status === 'On Hold' || p.status === 'Planning')).map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))} /></Field>}
           {type === 'Returned' && (
@@ -303,12 +320,15 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
           {(type === 'Received' || adding) && <Field label="Unit cost" required error={tried ? err.cost : undefined} hint={adding ? 'Becomes a new FIFO cost layer.' : undefined}><AmountInput value={cost} onChange={setCost} invalid={tried && !!err.cost} /></Field>}
           {type === 'Adjustment' && <Field label="Reason" required error={tried ? err.reason : undefined} className="sm:col-span-2"><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Monthly count — 4 bags hardened" /></Field>}
           <Field label="Reference" optional><Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={type === 'Issued' || type === 'Returned' ? 'Goods issue note no.' : 'GRN / invoice no.'} /></Field>
+          {type !== 'Adjustment' && <Field label="Description" optional className="sm:col-span-2"><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={type === 'Received' ? 'e.g. Opening stock at the yard' : type === 'Issued' ? 'e.g. For the slab on the first floor' : 'e.g. Left over after plastering'} /></Field>}
           {(type === 'Issued' || (type === 'Adjustment' && direction === 'remove')) && <p className="text-muted-foreground flex gap-2 self-end text-xs"><Info className="size-3.5 shrink-0" />The cost is worked out FIFO from the oldest stock when the movement is saved, and shown afterwards.</p>}
           {type === 'Returned' && <p className="text-muted-foreground flex gap-2 self-end text-xs"><Info className="size-3.5 shrink-0" />Comes back at the original issue's cost, into the batches it was taken from.</p>}
           {type === 'Received' && <p className="text-muted-foreground flex gap-2 text-xs sm:col-span-2"><Info className="size-3.5 shrink-0" />No supplier payable is created here. For credit purchases, <Link to="/suppliers/invoices/new" className="text-primary-text underline" onClick={onClose}>record a supplier invoice</Link> instead.</p>}
         </div>
         <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={busy}>Save movement</Button></DialogFooter>
       </DialogContent>
+      <AddMaterialDialog open={newOpen} onOpenChange={setNewOpen}
+        onAdded={(sku) => { const m = useStore.getState().materials.find((x) => x.sku === sku); if (m) setMaterialId(m.id) }} />
     </Dialog>
   )
 }

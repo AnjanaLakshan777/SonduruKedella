@@ -162,7 +162,8 @@ const mapMovements = (rows: Row[]): StockMovement[] => rows
     return {
       id: String(m.id), materialId: String(m.materialId), date: m.date, type: label(m.type) as StockMovement['type'], qty: m.quantityChange,
       unitCost: incoming ? m.unitCost : undefined, projectId: id(m.projectId), returnedFromId: id(m.returnedFromMovementId),
-      reason: m.type === 'ADJUSTMENT' ? opt(m.notes) : undefined, reference: opt(m.reference),
+      // notes: an adjustment's reason, or the optional description on the other movements
+      reason: opt(m.notes), reference: opt(m.reference),
     }
   })
 
