@@ -46,7 +46,12 @@ export function AttendanceView() {
   const set = (id: string, patch: Partial<Attendance>) => { setRows((r) => ({ ...r, [id]: { ...r[id], ...patch, marked: true } })); setDirty(true) }
   const list = active.map((e) => ({ e, a: rows[e.id] })).filter((x) => x.a)
   const wage = (x: (typeof list)[number]) => (x.a.status === 'Present' ? x.e.dailyRate : x.a.status === 'Half Day' ? x.e.dailyRate / 2 : 0)
-  const projects = d.s.projects.filter((p) => p.type === 'Construction' && (p.status === 'In Progress' || p.status === 'On Hold'))
+  // only sites being worked on; a past day already booked to a project that has since stopped keeps it
+  const projects = d.s.projects.filter((p) => p.type === 'Construction' && p.status === 'In Progress')
+  const projectOptions = (current?: string) => [
+    { value: NONE, label: 'General / yard work' },
+    ...[...projects, ...d.s.projects.filter((p) => p.id === current && !projects.includes(p))].map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` })),
+  ]
   const isSunday = weekday(date) === 0
   const savedCount = list.filter((x) => d.s.attendance.some((a) => a.date === date && a.employeeId === x.e.id)).length
 
@@ -100,7 +105,7 @@ export function AttendanceView() {
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell><SelectField size="sm" disabled={isFrozen(x.e.id)} value={x.a.projectId ?? NONE} onChange={(v) => set(x.e.id, { projectId: v === NONE ? undefined : v })} options={[{ value: NONE, label: 'General / yard work' }, ...projects.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} /></TableCell>
+                      <TableCell><SelectField size="sm" disabled={isFrozen(x.e.id)} value={x.a.projectId ?? NONE} onChange={(v) => set(x.e.id, { projectId: v === NONE ? undefined : v })} options={projectOptions(x.a.projectId)} /></TableCell>
                       <TableCell className="hidden text-right md:table-cell"><Money value={x.e.dailyRate} currency={false} tone="muted" /></TableCell>
                       <TableCell className="text-right font-medium"><Money value={wage(x)} currency={false} /></TableCell>
                       <TableCell className="hidden pr-6 lg:table-cell"><Input className="h-8" disabled={isFrozen(x.e.id)} value={x.a.notes ?? ''} onChange={(e) => set(x.e.id, { notes: e.target.value })} placeholder="Optional" aria-label={`Notes for ${x.e.name}`} /></TableCell>

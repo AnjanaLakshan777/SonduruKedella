@@ -74,7 +74,7 @@ export function OvertimeView() {
         <CardContent className="grid gap-4">
           <Field label="Worker" required error={tried ? err.emp : undefined}><SelectField value={employeeId} onChange={setEmployeeId} invalid={tried && !!err.emp} placeholder="Select worker" options={d.s.employees.filter((e) => e.status === 'Active').map((e) => ({ value: e.id, label: `${e.name} — ${e.role}` }))} /></Field>
           <Field label="Date" required hint={emp ? (att ? `Attendance: ${att.status}` : 'No attendance recorded on this date') : undefined}><DatePicker value={date} onChange={setDate} /></Field>
-          <Field label="Related project"><SelectField value={projectId} onChange={setProjectId} options={[{ value: NONE, label: 'General / yard work' }, ...d.s.projects.filter((p) => p.type === 'Construction' && p.status !== 'Completed' && p.status !== 'Cancelled').map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} /></Field>
+          <Field label="Related project"><SelectField value={projectId} onChange={setProjectId} options={[{ value: NONE, label: 'General / yard work' }, ...d.s.projects.filter((p) => p.type === 'Construction' && p.status === 'In Progress').map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))]} /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Hours" required error={tried ? err.hours : undefined}><Input type="number" step="0.5" min={0} max={8} className="text-right" value={hours} onChange={(e) => setHours(e.target.value === '' ? '' : Number(e.target.value))} aria-invalid={(tried && !!err.hours) || undefined} /></Field>
             <Field label="Rate per hour" required error={tried ? err.rate : undefined}><AmountInput value={rate} onChange={setRate} /></Field>

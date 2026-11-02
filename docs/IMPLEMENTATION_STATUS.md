@@ -1856,3 +1856,8 @@ For each completed task, record the date, files or migrations changed, verificat
 ### 2026-11-02: Employees: change status from the row menu
 - On the Labour & Payroll employees list, the row menu has a second item under "Edit details and rates": **Mark as inactive** for an active worker, **Mark as active** for an inactive one. It calls the existing `PUT /api/v1/employees/{id}/status` with the version last read; a failure shows the server's message.
 - Frontend only (`setEmployeeStatus` in the store). `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-02: Labour and stock issue pick from In Progress projects only
+- Attendance, overtime and "Issue to project" now list only Construction projects that are **In Progress** (before: attendance also On Hold; overtime anything not completed or cancelled; stock issue also On Hold and Planning).
+- An attendance row already booked to a project that has since left In Progress keeps that project in its menu, so reopening a past day doesn't lose or blank it.
+- Not changed: supplier invoices (bills can arrive after a project finishes) and returns (they follow the original issue). Frontend only; the backend doesn't restrict by status. `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.

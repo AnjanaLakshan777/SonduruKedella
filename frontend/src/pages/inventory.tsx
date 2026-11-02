@@ -303,7 +303,7 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
               // a brand-new item can only come in as stock received; it has nothing to issue, return or adjust yet
               options={[...d.materials.map((m) => ({ value: m.material.id, label: `${m.material.sku} · ${m.material.name}` })), ...(type === 'Received' ? [{ value: NEW_MATERIAL, label: '+ Add new material…' }] : [])]} />
           </Field>
-          {type === 'Issued' && <Field label="Project" required error={tried ? err.project : undefined} className="sm:col-span-2"><SelectField value={projectId} onChange={setProjectId} invalid={tried && !!err.project} placeholder="Select project" options={d.s.projects.filter((p) => p.type === 'Construction' && (p.status === 'In Progress' || p.status === 'On Hold' || p.status === 'Planning')).map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))} /></Field>}
+          {type === 'Issued' && <Field label="Project" required error={tried ? err.project : undefined} className="sm:col-span-2"><SelectField value={projectId} onChange={setProjectId} invalid={tried && !!err.project} placeholder="Select project" options={d.s.projects.filter((p) => p.type === 'Construction' && p.status === 'In Progress').map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))} /></Field>}
           {type === 'Returned' && (
             <Field label="Original issue" required error={tried ? err.issue : undefined} className="sm:col-span-2" hint={mv && returnable.length === 0 ? 'Nothing issued from this material can still be returned.' : undefined}>
               <SelectField value={issueId} onChange={setIssueId} invalid={tried && !!err.issue} placeholder="Select the issue"
