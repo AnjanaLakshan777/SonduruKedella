@@ -25,7 +25,7 @@ let n = 0
 // menu entries that aren't materials: undo a wrong pick, or add a material without leaving the invoice
 const NO_MATERIAL = '__none'
 const NEW_MATERIAL = '__new'
-const blank = (): Line => ({ key: `l${++n}`, materialId: '', description: '', qty: '', unit: 'nos', unitPrice: '' })
+const blank = (): Line => ({ key: `l${++n}`, materialId: '', description: '', qty: '', unit: '', unitPrice: '' })
 
 export default function SupplierInvoiceForm() {
   useCrumbs([{ label: 'Suppliers', to: '/suppliers' }, { label: 'Record invoice' }])
@@ -61,18 +61,18 @@ export default function SupplierInvoiceForm() {
     invoiceNo: !invoiceNo.trim() ? 'Enter the supplier’s invoice number.' : dup ? 'This supplier already has an invoice with this number.' : undefined,
     due: due && due < date ? 'Due date cannot be before the invoice date.' : undefined,
     project: alloc === 'project' && !projectId ? 'Choose the project the materials went to.' : undefined,
-    lines: lines.some((l) => !l.description.trim() || !(Number(l.qty) > 0) || !(Number(l.unitPrice) > 0)) ? 'Every item needs a description, quantity and unit price.' : undefined,
+    lines: lines.some((l) => !l.description.trim() || !(Number(l.qty) > 0) || !l.unit || !(Number(l.unitPrice) > 0)) ? 'Every item needs a description, quantity, unit and unit price.' : undefined,
     stock: alloc === 'stock' && lines.some((l) => !l.materialId) ? 'Items received into stock must be linked to an inventory material.' : undefined,
     paid: paidAmt > total ? 'Amount paid cannot exceed the invoice total.' : undefined,
   }
   const errs = Object.values(err).filter(Boolean) as string[]
   const set = (key: string, patch: Partial<Line>) => setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
-  // picking a material fills what is still empty from it; clearing empties the whole line again
+  // picking a material puts its name, unit and default cost on the line (the quantity stays); clearing empties the line
   const pickMaterial = (line: Line, value: string) => {
     if (value === NEW_MATERIAL) { setNewFor(line.key); return }
-    if (value === NO_MATERIAL) { set(line.key, { materialId: '', description: '', qty: '', unit: 'nos', unitPrice: '' }); return }
+    if (value === NO_MATERIAL) { set(line.key, { materialId: '', description: '', qty: '', unit: '', unitPrice: '' }); return }
     const m = useStore.getState().materials.find((x) => x.id === value)
-    setLines((all) => all.map((l) => (l.key === line.key ? { ...l, materialId: value, description: l.description || m?.name || '', unit: m?.unit ?? l.unit, unitPrice: l.unitPrice || m?.unitCost || '' } : l)))
+    setLines((all) => all.map((l) => (l.key === line.key ? { ...l, materialId: value, description: m?.name ?? l.description, unit: m?.unit ?? l.unit, unitPrice: m?.unitCost ? m.unitCost : '' } : l)))
   }
 
   async function save() {
@@ -132,7 +132,7 @@ export default function SupplierInvoiceForm() {
                       <TableCell className="pl-6"><SelectField value={l.materialId} onChange={(v) => pickMaterial(l, v)} placeholder={alloc === 'stock' ? 'Select material' : 'Optional'} options={[...(l.materialId ? [{ value: NO_MATERIAL, label: 'Clear this line' }] : []), ...materials.map((m) => ({ value: m.id, label: `${m.sku} · ${m.name}` })), { value: NEW_MATERIAL, label: '+ Add new material…' }]} invalid={tried && alloc === 'stock' && !l.materialId} /></TableCell>
                       <TableCell><Input value={l.description} onChange={(e) => set(l.key, { description: e.target.value })} placeholder="e.g. River sand" aria-label="Description" aria-invalid={(tried && !l.description.trim()) || undefined} /></TableCell>
                       <TableCell><Input type="number" min={0} className="text-right" value={l.qty} onChange={(e) => set(l.key, { qty: e.target.value === '' ? '' : Number(e.target.value) })} aria-label="Quantity" aria-invalid={(tried && !(Number(l.qty) > 0)) || undefined} /></TableCell>
-                      <TableCell><SelectField value={l.unit} onChange={(v) => set(l.key, { unit: v })} options={settings.units} /></TableCell>
+                      <TableCell><SelectField value={l.unit} onChange={(v) => set(l.key, { unit: v })} options={settings.units} placeholder="Unit" invalid={tried && !l.unit} /></TableCell>
                       <TableCell><AmountInput value={l.unitPrice} onChange={(v) => set(l.key, { unitPrice: v })} invalid={tried && !(Number(l.unitPrice) > 0)} /></TableCell>
                       <TableCell className="text-right font-medium"><Money value={(Number(l.qty) || 0) * (Number(l.unitPrice) || 0)} currency={false} /></TableCell>
                       <TableCell className="pr-4"><Button variant="ghost" size="icon" className="size-8" disabled={lines.length === 1} aria-label="Remove item" onClick={() => setLines(lines.filter((x) => x.key !== l.key))}><Trash2 /></Button></TableCell>
@@ -166,6 +166,7 @@ export default function SupplierInvoiceForm() {
             <CardHeader><CardTitle>Payment</CardTitle><CardDescription>Leave at zero for a credit purchase.</CardDescription></CardHeader>
             <CardContent className="grid gap-4">
               <Field label="Amount paid now" error={err.paid}><AmountInput value={paid} onChange={setPaid} invalid={!!err.paid} /></Field>
+              {total > 0 && paidAmt !== total && <Button variant="outline" size="sm" className="justify-self-start" onClick={() => setPaid(Math.round(total * 100) / 100)}>Pay full amount ({formatLKR(total, { decimals: 0 })})</Button>}
               {paidAmt > 0 && <><Field label="Method"><SelectField value={method} onChange={setMethod} options={settings.paymentMethods} /></Field><Field label="Reference" optional><Input value={reference} onChange={(e) => setReference(e.target.value)} /></Field></>}
               <FigureList rows={[{ label: 'Total amount', value: total }, { kind: 'less', label: 'Amount paid', value: paidAmt }, { kind: 'highlight', label: 'Outstanding payable', value: Math.max(0, total - paidAmt) }]} />
             </CardContent>

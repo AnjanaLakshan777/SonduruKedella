@@ -1835,7 +1835,7 @@ For each completed task, record the date, files or migrations changed, verificat
 
 ### 2026-11-02: Supplier invoice items: clear or add a material on the line
 - The Material menu on each invoice line now offers:
-  - **"Clear this line"** once a material is picked, to undo a wrong pick. It empties the whole line (material, description, quantity, unit back to "nos", price).
+  - **"Clear this line"** once a material is picked, to undo a wrong pick. It empties the whole line (material, description, quantity, unit and price).
   - **"+ Add new material…"**, which opens the Add material dialog with the description already filled in. The new material is selected on that line straight away and fills its unit and default cost.
 - The Add material dialog moved to `components/app/add-material-dialog.tsx` (shared with the Inventory page, which works as before).
 - The Qty, Unit, Unit price and Total columns have minimum widths, so entered quantities and prices show in full instead of being squeezed; the table scrolls sideways on narrow screens.
@@ -1843,3 +1843,6 @@ For each completed task, record the date, files or migrations changed, verificat
 - Fix (same day): "No material (clear)" didn't clear, and closing the Add material dialog left "+ Add new material…" showing as the pick.
   - Cause: `SelectField` passed an empty value to Radix as `undefined`. That made the select uncontrolled, so it kept showing the last item clicked even when the form ignored it.
   - `SelectField` (`components/app/form.tsx`) is now always controlled: an empty value is `""` and shows the placeholder. This applies to every select in the app; all of them already pass a value.
+- Follow-up: paying while recording an invoice already worked through "Amount paid now" in the Payment card. A "Pay full amount (LKR N)" button now fills in the invoice total in one click. It shows while the amount differs from the total.
+- Fix: switching a line to another material now replaces the description, unit and unit price with the new material's (its default cost, or empty if it has none). Before, values from the first pick stayed. The quantity stays.
+- New and cleared lines start with no unit (placeholder "Unit"). The unit is now required with the description, quantity and price.
