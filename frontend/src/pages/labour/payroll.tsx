@@ -22,6 +22,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useData, useStore } from '@/store/store'
 import { addDays, formatDate, formatRange, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { sum } from '@/lib/finance'
 import { apiGet, errorMessage } from '@/lib/api'
 
 // What the server says a worker's week comes to. A paid week is frozen there with the rates of the day,
@@ -175,6 +176,8 @@ export function PayrollView() {
             { label: 'Net payable', unit: 'LKR', value: <Money value={w.net + w.corrections} decimals={0} currency={false} />, caption: w.corrections ? `incl. ${formatLKR(w.corrections, { decimals: 0 })} corrections` : w.other ? `after ${formatLKR(w.other, { decimals: 0 })} other deductions` : 'To hand over on payday', hint: 'What to hand over: gross wages − advances − other deductions, plus corrections.' },
             { label: 'Paid', unit: 'LKR', value: <Money value={w.paid} decimals={0} currency={false} />, basis: 'Recorded', hint: 'Wage payments recorded for this pay week.' },
             { label: 'Remaining', unit: 'LKR', value: <Money value={w.remaining} decimals={0} currency={false} />, tone: w.payable && w.remaining > 0 ? 'destructive' : 'default', caption: unpaid.length ? `${unpaid.length} workers` : 'Fully paid', hint: 'Net payable for this pay week that is not paid yet.' },
+            // a full day counts as the working hours in Settings > Wages, a half day as half that
+            { label: 'Man-hours worked', unit: 'hrs', value: (sum(w.lines, (l) => l.days) * d.s.settings.wages.hoursPerDay + sum(w.lines, (l) => l.otHours)).toLocaleString(), caption: `${sum(w.lines, (l) => l.days)} worker-days × ${d.s.settings.wages.hoursPerDay} h + ${sum(w.lines, (l) => l.otHours)} h overtime`, hint: `Hours all workers put in this pay week: days worked (half days count half) × ${d.s.settings.wages.hoursPerDay} working hours a day (Settings > Wages), plus approved overtime hours.` },
           ]} />
 
           <Card className="gap-4 pb-0">

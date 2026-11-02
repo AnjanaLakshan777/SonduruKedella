@@ -1879,3 +1879,7 @@ For each completed task, record the date, files or migrations changed, verificat
   - marking, listing and unmarking a test date work; that test row was removed afterwards;
   - a Sunday register is accepted.
 - Not tried in a browser.
+
+### 2026-11-02: Payroll week: man-hours tile
+- The empty sixth tile on the pay week now shows **Man-hours worked**: worker-days (half days count half) × working hours a day from Settings > Wages, plus approved overtime hours. The caption shows the breakdown.
+- Frontend only. `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.
