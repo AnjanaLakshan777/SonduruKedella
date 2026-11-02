@@ -178,7 +178,7 @@ export default function ProjectDetail() {
                 {pf.installments.map((i) => (
                   <div key={i.inst.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b pb-2 text-sm last:border-b-0 last:pb-0">
                     <span className="grid min-w-0 flex-1">
-                      <span className="truncate">{i.inst.description}</span>
+                      <span className="truncate" title={i.inst.description}>{i.inst.description}</span>
                       {/* a part-payment has to show here, or "Overdue" reads as if nothing was paid */}
                       {i.inst.billed && (i.paid > 0 || i.writtenOff > 0) && i.remaining > 0 && (
                         <span className="text-muted-foreground text-xs">{formatLKR(i.paid, { decimals: 0 })} paid{i.writtenOff ? ` · ${formatLKR(i.writtenOff, { decimals: 0 })} written off` : ''} · <span className={cn(i.status === 'Overdue' && 'text-destructive-soft-foreground font-medium')}>{formatLKR(i.remaining, { decimals: 0 })} left</span></span>

@@ -39,7 +39,7 @@ export function KpiStrip({ items, className }: { items: KpiItem[]; className?: s
         {items.map((it) => (
           <div key={it.label} className="-mr-px -mb-px grid min-w-0 content-start gap-1.5 border-r border-b p-4">
             <div className="text-muted-foreground flex items-center gap-1.5 text-[13px] leading-[18px] font-medium">
-              <span className="truncate">{it.label}</span>
+              <span className="truncate" title={typeof it.label === 'string' ? it.label : undefined}>{it.label}</span>
               {it.hint && (
                 <Tooltip>
                   <TooltipTrigger className="text-muted-foreground focus-visible:ring-ring/50 rounded-sm outline-none focus-visible:ring-[3px]" aria-label={it.hint}>

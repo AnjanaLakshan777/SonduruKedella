@@ -268,7 +268,7 @@ export default function Dashboard() {
             {recent.map((r) => (
               <TableRow key={r.id} className="cursor-pointer" onClick={() => navigate(r.to)}>
                 <TableCell className="pl-6">{formatDate(r.date)}</TableCell>
-                <TableCell className="max-w-96 truncate">{r.text}</TableCell>
+                <TableCell className="max-w-96 truncate" title={typeof r.text === 'string' ? r.text : undefined}>{r.text}</TableCell>
                 <TableCell className="text-muted-foreground hidden md:table-cell">{r.party}</TableCell>
                 <TableCell className="pr-6 text-right font-medium"><Money value={r.amount} currency={false} signed tone={r.amount > 0 ? 'positive' : 'default'} /></TableCell>
               </TableRow>

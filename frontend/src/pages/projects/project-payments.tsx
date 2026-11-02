@@ -84,7 +84,7 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
             {pf.installments.map((i, n) => (
               <TableRow key={i.inst.id}>
                 <TableCell className="max-w-72 pl-6">
-                  <span className="grid"><span className="truncate font-medium">{n + 1}. {i.inst.description}</span>
+                  <span className="grid"><span className="truncate font-medium" title={i.inst.description}>{n + 1}. {i.inst.description}</span>
                     <span className="text-muted-foreground text-xs">{i.inst.billed ? `Billed ${formatDate(i.inst.billedOn)}` : 'Not billed yet'}{i.writtenOff ? ` · ${formatLKR(i.writtenOff)} written off` : ''}</span></span>
                 </TableCell>
                 <TableCell>{formatDate(i.inst.billedOn ?? i.inst.dueDate)}{!i.inst.billed && (i.daysLate > 0 ? <div className="text-warning text-xs">planned · {i.daysLate} {i.daysLate === 1 ? 'day' : 'days'} late</div> : <div className="text-muted-foreground text-xs">planned</div>)}{i.status === 'Overdue' && <div className="text-destructive-soft-foreground text-xs">{i.daysOverdue ? `${i.daysOverdue} days overdue` : 'unpaid since today'}</div>}</TableCell>
@@ -132,7 +132,7 @@ export function ProjectPayments({ pf, payFor, setPayFor }: { pf: ProjectFinance;
                 {history.map((h) => (
                   <TableRow key={h.id}>
                     <TableCell className="pl-6">{formatDate(h.date)}</TableCell>
-                    <TableCell className="max-w-64"><span className="grid"><span className="flex items-center gap-2 truncate">{h.inst}{h.kind === 'Write-off' && <StatusBadge status="Written Off" />}</span><span className="text-muted-foreground truncate text-xs">{h.method}</span></span></TableCell>
+                    <TableCell className="max-w-64"><span className="grid"><span className="flex items-center gap-2 truncate" title={h.inst}>{h.inst}{h.kind === 'Write-off' && <StatusBadge status="Written Off" />}</span><span className="text-muted-foreground truncate text-xs" title={h.method}>{h.method}</span></span></TableCell>
                     <TableCell className=" text-right font-medium">{h.kind === 'Payment' ? <Money value={h.amount} currency={false} signed tone="positive" /> : <span className="text-muted-foreground"><Money value={h.amount} currency={false} tone="muted" /> w/o</span>}</TableCell>
                     <TableCell className="pr-4">
                       <Button size="icon" variant="ghost" className="size-7" aria-label={h.kind === 'Payment' ? 'Void receipt' : 'Reverse write-off'}

@@ -125,9 +125,12 @@ export function SelectField({ value, onChange, options, placeholder = 'Select', 
 }) {
   // always controlled: "" shows the placeholder. undefined would hand the choice to Radix, which then
   // keeps showing the last item clicked even when the caller ignores it (a cleared or "add new" pick)
+  // a long pick (a project name, say) is cut short in the box; hovering shows all of it
+  const picked = options.find((o) => (typeof o === 'string' ? o : o.value) === value)
+  const pickedText = typeof picked === 'string' ? picked : typeof picked?.label === 'string' ? picked.label : undefined
   return (
     <Select value={value ?? ''} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger id={id} size={size} aria-invalid={invalid || undefined} className={className}>
+      <SelectTrigger id={id} size={size} aria-invalid={invalid || undefined} className={className} title={pickedText}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>

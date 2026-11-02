@@ -100,7 +100,7 @@ export default function RevenuePage() {
                         <TableCell className="pl-6">{formatDate(r.date)}</TableCell>
                         <TableCell className="max-w-80"><CellMain title={r.description} code={r.code} sub={r.code ? r.project : 'Not linked to a project'} /></TableCell>
                         <TableCell>{r.category}</TableCell>
-                        <TableCell className="hidden max-w-48 truncate lg:table-cell">{r.client}</TableCell>
+                        <TableCell className="hidden max-w-48 truncate lg:table-cell" title={r.client}>{r.client}</TableCell>
                         <TableCell className="text-right font-medium"><Money value={r.amount} currency={false} /></TableCell>
                         <TableCell className="hidden text-right md:table-cell"><Money value={r.received} currency={false} /></TableCell>
                         <TableCell className="hidden text-right sm:table-cell">{r.outstanding > 0 ? <Money value={r.outstanding} currency={false} /> : <span className="text-muted-foreground">—</span>}</TableCell>

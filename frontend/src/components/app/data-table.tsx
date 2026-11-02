@@ -63,15 +63,17 @@ export function Pagination({ page, pageSize, total, setPage, className }: { page
 /** Primary cell: name over a muted sub-line. */
 // `code` (project code, SKU) always shows in full; only the text after it gets cut with "…"
 export function CellMain({ title, sub, mono, code }: { title: React.ReactNode; sub?: React.ReactNode; mono?: boolean; code?: React.ReactNode }) {
+  // text cut short by truncate shows in full on hover
+  const full = (v: React.ReactNode) => (typeof v === 'string' || typeof v === 'number' ? String(v) : undefined)
   return (
     <span className="grid min-w-0">
-      <span className="truncate font-medium">{title}</span>
+      <span className="truncate font-medium" title={full(title)}>{title}</span>
       {code ? (
         <span className="text-muted-foreground flex min-w-0 items-baseline gap-1 text-xs">
           <Mono className="shrink-0">{code}</Mono>
-          {sub && <span className="truncate">· {sub}</span>}
+          {sub && <span className="truncate" title={full(sub)}>· {sub}</span>}
         </span>
-      ) : sub && <span className={cn('text-muted-foreground truncate text-xs', mono && 'font-mono font-medium')}>{sub}</span>}
+      ) : sub && <span className={cn('text-muted-foreground truncate text-xs', mono && 'font-mono font-medium')} title={full(sub)}>{sub}</span>}
     </span>
   )
 }

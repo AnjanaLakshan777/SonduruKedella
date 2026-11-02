@@ -29,7 +29,7 @@ export function AppSidebar({ collapsed, counts, onNavigate }: { collapsed?: bool
         )}
       >
         <it.icon className={cn('size-4 shrink-0', on && 'text-primary-text')} />
-        {!collapsed && <span className="flex-1 truncate">{it.label}</span>}
+        {!collapsed && <span className="flex-1 truncate" title={it.label}>{it.label}</span>}
         {!collapsed && c && c.n > 0 && (
           <span className={cn('tabular rounded-sm px-1.5 text-xs', c.alert ? 'bg-destructive-soft text-destructive-soft-foreground' : 'bg-secondary text-secondary-foreground')}>{c.n}</span>
         )}

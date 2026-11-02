@@ -1883,3 +1883,18 @@ For each completed task, record the date, files or migrations changed, verificat
 ### 2026-11-02: Payroll week: man-hours tile
 - The empty sixth tile on the pay week now shows **Man-hours worked**: worker-days (half days count half) × working hours a day from Settings > Wages, plus approved overtime hours. The caption shows the breakdown.
 - Frontend only. `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-02: Full text on hover for shortened table cells
+- `CellMain` (`components/app/data-table.tsx`) puts the full text in a hover tooltip (`title`) on its name and sub-line whenever they are plain text. A name or note cut short with "…" can now be read by hovering, for example the worker and note in Overtime entries. It applies to every table that uses `CellMain`.
+- Frontend only. `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.
+- Follow-up (same day): the same hover text on every other spot that cuts text short with "…":
+  - sidebar labels;
+  - breadcrumbs and global search results;
+  - KPI tile labels;
+  - supplier names in invoice tables;
+  - client names on Projects and Revenue;
+  - the client history detail;
+  - dashboard attention rows;
+  - installment descriptions and payment methods on a project;
+  - attached file names.
+- `SelectField` also shows the full picked option on hover when the box cuts it short (e.g. a long project name). `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.

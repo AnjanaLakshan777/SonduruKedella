@@ -56,7 +56,7 @@ export function FileDropzone({ doc, onUpload, downloadUrl, onRemove, title = 'Dr
         {hidden}
         <div className="bg-muted grid size-10 shrink-0 place-items-center rounded-md"><FileText className="size-5" /></div>
         <div className="grid min-w-0 flex-1 gap-1.5">
-          <div className="truncate font-medium">{phase.name}</div>
+          <div className="truncate font-medium" title={phase.name}>{phase.name}</div>
           <div className="text-muted-foreground text-xs">{formatBytes(phase.size)} · Uploading…</div>
           <Progress value={phase.progress} aria-label="Upload progress" />
         </div>

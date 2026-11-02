@@ -67,7 +67,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
           return (
             <span key={i} className={cn('flex min-w-0 items-center gap-1.5', !last && 'hidden md:flex')}>
               {i > 0 && <span className="text-muted-foreground">/</span>}
-              {last || !c.to ? <span className={cn('truncate', last && 'font-medium')} aria-current={last ? 'page' : undefined}>{c.label}</span> : <Link to={c.to} className="text-muted-foreground hover:text-foreground truncate">{c.label}</Link>}
+              {last || !c.to ? <span className={cn('truncate', last && 'font-medium')} aria-current={last ? 'page' : undefined} title={typeof c.label === 'string' ? c.label : undefined}>{c.label}</span> : <Link to={c.to} className="text-muted-foreground hover:text-foreground truncate" title={typeof c.label === 'string' ? c.label : undefined}>{c.label}</Link>}
             </span>
           )
         })}
@@ -99,8 +99,8 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
                   <div className="text-muted-foreground px-2 py-1 text-xs font-medium">{g}</div>
                   {rs.map((r, i) => (
                     <button key={i} type="button" onClick={() => { navigate(r.to); setOpen(false); setQ('') }} className="hover:bg-accent grid w-full rounded-sm px-2 py-1.5 text-left text-sm">
-                      <span className="truncate">{r.label}</span>
-                      <span className="text-muted-foreground truncate text-xs">{r.sub}</span>
+                      <span className="truncate" title={r.label}>{r.label}</span>
+                      <span className="text-muted-foreground truncate text-xs" title={r.sub}>{r.sub}</span>
                     </button>
                   ))}
                 </div>

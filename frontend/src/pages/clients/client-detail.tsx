@@ -84,7 +84,7 @@ export default function ClientDetail() {
                   <TableRow key={h.id} className="cursor-pointer" onClick={() => navigate(`/projects/${h.pid}?tab=payments`)}>
                     <TableCell className="pl-6">{formatDate(h.date)}</TableCell>
                     <TableCell><CellMain title={h.kind} sub={h.ref} /></TableCell>
-                    <TableCell className="text-muted-foreground hidden max-w-64 truncate md:table-cell">{h.detail}</TableCell>
+                    <TableCell className="text-muted-foreground hidden max-w-64 truncate md:table-cell" title={typeof h.detail === 'string' ? h.detail : undefined}>{h.detail}</TableCell>
                     <TableCell className="pr-6 text-right font-medium">{h.kind === 'Payment received' ? <Money value={h.amount} signed tone="positive" /> : <Money value={h.amount} tone={h.wo ? 'muted' : 'default'} />}</TableCell>
                   </TableRow>
                 ))}

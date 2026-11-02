@@ -206,7 +206,7 @@ export function RecordExpenseDialog({ open, onOpenChange, projectId, edit }: { o
           <Field label="Receipt or invoice" optional hint="PDF, JPG or PNG — a phone photo of the bill is fine.">
             <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile({ fileName: f.name, size: f.size, file: f }); e.target.value = '' }} />
             {file ? (
-              <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm"><Paperclip className="text-muted-foreground size-4" /><span className="flex-1 truncate">{file.fileName}</span><span className="text-muted-foreground text-xs">{formatBytes(file.size)}</span>{file.file && <button type="button" aria-label="Remove attachment" onClick={() => setFile(edit?.attachment)}><X className="size-4" /></button>}</div>
+              <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm"><Paperclip className="text-muted-foreground size-4" /><span className="flex-1 truncate" title={file.fileName}>{file.fileName}</span><span className="text-muted-foreground text-xs">{formatBytes(file.size)}</span>{file.file && <button type="button" aria-label="Remove attachment" onClick={() => setFile(edit?.attachment)}><X className="size-4" /></button>}</div>
             ) : <Button variant="outline" onClick={() => fileRef.current?.click()}><Paperclip />Attach file</Button>}
             {file && !file.file && <Button variant="link" size="sm" className="h-auto justify-self-start px-0" onClick={() => fileRef.current?.click()}>Replace file</Button>}
           </Field>

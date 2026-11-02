@@ -88,7 +88,7 @@ export default function ProjectsList() {
                 {paged.rows.map((p) => (
                   <TableRow key={p.project.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.project.id}`)}>
                     <TableCell className="max-w-72 pl-6"><CellMain title={p.project.name} code={p.project.code} /></TableCell>
-                    <TableCell className="hidden max-w-48 truncate lg:table-cell">{p.client.name}</TableCell>
+                    <TableCell className="hidden max-w-48 truncate lg:table-cell" title={p.client.name}>{p.client.name}</TableCell>
                     <TableCell>{p.project.type}</TableCell>
                     <TableCell className="text-right"><Money value={p.contractValue} currency={false} decimals={0} /></TableCell>
                     <TableCell className="hidden text-right md:table-cell"><Money value={p.received} currency={false} decimals={0} /></TableCell>
