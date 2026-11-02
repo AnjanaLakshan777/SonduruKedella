@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @WithMockUser(roles = "ADMIN")
 class EmployeeApiIntegrationTest {
 
-    // a past Monday-to-Saturday week, so no date is in the future
+    // a past week, so no date is in the future
     private static final LocalDate MON = LocalDate.of(2026, 9, 7);
 
     @Autowired
@@ -114,7 +114,6 @@ class EmployeeApiIntegrationTest {
         long a = id(create("Kamal", "Labourer", "3000", "560"));
         String one = "[{\"employeeId\":%d,\"status\":\"PRESENT\"}]".formatted(a);
         saveDay(LocalDate.now().plusDays(2), one).andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("future")));
-        saveDay(MON.minusDays(1), one).andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("Sunday")));
         saveDay(LocalDate.of(2025, 12, 1), one).andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("joined")));
         saveDay(MON, "[{\"employeeId\":%d,\"status\":\"PRESENT\"},{\"employeeId\":%d,\"status\":\"ABSENT\"}]".formatted(a, a))
                 .andExpect(status().isBadRequest());
@@ -131,6 +130,33 @@ class EmployeeApiIntegrationTest {
         mockMvc.perform(put("/api/v1/employees/" + a + "/status").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"status\":\"INACTIVE\",\"version\":0}")).andExpect(status().isOk());
         saveDay(MON, one).andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("inactive")));
+    }
+
+    @Test
+    void sundayIsAWorkDayAndOnlyAMarkedHolidayTakesNoAttendance() throws Exception {
+        long a = id(create("Kamal", "Labourer", "3000", "560"));
+        String one = "[{\"employeeId\":%d,\"status\":\"PRESENT\"}]".formatted(a);
+        LocalDate sunday = MON.minusDays(1);
+        LocalDate tue = MON.plusDays(1);
+        saveDay(sunday, one).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+
+        // a day with marks can't become a holiday until they're cleared
+        holiday(sunday, "{\"note\":\"Poya\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("1 worker is")));
+        saveDay(sunday, "[]").andExpect(status().isOk());
+        holiday(sunday, "{\"note\":\"  Poya  \"}").andExpect(status().isOk()).andExpect(jsonPath("$.note").value("Poya"));
+        holiday(tue, "{}").andExpect(status().isOk()).andExpect(jsonPath("$.note").doesNotExist());
+        holiday(tue, "{\"note\":\"Strike\"}").andExpect(status().isOk()).andExpect(jsonPath("$.note").value("Strike")); // again: only the note
+
+        saveDay(sunday, one).andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("holiday")));
+        mockMvc.perform(get("/api/v1/holidays").param("from", sunday.toString()).param("to", MON.plusDays(6).toString()))
+                .andExpect(jsonPath("$[*].date").value(Matchers.contains(sunday.toString(), tue.toString())));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/holidays/" + sunday).with(csrf()))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/holidays/" + sunday).with(csrf()))
+                .andExpect(status().isNoContent()); // already off
+        saveDay(sunday, one).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/holidays").param("from", "2026-01-01").param("to", "2027-12-31")).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -165,6 +191,10 @@ class EmployeeApiIntegrationTest {
     private ResultActions saveDay(LocalDate date, String entries) throws Exception {
         return mockMvc.perform(put("/api/v1/attendance/" + date).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"entries\":" + entries + "}"));
+    }
+
+    private ResultActions holiday(LocalDate date, String body) throws Exception {
+        return mockMvc.perform(put("/api/v1/holidays/" + date).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
     private ResultActions overtime(long employeeId, String hours, String rate) throws Exception {

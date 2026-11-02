@@ -2,6 +2,8 @@ package com.sondurukedella.employees.controller;
 
 import com.sondurukedella.employees.dto.AttendanceDayRequest;
 import com.sondurukedella.employees.dto.AttendanceResponse;
+import com.sondurukedella.employees.dto.HolidayRequest;
+import com.sondurukedella.employees.dto.HolidayResponse;
 import com.sondurukedella.employees.dto.OvertimeApprovalRequest;
 import com.sondurukedella.employees.dto.OvertimeCreateRequest;
 import com.sondurukedella.employees.dto.OvertimeResponse;
@@ -13,6 +15,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,6 +50,26 @@ public class AttendanceController {
     public List<AttendanceResponse> saveDay(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @Valid @RequestBody AttendanceDayRequest request) {
         return attendance.saveDay(date, request);
+    }
+
+    @GetMapping("/holidays")
+    public List<HolidayResponse> holidays(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return attendance.holidays(from, to);
+    }
+
+    // turning the toggle on; sending it again just updates the note
+    @PutMapping("/holidays/{date}")
+    public HolidayResponse markHoliday(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @Valid @RequestBody(required = false) HolidayRequest request) {
+        return attendance.markHoliday(date, request);
+    }
+
+    @DeleteMapping("/holidays/{date}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void unmarkHoliday(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        attendance.unmarkHoliday(date);
     }
 
     @GetMapping("/overtime")

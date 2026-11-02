@@ -51,6 +51,8 @@ interface Actions {
   addEmployee: (e: New<Employee>) => Promise<void>
   updateEmployee: (id: string, e: New<Employee>) => Promise<void>
   setEmployeeStatus: (id: string, status: Employee['status']) => Promise<void>
+  // on: mark the date as a holiday (refused while it has attendance); off: make it a work day again
+  setHoliday: (date: string, on: boolean, note?: string) => Promise<void>
   // the whole register for the day; a worker left out has no attendance that day
   saveAttendance: (date: string, rows: Attendance[]) => Promise<void>
   addOvertime: (o: Omit<New<Overtime>, 'approved'>) => Promise<void>
@@ -88,7 +90,8 @@ interface Actions {
 }
 
 // frozenWeeks: "weekStart:employeeId" for worker-weeks already paid or closed - their inputs are locked
-export type Store = DataState & Actions & { loaded: boolean; frozenWeeks: Set<string> }
+// holidays: date -> note for days marked off; no attendance goes on them
+export type Store = DataState & Actions & { loaded: boolean; frozenWeeks: Set<string>; holidays: Map<string, string> }
 
 export interface ClientInput {
   name: string
@@ -202,6 +205,7 @@ export const useStore = create<Store>()((set, get) => {
     ...emptyState(),
     loaded: false,
     frozenWeeks: new Set<string>(),
+    holidays: new Map<string, string>(),
     load: async () => set({ ...(await loadAll()), loaded: true }),
     addClient: async (c) => {
       const saved = mapClient(await apiPost('/clients', clientBody(c)))
@@ -363,6 +367,11 @@ export const useStore = create<Store>()((set, get) => {
     },
     setEmployeeStatus: async (id, status) => {
       await apiPut(`/employees/${id}/status`, { status: code(status), version: versionOf('employee', id) })
+      await refreshLabour()
+    },
+    setHoliday: async (date, on, note) => {
+      if (on) await apiPut(`/holidays/${date}`, { note: note?.trim() || undefined })
+      else await api('DELETE', `/holidays/${date}`)
       await refreshLabour()
     },
     saveAttendance: async (date, rows) => {

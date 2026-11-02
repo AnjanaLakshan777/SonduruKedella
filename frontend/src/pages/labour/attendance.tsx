@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { CheckCheck, ChevronLeft, ChevronRight, LockKeyhole, Save } from 'lucide-react'
+import { CalendarOff, CheckCheck, ChevronLeft, ChevronRight, LockKeyhole, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Money } from '@/components/app/money'
@@ -12,7 +13,7 @@ import { DatePicker, SelectField } from '@/components/app/form'
 import { useData, useStore } from '@/store/store'
 import { errorMessage } from '@/lib/api'
 import type { Attendance, AttendanceStatus } from '@/data/types'
-import { addDays, dayName, formatDate, formatLongToday, TODAY, weekday, weekStart } from '@/lib/dates'
+import { addDays, dayName, formatDate, formatLongToday, TODAY, weekStart } from '@/lib/dates'
 import { adjustmentKey } from '@/data/api-load'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +25,8 @@ export function AttendanceView() {
   const d = useData()
   const saveAttendance = useStore((s) => s.saveAttendance)
   const frozenWeeks = useStore((s) => s.frozenWeeks)
+  const holidays = useStore((s) => s.holidays)
+  const setHoliday = useStore((s) => s.setHoliday)
   const [busy, setBusy] = useState(false)
   const [date, setDate] = useState(TODAY)
   const [rows, setRows] = useState<Record<string, Attendance & { marked: boolean }>>({})
@@ -33,7 +36,7 @@ export function AttendanceView() {
   const isFrozen = (employeeId: string) => frozenWeeks.has(adjustmentKey(weekStart(date), employeeId))
 
   useEffect(() => {
-    const prevDay = (() => { let x = addDays(date, -1); while (weekday(x) === 0) x = addDays(x, -1); return x })()
+    const prevDay = (() => { let x = addDays(date, -1); for (let i = 0; i < 14 && holidays.has(x); i++) x = addDays(x, -1); return x })()
     const next: typeof rows = {}
     for (const e of active) {
       const a = d.s.attendance.find((x) => x.date === date && x.employeeId === e.id)
@@ -52,7 +55,23 @@ export function AttendanceView() {
     { value: NONE, label: 'General / yard work' },
     ...[...projects, ...d.s.projects.filter((p) => p.id === current && !projects.includes(p))].map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` })),
   ]
-  const isSunday = weekday(date) === 0
+  // any day can be worked, Sundays too; the owner marks days off one by one
+  const holiday = holidays.get(date)
+  const isHoliday = holiday !== undefined
+  const [holidayNote, setHolidayNote] = useState('')
+  useEffect(() => { setHolidayNote(holiday ?? '') }, [date, holiday])
+  async function toggleHoliday(on: boolean) {
+    setBusy(true)
+    try {
+      await setHoliday(date, on, holidayNote)
+      toast.success(on ? `${formatDate(date)} marked as a holiday` : `${formatDate(date)} is a work day again`)
+    } catch (e) {
+      // e.g. the day already has attendance saved
+      toast.error(on ? 'Not marked as a holiday' : 'Holiday not removed', { description: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
   const savedCount = list.filter((x) => d.s.attendance.some((a) => a.date === date && a.employeeId === x.e.id)).length
 
   async function save() {
@@ -81,9 +100,16 @@ export function AttendanceView() {
               <Button variant="outline" size="icon" className="size-8" aria-label="Previous day" onClick={() => setDate(addDays(date, -1))}><ChevronLeft /></Button>
               <DatePicker value={date} onChange={setDate} className="h-8 w-40" />
               <Button variant="outline" size="icon" className="size-8" aria-label="Next day" disabled={date >= TODAY} onClick={() => setDate(addDays(date, 1))}><ChevronRight /></Button>
+              <label className="flex items-center gap-2 text-sm font-medium"><Checkbox checked={isHoliday} disabled={busy} onCheckedChange={(v) => toggleHoliday(v === true)} />Holiday</label>
             </CardAction>
           </CardHeader>
-          {isSunday ? <CardContent className="text-muted-foreground pb-6 text-sm">Sunday — no work day. Choose another date.</CardContent> : date > TODAY ? <CardContent className="text-muted-foreground pb-6 text-sm">Attendance can't be recorded for future dates.</CardContent> : (
+          {isHoliday ? (
+            <CardContent className="grid gap-3 pb-6">
+              <p className="text-muted-foreground flex items-center gap-2 text-sm"><CalendarOff className="size-4 shrink-0" />{dayName(date)}, {formatDate(date)} is a holiday: no attendance and no wages for this day. Untick Holiday to record attendance.</p>
+              <Input className="h-8 max-w-80" value={holidayNote} onChange={(e) => setHolidayNote(e.target.value)} placeholder="Holiday name (optional), e.g. Poya day" aria-label="Holiday name" maxLength={200}
+                onBlur={() => { if (holidayNote.trim() !== (holiday ?? '')) setHoliday(date, true, holidayNote).catch((e) => toast.error('Name not saved', { description: errorMessage(e) })) }} />
+            </CardContent>
+          ) :date > TODAY ? <CardContent className="text-muted-foreground pb-6 text-sm">Attendance can't be recorded for future dates.</CardContent> : (
             <>
               <CardContent className="flex flex-wrap items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => { const n = { ...rows }; for (const k of Object.keys(n)) if (!isFrozen(k)) n[k] = { ...n[k], status: 'Present', marked: true }; setRows(n); setDirty(true) }}><CheckCheck />Mark all present</Button>
@@ -138,14 +164,16 @@ export function AttendanceView() {
 function WeekGrid({ anchor, onPick }: { anchor: string; onPick: (d: string) => void }) {
   const d = useData()
   const [ws, setWs] = useState(weekStart(anchor))
-  const days = Array.from({ length: 6 }, (_, i) => addDays(ws, i))
-  const map = useMemo(() => new Map(d.s.attendance.filter((a) => a.date >= ws && a.date <= addDays(ws, 5)).map((a) => [`${a.date}:${a.employeeId}`, a])), [d, ws])
+  const holidays = useStore((s) => s.holidays)
+  // the whole pay week, Monday to Sunday
+  const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i))
+  const map = useMemo(() => new Map(d.s.attendance.filter((a) => a.date >= ws && a.date <= addDays(ws, 6)).map((a) => [`${a.date}:${a.employeeId}`, a])), [d, ws])
   const emps = d.s.employees.filter((e) => days.some((day) => map.has(`${day}:${e.id}`)) || e.status === 'Active')
   return (
     <Card className="gap-4 pb-0">
       <CardHeader>
         <CardTitle>Week of {formatDate(ws)}</CardTitle>
-        <CardDescription>P present · ½ half day · A absent · blank not recorded. Click a day to open its sheet.</CardDescription>
+        <CardDescription>P present · ½ half day · A absent · H holiday · blank not recorded. Click a day to open its sheet.</CardDescription>
         <CardAction className="flex gap-2"><Button variant="outline" size="icon" className="size-8" aria-label="Previous week" onClick={() => setWs(addDays(ws, -7))}><ChevronLeft /></Button><Button variant="outline" size="icon" className="size-8" aria-label="Next week" disabled={addDays(ws, 7) > TODAY} onClick={() => setWs(addDays(ws, 7))}><ChevronRight /></Button></CardAction>
       </CardHeader>
       <Table>
@@ -161,7 +189,7 @@ function WeekGrid({ anchor, onPick }: { anchor: string; onPick: (d: string) => v
                   if (a) total += a.status === 'Present' ? 1 : a.status === 'Half Day' ? 0.5 : 0
                   return (
                     <TableCell key={day} className="text-center">
-                      {a ? <span title={`${a.status}${a.projectId ? ` · ${d.projectById.get(a.projectId)?.code}` : ''}`} className={cn('inline-grid size-7 place-items-center rounded-md text-xs font-semibold', a.status === 'Present' ? 'bg-success-soft text-success' : a.status === 'Half Day' ? 'bg-warning-soft text-warning' : 'bg-muted text-muted-foreground')}>{a.status === 'Present' ? 'P' : a.status === 'Half Day' ? '½' : 'A'}</span> : <span className="text-muted-foreground">·</span>}
+                      {holidays.has(day) && !a ? <span title={holidays.get(day) || 'Holiday'} className="text-muted-foreground text-xs font-semibold">H</span> : a ? <span title={`${a.status}${a.projectId ? ` · ${d.projectById.get(a.projectId)?.code}` : ''}`} className={cn('inline-grid size-7 place-items-center rounded-md text-xs font-semibold', a.status === 'Present' ? 'bg-success-soft text-success' : a.status === 'Half Day' ? 'bg-warning-soft text-warning' : 'bg-muted text-muted-foreground')}>{a.status === 'Present' ? 'P' : a.status === 'Half Day' ? '½' : 'A'}</span> : <span className="text-muted-foreground">·</span>}
                     </TableCell>
                   )
                 })}

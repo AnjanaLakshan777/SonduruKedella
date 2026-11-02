@@ -4,21 +4,24 @@ import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.common.exception.NotFoundException;
 import com.sondurukedella.employees.dto.AttendanceDayRequest;
 import com.sondurukedella.employees.dto.AttendanceResponse;
+import com.sondurukedella.employees.dto.HolidayRequest;
+import com.sondurukedella.employees.dto.HolidayResponse;
 import com.sondurukedella.employees.dto.PayrollInputs;
 import com.sondurukedella.employees.entity.Attendance;
 import com.sondurukedella.employees.entity.Employee;
 import com.sondurukedella.employees.entity.EmployeeStatus;
+import com.sondurukedella.employees.entity.WorkHoliday;
 import com.sondurukedella.employees.mapper.EmployeeMapper;
 import com.sondurukedella.employees.repository.AttendanceRepository;
 import com.sondurukedella.employees.repository.EmployeeRepository;
 import com.sondurukedella.employees.repository.OvertimeEntryRepository;
+import com.sondurukedella.employees.repository.WorkHolidayRepository;
 import com.sondurukedella.employees.validation.EmployeeRules;
 import com.sondurukedella.projects.dto.ProjectResponse;
 import com.sondurukedella.projects.entity.ProjectStatus;
 import com.sondurukedella.projects.entity.ProjectType;
 import com.sondurukedella.projects.service.ProjectService;
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
@@ -43,11 +46,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class AttendanceService {
 
     public static final int MAX_RANGE_DAYS = 93;
+    // holidays are few, so a whole year (and a bit) in one call
+    public static final int MAX_HOLIDAY_RANGE_DAYS = 400;
     // the attendance page offers only these, and only construction projects
     private static final Set<ProjectStatus> SITE_OPEN = EnumSet.of(ProjectStatus.IN_PROGRESS, ProjectStatus.ON_HOLD);
 
     private final AttendanceRepository repository;
     private final OvertimeEntryRepository overtime;
+    private final WorkHolidayRepository holidays;
     private final EmployeeRepository employees;
     private final EmployeeMapper mapper;
     private final ProjectService projectService;
@@ -58,8 +64,9 @@ public class AttendanceService {
         if (date.isAfter(LocalDate.now(clock))) {
             throw new InvalidRequestException("Attendance can't be recorded for future dates.");
         }
-        if (date.getDayOfWeek() == DayOfWeek.SUNDAY) {
-            throw new InvalidRequestException("Sunday is not a work day. Choose another date.");
+        // any day can be a work day (Sundays too); only a date marked as a holiday takes no attendance
+        if (holidays.existsByDate(date)) {
+            throw new InvalidRequestException(date + " is marked as a holiday. Turn the holiday off to record attendance.");
         }
         Set<Long> seen = new HashSet<>();
         for (AttendanceDayRequest.Entry entry : request.entries()) {
@@ -127,6 +134,45 @@ public class AttendanceService {
         List<Attendance> rows = repository.search(from, to, employeeId, projectId);
         Map<Long, String> names = names(rows.stream().map(Attendance::getEmployeeId).collect(Collectors.toSet()));
         return rows.stream().map(a -> mapper.toResponse(a, names.get(a.getEmployeeId()))).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<HolidayResponse> holidays(LocalDate from, LocalDate to) {
+        if (from.isAfter(to)) {
+            throw new InvalidRequestException("from must be on or before to.");
+        }
+        if (ChronoUnit.DAYS.between(from, to) >= MAX_HOLIDAY_RANGE_DAYS) {
+            throw new InvalidRequestException("Ask for at most " + MAX_HOLIDAY_RANGE_DAYS + " days at a time.");
+        }
+        return holidays.findByDateBetweenOrderByDate(from, to).stream().map(h -> new HolidayResponse(h.getDate(), h.getNote())).toList();
+    }
+
+    // Marking again only changes the note. A day that already has attendance can't become a holiday:
+    // those marks would still be paid, so they have to be cleared first.
+    @Transactional
+    public HolidayResponse markHoliday(LocalDate date, HolidayRequest request) {
+        WorkHoliday holiday = holidays.findByDate(date).orElse(null);
+        if (holiday == null) {
+            int marked = repository.findByWorkDate(date).size();
+            if (marked > 0) {
+                throw new InvalidRequestException(marked + (marked == 1 ? " worker is" : " workers are")
+                        + " already marked on " + date + ". Clear that attendance before making it a holiday.");
+            }
+            holiday = new WorkHoliday(date);
+        }
+        holiday.setNote(EmployeeRules.trimToNull(request == null ? null : request.note()));
+        try {
+            holiday = holidays.saveAndFlush(holiday);
+        } catch (DataIntegrityViolationException ex) {
+            // marked from another screen at the same moment
+            throw new InvalidRequestException(date + " was just marked as a holiday. Reload and try again.");
+        }
+        return new HolidayResponse(holiday.getDate(), holiday.getNote());
+    }
+
+    @Transactional
+    public void unmarkHoliday(LocalDate date) {
+        holidays.findByDate(date).ifPresent(holidays::delete);
     }
 
     // For payroll: every day and overtime entry in [from, to], optionally for one worker.

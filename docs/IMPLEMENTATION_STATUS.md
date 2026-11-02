@@ -1861,3 +1861,21 @@ For each completed task, record the date, files or migrations changed, verificat
 - Attendance, overtime and "Issue to project" now list only Construction projects that are **In Progress** (before: attendance also On Hold; overtime anything not completed or cancelled; stock issue also On Hold and Planning).
 - An attendance row already booked to a project that has since left In Progress keeps that project in its menu, so reopening a past day doesn't lose or blank it.
 - Not changed: supplier invoices (bills can arrive after a project finishes) and returns (they follow the original issue). Frontend only; the backend doesn't restrict by status. `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-02: Sundays are work days; holidays are marked per date
+- Removed the fixed rule that Sunday takes no attendance (backend `AttendanceService` and the attendance page).
+- New `work_holidays` table (migration V10) and endpoints `GET/PUT/DELETE /api/v1/holidays`. See DATABASE.md, V10.
+- Attendance page, daily sheet:
+  - a **Holiday** checkbox next to the date. Ticked, the day shows "is a holiday: no attendance and no wages" with an optional name (e.g. Poya day), saved when the box loses focus;
+  - ticking is refused while the day has saved attendance; the server message is shown;
+  - "yesterday's project" prefill skips holidays instead of Sundays.
+- Week view shows all seven days (Monday to Sunday), with **H** for a holiday that has no marks.
+- Holidays load with the labour data, from the first worker's joining date to a year ahead (`loadHolidays`).
+- Tests: `EmployeeApiIntegrationTest.sundayIsAWorkDayAndOnlyAMarkedHolidayTakesNoAttendance`; the old Sunday assertion was removed.
+  - Backend: 675 tests, 0 failures, on an isolated copy with a throwaway PostgreSQL 17.
+  - Frontend: `tsc -b` clean; 41 Vitest tests pass.
+- Dev backend rebuilt; V10 applied (Flyway v10). Live check against the dev backend:
+  - `loadAll` loads holidays;
+  - marking, listing and unmarking a test date work; that test row was removed afterwards;
+  - a Sunday register is accepted.
+- Not tried in a browser.

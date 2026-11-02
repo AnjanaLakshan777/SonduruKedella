@@ -428,7 +428,7 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
   - There is no staff number and no duplicate check, because two workers may share a name.
   - Workers are never deleted; they are set `INACTIVE`. Inactive workers take no new attendance, overtime or advances, but their unpaid weeks can still be paid.
 - Attendance (`PUT /api/v1/attendance/{date}`): the whole register for a day.
-  - No Sundays, no future dates, only active workers who had joined by that date.
+  - No future dates, and no date marked as a holiday (`work_holidays`, V10). Sundays are ordinary work days since V10. Only active workers who had joined by that date.
   - A project must be construction and In Progress or On Hold (the page's list).
   - Only rows that change are written, so a paid week can be re-saved unchanged. A worker left off the register loses that day's mark.
 - Overtime: 0 < hours ≤ 8. The rate defaults to the worker's overtime rate. A project must be construction and not completed or cancelled. Entries start unapproved, and only approved hours are paid.
@@ -791,3 +791,11 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
   - It stops with a NOT NULL error, changing nothing, if any user has no email. Give those users one first.
   - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V9).
   - Applied to the development database on 2026-10-30. Both users had an email.
+- `V10__work_holidays.sql` (2026-11-02): adds `work_holidays` (`holiday_date` unique, optional `note` up to 200 characters, `created_at`/`created_by`/`updated_at`).
+  - It replaces the fixed "no Sundays" rule. The owner marks any date as a holiday, and attendance can't be saved on it.
+  - A date that already has attendance can't be marked until that attendance is cleared, so a holiday never carries paid days.
+  - API:
+    - `GET /api/v1/holidays?from&to` (at most 400 days);
+    - `PUT /api/v1/holidays/{date}` (mark, or update the note);
+    - `DELETE /api/v1/holidays/{date}` (unmark; no error if it wasn't marked).
+  - Additive only. Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V10). Applied to the development database on 2026-11-02; Flyway reports v10.

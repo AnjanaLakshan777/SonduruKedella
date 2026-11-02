@@ -224,8 +224,19 @@ export async function loadLabour() {
     apiGet<Row[]>('/payroll/frozen-weeks'),
   ])
   const firstDay = employeeRows.reduce((m: string, e: Row) => (e.joinedOn < m ? e.joinedOn : m), TODAY)
-  const [attendanceRows, overtimeRows] = await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay)])
-  return { ...mapLabour(employeeRows, attendanceRows, overtimeRows, advanceRows, adjustmentRows, paymentRows), frozenWeeks: frozenSet(frozenRows) }
+  const [attendanceRows, overtimeRows, holidays] = await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay), loadHolidays(firstDay)])
+  return { ...mapLabour(employeeRows, attendanceRows, overtimeRows, advanceRows, adjustmentRows, paymentRows), frozenWeeks: frozenSet(frozenRows), holidays }
+}
+
+// date -> note ('' when none); from the first worker's joining date to a year ahead, so future holidays can be set too
+export async function loadHolidays(from: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const until = addDays(TODAY, 366)
+  for (let start = from; start <= until; start = addDays(start, 390)) {
+    const end = addDays(start, 389) < until ? addDays(start, 389) : until
+    for (const h of await apiGet<Row[]>(`/holidays?from=${start}&to=${end}`)) out.set(h.date, h.note ?? '')
+  }
+  return out
 }
 
 // worker-weeks already paid or closed, keyed like adjustments
@@ -336,7 +347,7 @@ async function inWindows(path: string, from: string): Promise<Row[]> {
   return out
 }
 
-export async function loadAll(): Promise<DataState & { frozenWeeks: Set<string> }> {
+export async function loadAll(): Promise<DataState & { frozenWeeks: Set<string>; holidays: Map<string, string> }> {
   const [overview, clientRows, projectRows, otherIncomeRows, expenseRows, expensePaymentRows, supplierRows, invoiceRows, materialRows,
     movementRows, employeeRows, advanceRows, adjustmentRows, payrollPaymentRows, commissionRows, commissionPaymentRows, activityRows, frozenRows] =
     await Promise.all([
@@ -367,7 +378,7 @@ export async function loadAll(): Promise<DataState & { frozenWeeks: Set<string> 
     Promise.all(liveInvoices.map((i: Row) => apiGet<Row>(`/supplier-invoices/${i.id}`))),
   ])
   const firstDay = employeeRows.reduce((m: string, e: Row) => (e.joinedOn < m ? e.joinedOn : m), TODAY)
-  const [attendanceRows, overtimeRows] = await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay)])
+  const [attendanceRows, overtimeRows, holidays] = await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay), loadHolidays(firstDay)])
 
   const projects: Project[] = perProject.map((b) => b.project)
   const installments: Installment[] = perProject.flatMap((b) => b.installments)
@@ -393,7 +404,7 @@ export async function loadAll(): Promise<DataState & { frozenWeeks: Set<string> 
     clients, projects, installments, clientPayments, writeOffs, otherIncome, otherIncomeReceipts, expenses, expensePayments, suppliers,
     supplierInvoices, supplierPayments, materials, stockMovements, employees, attendance, overtime, advances, payrollAdjustments,
     payrollPayments, commissions, commissionPayments, activity, settings: settingsFrom(overview),
-    frozenWeeks: frozenSet(frozenRows),
+    frozenWeeks: frozenSet(frozenRows), holidays,
   }
 }
 
