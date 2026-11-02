@@ -13,6 +13,7 @@ import { useCrumbs } from '@/components/app/app-layout'
 import { PageHeader } from '@/components/app/page-header'
 import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/form'
 import { FigureList } from '@/components/app/figure-list'
+import { AddMaterialDialog } from '@/components/app/add-material-dialog'
 import { Money } from '@/components/app/money'
 import { useStore } from '@/store/store'
 import { addDays, TODAY } from '@/lib/dates'
@@ -21,6 +22,9 @@ import { errorMessage } from '@/lib/api'
 
 interface Line { key: string; materialId: string; description: string; qty: number | ''; unit: string; unitPrice: number | '' }
 let n = 0
+// menu entries that aren't materials: undo a wrong pick, or add a material without leaving the invoice
+const NO_MATERIAL = '__none'
+const NEW_MATERIAL = '__new'
 const blank = (): Line => ({ key: `l${++n}`, materialId: '', description: '', qty: '', unit: 'nos', unitPrice: '' })
 
 export default function SupplierInvoiceForm() {
@@ -44,6 +48,7 @@ export default function SupplierInvoiceForm() {
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
   const [requestId] = useState(() => crypto.randomUUID())
+  const [newFor, setNewFor] = useState<string | undefined>()
   const fileRef = useRef<HTMLInputElement>(null)
   const supplier = suppliers.find((s) => s.id === supplierId)
   useEffect(() => { if (!dueTouched) setDue(addDays(date, supplier?.creditDays ?? settings.supplierCreditDays)) }, [date, supplier, dueTouched, settings.supplierCreditDays])
@@ -62,6 +67,13 @@ export default function SupplierInvoiceForm() {
   }
   const errs = Object.values(err).filter(Boolean) as string[]
   const set = (key: string, patch: Partial<Line>) => setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  // picking a material fills what is still empty from it; clearing empties the whole line again
+  const pickMaterial = (line: Line, value: string) => {
+    if (value === NEW_MATERIAL) { setNewFor(line.key); return }
+    if (value === NO_MATERIAL) { set(line.key, { materialId: '', description: '', qty: '', unit: 'nos', unitPrice: '' }); return }
+    const m = useStore.getState().materials.find((x) => x.id === value)
+    setLines((all) => all.map((l) => (l.key === line.key ? { ...l, materialId: value, description: l.description || m?.name || '', unit: m?.unit ?? l.unit, unitPrice: l.unitPrice || m?.unitCost || '' } : l)))
+  }
 
   async function save() {
     setTried(true)
@@ -113,11 +125,11 @@ export default function SupplierInvoiceForm() {
             <CardHeader><CardTitle>Items</CardTitle><CardDescription>Bricks, sand, cement, steel and other supplies on this invoice.</CardDescription></CardHeader>
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead className="min-w-44 pl-6">Material</TableHead><TableHead className="min-w-48">Description</TableHead><TableHead className="w-24 text-right">Qty</TableHead><TableHead className="w-28">Unit</TableHead><TableHead className="w-44 text-right">Unit price</TableHead><TableHead className="text-right">Total (LKR)</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead className="min-w-44 pl-6">Material</TableHead><TableHead className="min-w-48">Description</TableHead><TableHead className="min-w-28 text-right">Qty</TableHead><TableHead className="min-w-28">Unit</TableHead><TableHead className="min-w-44 text-right">Unit price</TableHead><TableHead className="min-w-32 text-right">Total (LKR)</TableHead><TableHead className="w-12" /></TableRow></TableHeader>
                 <TableBody>
                   {lines.map((l) => (
                     <TableRow key={l.key} className="hover:bg-transparent">
-                      <TableCell className="pl-6"><SelectField value={l.materialId} onChange={(v) => { const m = materials.find((x) => x.id === v); set(l.key, { materialId: v, description: l.description || m?.name || '', unit: m?.unit ?? l.unit, unitPrice: l.unitPrice || m?.unitCost || '' }) }} placeholder={alloc === 'stock' ? 'Select material' : 'Optional'} options={materials.map((m) => ({ value: m.id, label: `${m.sku} · ${m.name}` }))} invalid={tried && alloc === 'stock' && !l.materialId} /></TableCell>
+                      <TableCell className="pl-6"><SelectField value={l.materialId} onChange={(v) => pickMaterial(l, v)} placeholder={alloc === 'stock' ? 'Select material' : 'Optional'} options={[...(l.materialId ? [{ value: NO_MATERIAL, label: 'Clear this line' }] : []), ...materials.map((m) => ({ value: m.id, label: `${m.sku} · ${m.name}` })), { value: NEW_MATERIAL, label: '+ Add new material…' }]} invalid={tried && alloc === 'stock' && !l.materialId} /></TableCell>
                       <TableCell><Input value={l.description} onChange={(e) => set(l.key, { description: e.target.value })} placeholder="e.g. River sand" aria-label="Description" aria-invalid={(tried && !l.description.trim()) || undefined} /></TableCell>
                       <TableCell><Input type="number" min={0} className="text-right" value={l.qty} onChange={(e) => set(l.key, { qty: e.target.value === '' ? '' : Number(e.target.value) })} aria-label="Quantity" aria-invalid={(tried && !(Number(l.qty) > 0)) || undefined} /></TableCell>
                       <TableCell><SelectField value={l.unit} onChange={(v) => set(l.key, { unit: v })} options={settings.units} /></TableCell>
@@ -135,6 +147,8 @@ export default function SupplierInvoiceForm() {
               {tried && (err.lines || err.stock) && <p className="text-destructive flex items-center gap-1.5 text-xs"><CircleAlert className="size-3.5" />{err.lines ?? err.stock}</p>}
             </CardContent>
           </Card>
+          <AddMaterialDialog open={!!newFor} onOpenChange={(o) => { if (!o) setNewFor(undefined) }} initialName={lines.find((l) => l.key === newFor)?.description}
+            onAdded={(sku) => { const m = useStore.getState().materials.find((x) => x.sku === sku); const line = lines.find((l) => l.key === newFor); if (m && line) pickMaterial(line, m.id) }} />
           <Card>
             <CardHeader><CardTitle>Notes and document</CardTitle></CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">

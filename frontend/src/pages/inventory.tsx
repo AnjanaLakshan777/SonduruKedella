@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ArrowLeftRight, Ellipsis, FilePlus2, Info, Package, Plus } from 'lucide-react'
+import { ArrowLeftRight, Ellipsis, FilePlus2, Info, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -22,6 +22,7 @@ import { CellMain, Pagination, usePaged } from '@/components/app/data-table'
 import { ALL, FilterBar, FilterSelect, SearchInput } from '@/components/app/filters'
 import { AmountInput, DatePicker, Field, SelectField } from '@/components/app/form'
 import { FigureList } from '@/components/app/figure-list'
+import { AddMaterialDialog } from '@/components/app/add-material-dialog'
 import { useData, useStore } from '@/store/store'
 import { sum, type MaterialView } from '@/lib/finance'
 import { describeAllocations } from '@/lib/fifo'
@@ -307,46 +308,6 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
           {type === 'Received' && <p className="text-muted-foreground flex gap-2 text-xs sm:col-span-2"><Info className="size-3.5 shrink-0" />No supplier payable is created here. For credit purchases, <Link to="/suppliers/invoices/new" className="text-primary-text underline" onClick={onClose}>record a supplier invoice</Link> instead.</p>}
         </div>
         <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={busy}>Save movement</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function AddMaterialDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const { addMaterial, settings, materials } = useStore()
-  const [f, setF] = useState({ name: '', sku: '', category: '', unit: 'nos', unitCost: '' as number | '' })
-  const [tried, setTried] = useState(false)
-  const [busy, setBusy] = useState(false)
-  useEffect(() => { if (open) { setTried(false); setF({ name: '', sku: '', category: '', unit: 'nos', unitCost: '' }) } }, [open])
-  const err = { name: !f.name.trim() ? 'Enter a name.' : undefined, sku: !f.sku.trim() ? 'Enter an item code.' : materials.some((m) => m.sku.toLowerCase() === f.sku.trim().toLowerCase()) ? 'This code is already used.' : undefined, category: !f.category.trim() ? 'Enter a category.' : undefined }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Add material</DialogTitle><DialogDescription>Starts with zero stock. Record a purchase or stock received to add quantity.</DialogDescription></DialogHeader>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Material name" required error={tried ? err.name : undefined} className="sm:col-span-2"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Roofing sheet (Amano 8 ft)" /></Field>
-          <Field label="SKU / item code" required error={tried ? err.sku : undefined}><Input value={f.sku} onChange={(e) => setF({ ...f, sku: e.target.value.toUpperCase() })} className="font-mono" /></Field>
-          <Field label="Category" required error={tried ? err.category : undefined}><Input value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} list="mat-cats" /><datalist id="mat-cats">{[...new Set(materials.map((m) => m.category))].map((c) => <option key={c} value={c} />)}</datalist></Field>
-          <Field label="Unit of measurement" required><SelectField value={f.unit} onChange={(v) => setF({ ...f, unit: v })} options={settings.units} /></Field>
-          <Field label="Default unit cost" optional className="sm:col-span-2"><AmountInput value={f.unitCost} onChange={(v) => setF({ ...f, unitCost: v })} /></Field>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={busy} onClick={async () => {
-            setTried(true)
-            if (Object.values(err).some(Boolean)) return
-            setBusy(true)
-            try {
-              await addMaterial({ name: f.name.trim(), sku: f.sku.trim(), category: f.category.trim(), unit: f.unit, unitCost: Number(f.unitCost) || 0 })
-              toast.success('Material added', { description: f.name })
-              onOpenChange(false)
-            } catch (e) {
-              toast.error('Material not added', { description: errorMessage(e) })
-            } finally {
-              setBusy(false)
-            }
-          }}><Package />Add material</Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

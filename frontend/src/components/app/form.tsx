@@ -123,8 +123,10 @@ export function SelectField({ value, onChange, options, placeholder = 'Select', 
   className?: string
   disabled?: boolean
 }) {
+  // always controlled: "" shows the placeholder. undefined would hand the choice to Radix, which then
+  // keeps showing the last item clicked even when the caller ignores it (a cleared or "add new" pick)
   return (
-    <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
+    <Select value={value ?? ''} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger id={id} size={size} aria-invalid={invalid || undefined} className={className}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>

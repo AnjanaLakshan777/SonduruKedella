@@ -1832,3 +1832,14 @@ For each completed task, record the date, files or migrations changed, verificat
 - Payroll calculation and the backend are unchanged; the payday still decides when a week can be paid.
 - `tsc -b` is clean and 41 Vitest tests pass. Not tried in a browser.
 - Follow-up: the Labour report's worker table has a Paid column (with total) before Outstanding. Each row now reads base wages + OT − advances − paid = outstanding.
+
+### 2026-11-02: Supplier invoice items: clear or add a material on the line
+- The Material menu on each invoice line now offers:
+  - **"Clear this line"** once a material is picked, to undo a wrong pick. It empties the whole line (material, description, quantity, unit back to "nos", price).
+  - **"+ Add new material…"**, which opens the Add material dialog with the description already filled in. The new material is selected on that line straight away and fills its unit and default cost.
+- The Add material dialog moved to `components/app/add-material-dialog.tsx` (shared with the Inventory page, which works as before).
+- The Qty, Unit, Unit price and Total columns have minimum widths, so entered quantities and prices show in full instead of being squeezed; the table scrolls sideways on narrow screens.
+- `tsc -b` and `vite build` are clean; 41 Vitest tests pass. Not tried in a browser.
+- Fix (same day): "No material (clear)" didn't clear, and closing the Add material dialog left "+ Add new material…" showing as the pick.
+  - Cause: `SelectField` passed an empty value to Radix as `undefined`. That made the select uncontrolled, so it kept showing the last item clicked even when the form ignored it.
+  - `SelectField` (`components/app/form.tsx`) is now always controlled: an empty value is `""` and shows the placeholder. This applies to every select in the app; all of them already pass a value.
