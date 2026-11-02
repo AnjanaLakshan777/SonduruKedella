@@ -1852,3 +1852,7 @@ For each completed task, record the date, files or migrations changed, verificat
 - With **Stock received** selected, the Material menu ends with **"+ Add new material…"**. It opens the shared Add material dialog; the new material is then selected, and its default cost fills the unit cost. Other movement types don't offer it, since a new material has no stock to issue, return or adjust.
 - `tsc -b` is clean; 41 Vitest tests pass. Not tried in a browser.
 - Follow-up: Issue, Return and Stock received have an optional **Description** box. It is saved in the movement's existing `notes` column (the backend already accepted it), and shows in the movement history next to the project or invoice. Adjustments keep their required Reason, which uses the same column. Frontend only; `tsc -b` clean, 41 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-02: Employees: change status from the row menu
+- On the Labour & Payroll employees list, the row menu has a second item under "Edit details and rates": **Mark as inactive** for an active worker, **Mark as active** for an inactive one. It calls the existing `PUT /api/v1/employees/{id}/status` with the version last read; a failure shows the server's message.
+- Frontend only (`setEmployeeStatus` in the store). `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.

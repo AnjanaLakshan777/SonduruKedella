@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Ellipsis, Pencil, Plus, UserRound } from 'lucide-react'
+import { Ellipsis, Pencil, Plus, UserCheck, UserRound, UserX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -38,6 +38,17 @@ export function Employees() {
   const rows = d.s.employees.filter((e) => (status === ALL || e.status === status) && (!q || `${e.name} ${e.role}`.toLowerCase().includes(q.toLowerCase())))
   const activeEmps = d.s.employees.filter((e) => e.status === 'Active')
   const week = d.payroll[d.payroll.length - 1]
+  const setEmployeeStatus = useStore((s) => s.setEmployeeStatus)
+  // one click from the row menu: active goes inactive and back, without opening the edit form
+  async function toggleStatus(e: Employee) {
+    const next = e.status === 'Active' ? 'Inactive' : 'Active'
+    try {
+      await setEmployeeStatus(e.id, next)
+      toast.success(next === 'Active' ? 'Marked as active' : 'Marked as inactive', { description: e.name })
+    } catch (err) {
+      toast.error('Status not changed', { description: errorMessage(err) })
+    }
+  }
   return (
     <>
       <KpiStrip items={[
@@ -69,7 +80,10 @@ export function Employees() {
                   <TableCell className="pr-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label={`Actions for ${e.name}`}><Ellipsis /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setEdit({ open: true, e })}><Pencil />Edit details and rates</DropdownMenuItem></DropdownMenuContent>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setEdit({ open: true, e })}><Pencil />Edit details and rates</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => toggleStatus(e)}>{e.status === 'Active' ? <><UserX />Mark as inactive</> : <><UserCheck />Mark as active</>}</DropdownMenuItem>
+                      </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>

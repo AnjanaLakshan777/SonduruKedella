@@ -50,6 +50,7 @@ interface Actions {
   addStockMovement: (m: New<StockMovement> & { requestId: string; notes?: string }) => Promise<{ totalCost: number; projectId?: string }>
   addEmployee: (e: New<Employee>) => Promise<void>
   updateEmployee: (id: string, e: New<Employee>) => Promise<void>
+  setEmployeeStatus: (id: string, status: Employee['status']) => Promise<void>
   // the whole register for the day; a worker left out has no attendance that day
   saveAttendance: (date: string, rows: Attendance[]) => Promise<void>
   addOvertime: (o: Omit<New<Overtime>, 'approved'>) => Promise<void>
@@ -358,6 +359,10 @@ export const useStore = create<Store>()((set, get) => {
       const saved = await apiPut<{ version: number; status: string }>(`/employees/${id}`, { ...employeeBody(e), version: versionOf('employee', id) })
       // active/inactive has its own endpoint, so an ordinary edit can't flip it by accident
       if (saved.status !== code(e.status)) await apiPut(`/employees/${id}/status`, { status: code(e.status), version: saved.version })
+      await refreshLabour()
+    },
+    setEmployeeStatus: async (id, status) => {
+      await apiPut(`/employees/${id}/status`, { status: code(status), version: versionOf('employee', id) })
       await refreshLabour()
     },
     saveAttendance: async (date, rows) => {
