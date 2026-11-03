@@ -13,6 +13,7 @@ import com.sondurukedella.security.user.dto.UserResponse;
 import com.sondurukedella.security.user.dto.UserRoleRequest;
 import com.sondurukedella.security.user.dto.UserStatusRequest;
 import com.sondurukedella.security.user.dto.UserUpdateRequest;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -78,20 +79,46 @@ public class UserAdministrationService {
         lockSuperAdmins(actorId);
         AppUser user = loadForUpdate(id);
         ConflictException.requireCurrentVersion(request.version(), user.getVersion());
+        String previousUsername = user.getUsername();
+        String username = request.username() == null ? previousUsername : checkedUsername(request.username(), id);
         String displayName = request.displayName().strip();
         String email = checkedEmail(request.email(), id);
+        boolean usernameChanged = !username.equals(previousUsername);
         boolean nameChanged = !displayName.equals(user.getDisplayName());
         boolean emailChanged = !email.equals(user.getEmail());
-        if (!nameChanged && !emailChanged) {
+        if (!usernameChanged && !nameChanged && !emailChanged) {
             return mapper.toResponse(user);
+        }
+        List<String> changes = new ArrayList<>();
+        if (usernameChanged) {
+            user.setUsername(username);
+            // the session still carries the old name, so they sign in again with the new one
+            user.revokeSessions();
+            changes.add("username " + previousUsername + " -> " + username);
+        }
+        if (nameChanged) {
+            changes.add("display name changed");
+        }
+        if (emailChanged) {
+            changes.add("email changed");
         }
         user.setDisplayName(displayName);
         user.setEmail(email);
         AppUser saved = repository.saveAndFlush(user);
-        String details = nameChanged && emailChanged ? "display name and email changed"
-                : nameChanged ? "display name changed" : "email changed";
-        audit.record(SecurityEventType.USER_UPDATED, actorId, id, user.getUsername(), details);
+        audit.record(SecurityEventType.USER_UPDATED, actorId, id, username, String.join(", ", changes));
         return mapper.toResponse(saved);
+    }
+
+    // the unique index on lower(username) backs this up if two requests race
+    private String checkedUsername(String raw, long userId) {
+        String username = Usernames.normalize(raw);
+        if (!Usernames.isValid(username)) {
+            throw new InvalidRequestException(Usernames.RULE);
+        }
+        if (repository.existsByUsernameExcept(username, userId)) {
+            throw new ConflictException("That username is already taken.");
+        }
+        return username;
     }
 
     // the unique index backs this up if two requests race

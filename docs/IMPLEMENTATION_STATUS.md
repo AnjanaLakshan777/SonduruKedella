@@ -887,7 +887,7 @@ For each completed task, record the date, files or migrations changed, verificat
   | GET `/api/v1/users` | Super Admin | list (`q`, `role`, `enabled`, paging, sort `username`/`displayName`/`createdAt`/`id`) |
   | GET `/api/v1/users/{id}` | Super Admin | one user |
   | POST `/api/v1/users` | Super Admin | create (`role` defaults to `ADMIN`) → 201 + `Location` |
-  | PUT `/api/v1/users/{id}` | Super Admin | display name and email (`version` required) |
+  | PUT `/api/v1/users/{id}` | Super Admin | username, display name and email (`version` required; username optional, unchanged when left out) |
   | PUT `/api/v1/users/{id}/role` | Super Admin | change role (`version` required) |
   | PUT `/api/v1/users/{id}/status` | Super Admin | activate or deactivate (`version` required) |
   | PUT `/api/v1/users/{id}/password` | Super Admin | reset someone else's password (204, never echoed) |
@@ -1933,3 +1933,13 @@ For each completed task, record the date, files or migrations changed, verificat
   - `src/data/seed.ts` stays: the unit tests use it (`createSeed()`, the store's `reset()` in `inventory.test.ts`).
   - DEVELOPMENT_WORKFLOW.md "Sample data" rewritten to match, with the reload steps in order.
   - `tsc -b` clean; 41 Vitest tests pass. The script wasn't re-run: the database already holds this data.
+
+### 2026-11-03: Username can be changed
+
+- `PUT /api/v1/users/{id}` takes an optional `username` (Super Admin only, like the rest of the endpoint).
+  - Trimmed and lower-cased, same rule as on create (400 when invalid).
+  - Must not belong to another user in any case: 409 `That username is already taken.` The unique index on `lower(username)` (V5) backs this up. No migration needed.
+  - A real change bumps `auth_version`, so that user's sessions end and they sign in with the new name. Keeping the same name (any case) changes nothing.
+  - Audit: `USER_UPDATED` with `username old -> new`.
+- Users page: the edit dialog's Username field is editable now, and the menu item is "Edit details". Renaming yourself signs you out.
+- Tests: `UserAdministrationApiIntegrationTest` (rename and sign in again; taken, invalid and blank names; same name in another case). Full backend suite: 677 tests, 0 failures. Frontend `tsc` clean. Not clicked through in the browser.

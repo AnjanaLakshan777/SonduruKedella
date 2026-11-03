@@ -53,7 +53,7 @@ Every write needs the session cookie and the `X-XSRF-TOKEN` header.
 - Deactivate or reactivate: `PUT /api/v1/users/{id}/status` `{"enabled":false,"version":N}`. Deactivation ends that user's sessions at once and blocks sign-in.
 - Change a role: `PUT /api/v1/users/{id}/role` `{"role":"ADMIN","version":N}`. That user's sessions end.
 - Reset a forgotten password: `PUT /api/v1/users/{id}/password` `{"newPassword":"…"}`. Returns 204; the password is never echoed. That user's sessions end.
-- Edit the name and email: `PUT /api/v1/users/{id}` `{"displayName":"…","email":"…","version":N}`. The email is required. A Super Admin may edit their own name and email here.
+- Edit the username, name and email: `PUT /api/v1/users/{id}` `{"username":"…","displayName":"…","email":"…","version":N}`. The email is required; `username` is optional (left out = unchanged). A new username must follow the username rule and not be taken in any case (409); it ends that user's sessions, so they sign in again with it. A Super Admin may edit their own details here.
 - List and view: `GET /api/v1/users?q=&role=&enabled=&page=&size=&sort=`, and `GET /api/v1/users/{id}`.
 - Nobody can change their own role or status, or reset their own password, here. The last active Super Admin can't be demoted or deactivated.
 

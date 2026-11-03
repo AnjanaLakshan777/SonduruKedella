@@ -17,6 +17,9 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long>, JpaSpec
     @Query("select count(u) > 0 from AppUser u where lower(u.username) = :username")
     boolean existsByUsername(String username);
 
+    @Query("select count(u) > 0 from AppUser u where lower(u.username) = :username and u.id <> :excludeId")
+    boolean existsByUsernameExcept(String username, long excludeId);
+
     // pass the normalized email
     Optional<AppUser> findByEmail(String email);
 

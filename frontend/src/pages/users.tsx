@@ -83,7 +83,7 @@ export default function UsersPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label={`Actions for ${u.displayName}`}><Ellipsis /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => setForm({ open: true, user: u })}><Pencil />Edit name and email</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setForm({ open: true, user: u })}><Pencil />Edit details</DropdownMenuItem>
                         <DropdownMenuItem disabled={self || lastSuper} onSelect={() => setConfirm({ user: u, kind: 'role' })}><UserCog />{u.role === 'ADMIN' ? 'Make Super Admin' : 'Make Admin'}</DropdownMenuItem>
                         <DropdownMenuItem disabled={self} onSelect={() => setResetFor(u)}><KeyRound />Reset password</DropdownMenuItem>
                         <DropdownMenuSeparator />
@@ -139,7 +139,7 @@ function UserFormDialog({ state, onClose, onSaved }: { state: { open: boolean; u
     setF(edit ? { username: edit.username, displayName: edit.displayName, email: edit.email, password: '', role: edit.role } : { username: '', displayName: '', email: '', password: '', role: 'ADMIN' })
   }, [state, edit])
   const err = {
-    username: !edit && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/.test(f.username.trim()) ? '3 to 50 letters, digits, dots, dashes or underscores.' : undefined,
+    username: !/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,49}$/.test(f.username.trim()) ? '3 to 50 letters, digits, dots, dashes or underscores.' : undefined,
     displayName: !f.displayName.trim() ? 'Enter the person\'s name.' : undefined,
     email: !/^\S+@\S+\.\S+$/.test(f.email.trim()) ? 'Enter an email address, e.g. name@example.com.' : undefined,
     password: !edit ? passwordError(f.password) : undefined,
@@ -149,9 +149,15 @@ function UserFormDialog({ state, onClose, onSaved }: { state: { open: boolean; u
     if (Object.values(err).some(Boolean)) return
     setBusy(true)
     try {
-      if (edit) await apiPut(`/users/${edit.id}`, { displayName: f.displayName.trim(), email: f.email.trim(), version: edit.version })
+      if (edit) await apiPut(`/users/${edit.id}`, { username: f.username.trim(), displayName: f.displayName.trim(), email: f.email.trim(), version: edit.version })
       else await apiPost('/users', { username: f.username.trim(), displayName: f.displayName.trim(), email: f.email.trim(), password: f.password, role: f.role })
-      toast.success(edit ? 'User updated' : 'User added', { description: edit ? f.displayName : `Give ${f.displayName.trim()} their password in person; they can change it after signing in.` })
+      const renamed = !!edit && f.username.trim().toLowerCase() !== edit.username
+      toast.success(edit ? 'User updated' : 'User added', {
+        description: renamed ? `${f.displayName.trim()} is signed out; they sign in with the new username.`
+          : edit ? f.displayName : `Give ${f.displayName.trim()} their password in person; they can change it after signing in.`,
+      })
+      // renaming yourself ends your own session too
+      if (renamed && edit.id === useAuth.getState().user?.id) { await useAuth.getState().check(); return }
       await onSaved()
       onClose()
     } catch (e) {
@@ -163,10 +169,10 @@ function UserFormDialog({ state, onClose, onSaved }: { state: { open: boolean; u
   return (
     <Dialog open={state.open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{edit ? 'Edit user' : 'Add user'}</DialogTitle><DialogDescription>{edit ? 'The username can\'t change. Role, status and password have their own actions.' : 'They sign in with the username or the email.'}</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{edit ? 'Edit user' : 'Add user'}</DialogTitle><DialogDescription>{edit ? 'A new username signs them out; they sign in again with it. Role, status and password have their own actions.' : 'They sign in with the username or the email.'}</DialogDescription></DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name" required error={tried ? err.displayName : undefined}><Input value={f.displayName} onChange={(e) => setF({ ...f, displayName: e.target.value })} /></Field>
-          <Field label="Username" required={!edit} error={tried ? err.username : undefined}><Input value={f.username} disabled={!!edit} autoComplete="off" onChange={(e) => setF({ ...f, username: e.target.value })} /></Field>
+          <Field label="Username" required error={tried ? err.username : undefined}><Input value={f.username} autoComplete="off" onChange={(e) => setF({ ...f, username: e.target.value })} /></Field>
           <Field label="Email" required className="sm:col-span-2" error={tried ? err.email : undefined}><Input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
           {!edit && (
             <>

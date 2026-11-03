@@ -234,6 +234,40 @@ class UserAdministrationApiIntegrationTest {
     }
 
     @Test
+    void theUsernameCanBeChangedToAFreeOneAndTheUserSignsInAgainWithIt() throws Exception {
+        // admin is the same managed entity the update changes, so keep the old name first
+        String old = admin.getUsername();
+        String renamed = "staff-new-" + System.nanoTime();
+        update(admin.getId(), " %s ".formatted(renamed.toUpperCase()), admin.getDisplayName(), admin.getEmail())
+                .andExpect(status().isOk()).andExpect(jsonPath("$.username").value(renamed));
+
+        // the old session dies, the old name no longer signs in, the new one does
+        mockMvc.perform(get("/api/v1/projects").session(adminSession)).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/auth/login").with(csrf()).with(from(randomAddress())).contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(old, PASSWORD)))
+                .andExpect(status().isUnauthorized());
+        MockHttpSession fresh = login(mockMvc, renamed);
+        mockMvc.perform(get("/api/v1/auth/me").session(fresh))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.username").value(renamed));
+        assertThat(events(admin.getId())).extracting(e -> e.get("details"))
+                .contains("username " + old + " -> " + renamed);
+    }
+
+    @Test
+    void aUsernameMustBeValidAndNotTakenInAnyCase() throws Exception {
+        update(admin.getId(), superAdmin.getUsername().toUpperCase(), admin.getDisplayName(), admin.getEmail())
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value("That username is already taken."));
+        update(admin.getId(), "x", admin.getDisplayName(), admin.getEmail()).andExpect(status().isBadRequest());
+        update(admin.getId(), "has space", admin.getDisplayName(), admin.getEmail()).andExpect(status().isBadRequest());
+        update(admin.getId(), "  ", admin.getDisplayName(), admin.getEmail()).andExpect(status().isBadRequest());
+
+        // keeping your own username (any case) is not a clash and keeps the session
+        update(admin.getId(), admin.getUsername().toUpperCase(), "Staff Renamed", admin.getEmail())
+                .andExpect(status().isOk()).andExpect(jsonPath("$.username").value(admin.getUsername()));
+        mockMvc.perform(get("/api/v1/auth/me").session(adminSession)).andExpect(status().isOk());
+    }
+
+    @Test
     void aUserCanSignInWithTheirEmailInAnyCase() throws Exception {
         String tag = Long.toString(System.nanoTime());
         create(superSession, """
@@ -338,6 +372,12 @@ class UserAdministrationApiIntegrationTest {
 
     private ResultActions create(MockHttpSession session, String json) throws Exception {
         return mockMvc.perform(post(URL).session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    private ResultActions update(long id, String username, String displayName, String email) throws Exception {
+        return mockMvc.perform(put(URL + "/" + id).session(superSession).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"username\":\"%s\",\"displayName\":\"%s\",\"email\":\"%s\",\"version\":%d}"
+                        .formatted(username, displayName, email, version(id))));
     }
 
     private ResultActions changeRole(MockHttpSession session, long id, String role) throws Exception {
