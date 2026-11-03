@@ -1898,3 +1898,38 @@ For each completed task, record the date, files or migrations changed, verificat
   - installment descriptions and payment methods on a project;
   - attached file names.
 - `SelectField` also shows the full picked option on hover when the box cuts it short (e.g. a long project name). `tsc -b` clean; 41 Vitest tests pass. Not tried in a browser.
+
+### 2026-11-03: Development data reset to a year of Anuradhapura business
+- Owner's request: replace the testing data with realistic business data from December 2025 for the Anuradhapura area, keeping the users.
+- New `frontend/scripts/business-data.ts`, loaded by `seed-dev-data.ts` with `SEED_DATASET=business` (see DEVELOPMENT_WORKFLOW.md, "Sample data").
+  - Deterministic, built from a fixed seed.
+  - Stock is tracked while it is generated, so no issue takes more than the store holds.
+- `seed-dev-data.ts` changes:
+  - the Admin user is now optional;
+  - it posts write-offs and (for this dataset) holidays;
+  - the paid payroll weeks come from the dataset instead of being hard-coded. The demo dataset still loads the same.
+- Reset of the development database, in this order:
+  1. `pg_dump` (custom format) plus a copy of the agreement files, kept outside the repository.
+  2. `TRUNCATE … RESTART IDENTITY` of every business table. Kept: `app_users`, `security_events`, the settings tables and `flyway_schema_history`.
+  3. Old agreement files removed from the volume.
+- Loaded through the API, so every backend rule ran. What went in:
+  - 12 clients and 13 projects (PRJ-2025-001…003, PRJ-2026-001…010);
+  - 42 installments, 32 receipts, 1 write-off and 1 delay deduction;
+  - 4 other-income items;
+  - 7 suppliers and 9 materials, with supplier invoices, stock received and FIFO issues;
+  - 152 expenses;
+  - 14 workers, 3,153 attendance marks, 17 holidays, 30 overtime entries and 16 advances;
+  - weekly wages paid through the week of 26 Oct, with 2 workers part-paid;
+  - 13 commission arrangements (2 pending above the design policy).
+- After loading, the six completed projects' `actual_completion` was set with SQL to their real dates. The status API stamps the run date. Activity log entries carry the load date.
+- Checked through the app's own `loadAll()` + `derive()`:
+  - project revenue 58.26M, project costs 45.11M, project profit 13.07M (22%);
+  - receivable 7.74M, all overdue;
+  - payroll owed 10,000 for the week of 26 Oct, and the current week open.
+- A first load had about three times too much material per site (a loss-making year). It was cleared and reloaded with corrected quantities before this check.
+- `tsc -b` clean; 41 Vitest tests pass. Not looked at in a browser.
+- Follow-up (same day): `seed-dev-data.ts` loads only the business dataset now.
+  - Removed: `SEED_DATASET`, the demo payroll plan and the demo's stock-capping issue path, along with its two extra requests per issue.
+  - `src/data/seed.ts` stays: the unit tests use it (`createSeed()`, the store's `reset()` in `inventory.test.ts`).
+  - DEVELOPMENT_WORKFLOW.md "Sample data" rewritten to match, with the reload steps in order.
+  - `tsc -b` clean; 41 Vitest tests pass. The script wasn't re-run: the database already holds this data.

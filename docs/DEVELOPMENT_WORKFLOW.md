@@ -110,20 +110,32 @@ Inspect frontend/package.json and use the package manager matching the existing 
 From `frontend/`: `npm run build` (typecheck + production build), `npm run typecheck`, and `npm test` (Vitest, `vitest run`; unit tests next to the code as `*.test.ts`). The tests need no backend or database.
 
 ### Sample data (development only)
-`frontend/scripts/seed-dev-data.ts` loads the frontend demo data (`src/data/seed.ts`) into the development database through the real REST API, so every business rule runs. It is not a migration and never runs on its own; don't point it at production.
-- It needs the backend running and a Super Admin created through the bootstrap above. It signs in as that user, sets their name and email if given, and creates one Admin if that Admin doesn't exist yet.
+`frontend/scripts/seed-dev-data.ts` loads `frontend/scripts/business-data.ts` into the development database through the real REST API, so every business rule runs. It is not a migration and never runs on its own; don't point it at production.
+- The data is a year of made-up but realistic business in the Anuradhapura area, from 1 December 2025 to 3 November 2026:
+  - 12 clients and 13 projects;
+  - about 200 supplier invoices with FIFO stock issues;
+  - Monday-to-Saturday attendance for 14 workers, with holidays, overtime and advances;
+  - weekly wages paid up to the week of 26 Oct;
+  - commissions, a write-off and a delay deduction.
+- It is deterministic (fixed random seed), and it keeps its own stock count, so no issue takes more than the store holds.
+- It needs the backend running and a Super Admin created through the bootstrap above. It signs in as that user, sets their name and email if given, and creates one Admin if asked to and that Admin doesn't exist yet.
 - The repository is public, so the users' details come from the environment only, never from the script or the docs:
-  - required: `SEED_SUPER_ADMIN_USERNAME`, `SEED_SUPER_ADMIN_PASSWORD`, `SEED_ADMIN_USERNAME`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_EMAIL`;
+  - required: `SEED_SUPER_ADMIN_USERNAME`, `SEED_SUPER_ADMIN_PASSWORD`;
+  - `SEED_ADMIN_USERNAME`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_EMAIL` together, to create an Admin. Leave all three out to keep the users as they are;
   - optional: `SEED_SUPER_ADMIN_NAME`, `SEED_SUPER_ADMIN_EMAIL`, `SEED_ADMIN_NAME`, and `SEED_API` (default `http://localhost:8080`).
 - Set those variables, then run `npx tsx scripts/seed-dev-data.ts` from `frontend/`.
 - `tsconfig.scripts.json` type-checks `scripts/` with the Node types, and `npm run typecheck` includes it.
-- It is safe to run again: it skips anything that already exists (matched by name, SKU, invoice number, date and reference).
-- Where the demo data and the backend rules differ, the backend wins:
-  - The demo issues more steel, cement and blocks than it has in stock, so those issues are capped at the stock on hand. The script prints each one.
-  - A completed project's `actualCompletion` is the day the script runs. The delay deduction still uses the demo's completion date.
-  - The "no difference" stock count isn't recorded.
-  - Activity entries are written by the modules with the run date.
-- The first load into the development database was on 2026-10-30.
+- It expects empty business tables. To reload, follow these steps in order:
+  1. Back up the database (`pg_dump`) and the agreement files.
+  2. `TRUNCATE … RESTART IDENTITY` every table except `app_users`, `security_events`, the settings tables and `flyway_schema_history`.
+  3. Run the script.
+- Things the API can't do, so a reload needs them afterwards:
+  - A completed project's `actualCompletion` is the day the script runs. Set the real dates with SQL (see IMPLEMENTATION_STATUS.md, 2026-11-03). The delay deduction already uses the dataset's completion date.
+  - Activity entries carry the run date.
+- `src/data/seed.ts` is a separate, smaller demo set. Only the unit tests use it, through `createSeed()` and the store's `reset()`.
+- History:
+  - The first load (the old demo set) was on 2026-10-30.
+  - On 2026-11-03 the owner had the development data reset and reloaded with this dataset. Users, security events, settings and the Flyway history were kept, and a `pg_dump` and the agreement files were taken first.
 
 ## Before Every Change
 1. Inspect the relevant source and Git status.

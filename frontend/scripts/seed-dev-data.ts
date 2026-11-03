@@ -1,23 +1,25 @@
-// Dev only - fills the local DB with the demo data from src/data/seed.ts. It goes through the real API,
-// so all the backend rules still apply. Don't run it against production.
+// Dev only - fills the local DB with the year of Anuradhapura business in scripts/business-data.ts. It goes
+// through the real API, so all the backend rules still apply. Don't run it against production.
 //
 // Needs the Super Admin from the bootstrap. The repo is public, so users and passwords come from env vars:
 //   SEED_SUPER_ADMIN_USERNAME, SEED_SUPER_ADMIN_PASSWORD (+ optional SEED_SUPER_ADMIN_NAME, SEED_SUPER_ADMIN_EMAIL)
-//   SEED_ADMIN_USERNAME, SEED_ADMIN_PASSWORD, SEED_ADMIN_EMAIL (+ optional SEED_ADMIN_NAME)
+//   SEED_ADMIN_USERNAME, SEED_ADMIN_PASSWORD, SEED_ADMIN_EMAIL (+ optional SEED_ADMIN_NAME) - leave all three out
+//     to keep the users as they are
 //   SEED_API if the backend isn't on http://localhost:8080
 // Then from frontend/: npx tsx scripts/seed-dev-data.ts
-// Fine to run again, it skips whatever is already there.
+// It expects empty business tables (DEVELOPMENT_WORKFLOW.md, "Sample data").
 import { randomUUID } from 'node:crypto'
-import { createSeed } from '../src/data/seed'
 import { addDays } from '../src/lib/dates'
+import { createBusinessData, holidays, payrollPlan } from './business-data'
 
 const API = process.env.SEED_API ?? 'http://localhost:8080'
 
 const SUPER_ADMIN = { username: need('SEED_SUPER_ADMIN_USERNAME'), displayName: process.env.SEED_SUPER_ADMIN_NAME, email: process.env.SEED_SUPER_ADMIN_EMAIL }
-const ADMIN = { username: need('SEED_ADMIN_USERNAME'), displayName: process.env.SEED_ADMIN_NAME, email: need('SEED_ADMIN_EMAIL') }
+const ADMIN = process.env.SEED_ADMIN_USERNAME
+  ? { username: need('SEED_ADMIN_USERNAME'), displayName: process.env.SEED_ADMIN_NAME, email: need('SEED_ADMIN_EMAIL'), password: need('SEED_ADMIN_PASSWORD') }
+  : undefined
 
 const superAdminPassword = need('SEED_SUPER_ADMIN_PASSWORD')
-const adminPassword = need('SEED_ADMIN_PASSWORD')
 
 function need(name: string): string {
   const value = process.env[name]
@@ -66,7 +68,8 @@ const PDF = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2
 const upper = (s: string) => s.toUpperCase().replace(/ /g, '_')
 
 async function main() {
-  const s = createSeed()
+  const s = createBusinessData()
+  const pay = payrollPlan
 
   await get('/api/v1/auth/csrf')
   const me = await post('/api/v1/auth/login', { username: SUPER_ADMIN.username, password: superAdminPassword })
@@ -77,9 +80,9 @@ async function main() {
   if (SUPER_ADMIN.displayName || SUPER_ADMIN.email) {
     await put(`/api/v1/users/${me.id}`, { displayName: SUPER_ADMIN.displayName ?? self.displayName, email: SUPER_ADMIN.email ?? self.email, version: self.version })
   }
-  const found = await get(`/api/v1/users?q=${encodeURIComponent(ADMIN.username)}`)
-  if (!found.content.some((u: { username: string }) => u.username === ADMIN.username.toLowerCase())) {
-    await post('/api/v1/users', { username: ADMIN.username, displayName: ADMIN.displayName ?? ADMIN.username, email: ADMIN.email, password: adminPassword, role: 'ADMIN' })
+  const found = ADMIN && await get(`/api/v1/users?q=${encodeURIComponent(ADMIN.username)}`)
+  if (ADMIN && !found.content.some((u: { username: string }) => u.username === ADMIN.username.toLowerCase())) {
+    await post('/api/v1/users', { username: ADMIN.username, displayName: ADMIN.displayName ?? ADMIN.username, email: ADMIN.email, password: ADMIN.password, role: 'ADMIN' })
   }
   console.log('users ok')
 
@@ -146,6 +149,10 @@ async function main() {
       requestId: randomUUID(), paymentDate: cp.date, amount: cp.amount, paymentMethodId: method(cp.method), reference: cp.reference,
     })
   }
+  for (const wo of receiptsDone ? [] : s.writeOffs) {
+    const inst = s.installments.find((i) => i.id === wo.installmentId)!
+    await post(`/api/v1/projects/${project(inst.projectId)}/installments/${installmentIds.get(inst.id)}/write-offs`, { date: wo.date, amount: wo.amount, reason: wo.reason })
+  }
   for (const oi of receiptsDone ? [] : s.otherIncome) {
     const r = await post('/api/v1/other-income', { date: oi.date, description: oi.description, payer: oi.payer, amount: oi.amount, dueDate: oi.dueDate, reference: oi.reference })
     for (const rc of s.otherIncomeReceipts.filter((x) => x.incomeId === oi.id)) {
@@ -194,19 +201,8 @@ async function main() {
   const isPosted = (materialId: string, date: string, ref?: string) => posted.has(`${materialIds.get(materialId)}|${date}|${ref ?? ''}`)
   for (const mv of s.stockMovements) {
     if (mv.type === 'Issued' && !isPosted(mv.materialId, mv.date, mv.reference)) {
-      steps.push({
-        date: mv.date, order: 1, run: async () => {
-          // The demo issues more than it bought in a few places and the backend won't go negative.
-          // Cap at what was there on that date, otherwise a re-run would take stock bought later.
-          const m = await get(`/api/v1/inventory/materials/${materialIds.get(mv.materialId)}`)
-          const history = await get(`/api/v1/inventory/materials/${m.id}/movements?size=100`)
-          const onTheDay = history.content.filter((h: { date: string }) => h.date <= mv.date)
-            .reduce((t: number, h: { quantityChange: number }) => t + h.quantityChange, 0)
-          const quantity = Math.min(-mv.qty, m.quantityOnHand, onTheDay)
-          if (quantity < -mv.qty) console.log(`  ${mv.reference}: only ${quantity} of ${-mv.qty} ${m.unit} ${m.name} in stock, issuing that`)
-          if (quantity > 0) await post('/api/v1/inventory/issues', { requestId: randomUUID(), materialId: m.id, projectId: project(mv.projectId), date: mv.date, quantity, reference: mv.reference })
-        },
-      })
+      // the dataset keeps its own stock count, so every issue fits what's in the store
+      steps.push({ date: mv.date, order: 1, run: () => post('/api/v1/inventory/issues', { requestId: randomUUID(), materialId: materialIds.get(mv.materialId), projectId: project(mv.projectId), date: mv.date, quantity: -mv.qty, reference: mv.reference }) })
     } else if (mv.type === 'Adjustment' && mv.qty !== 0 && !isPosted(mv.materialId, mv.date)) {
       // a count with no difference isn't a movement on the backend
       steps.push({ date: mv.date, order: 1, run: () => post('/api/v1/inventory/adjustments', { requestId: randomUUID(), materialId: materialIds.get(mv.materialId), date: mv.date, quantityChange: mv.qty, reason: mv.reason, unitCost: mv.qty > 0 ? mv.unitCost : undefined }) })
@@ -240,6 +236,7 @@ async function main() {
     const r = oldEmployees.get(w.name) ?? await post('/api/v1/employees', { name: w.name, role: w.role, phone: w.phone, dailyWage: w.dailyRate, overtimeRate: w.overtimeRate, joinedOn: w.joinedOn })
     employeeIds.set(w.id, r.id)
   }
+  for (const h of holidays) await put(`/api/v1/holidays/${h.date}`, { note: h.note })
   const days = [...new Set(s.attendance.map((a) => a.date))].sort()
   for (const day of days) {
     await put(`/api/v1/attendance/${day}`, {
@@ -254,12 +251,12 @@ async function main() {
   for (const ad of labourDone ? [] : s.advances) {
     await post('/api/v1/payroll/advances', { requestId: randomUUID(), employeeId: employeeIds.get(ad.employeeId), paymentDate: ad.date, amount: ad.amount, paymentMethodId: method(ad.method), notes: ad.notes })
   }
-  // pay the weeks the demo paid, with the backend's numbers. w5 and w6 are 10k short in the last one
-  const short = new Set([employeeIds.get('w5'), employeeIds.get('w6')])
-  for (let week = '2026-04-06'; week <= '2026-10-12'; week = addDays(week, 7)) {
+  // pay the planned weeks with the backend's numbers; a few are left part-paid in the last one
+  const short = new Map([...pay.short].map(([w, amount]) => [employeeIds.get(w), amount]))
+  for (let week = pay.firstWeek; week <= pay.lastWeek; week = addDays(week, 7)) {
     const w = await get(`/api/v1/payroll/weeks/${week}`)
     for (const line of w.lines) {
-      const amount = week === '2026-10-12' && short.has(line.employeeId) ? line.remaining - 10_000 : line.remaining
+      const amount = week === pay.lastWeek ? line.remaining - (short.get(line.employeeId) ?? 0) : line.remaining
       if (amount <= 0) continue
       await post(`/api/v1/payroll/weeks/${week}/employees/${line.employeeId}/payments`, { requestId: randomUUID(), paymentDate: w.weekEnd, amount, paymentMethodId: method('Cash') })
     }
@@ -303,7 +300,7 @@ async function main() {
   console.log('done')
 }
 
-// what's already saved, keyed by one field (the demo has under 100 of each)
+// what's already saved, keyed by one field (first 100 only: enough on an empty database)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function byKey(path: string, key: string): Promise<Map<string, any>> {
   const page = await get(`${path}?size=100`)
