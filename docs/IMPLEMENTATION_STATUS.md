@@ -1998,3 +1998,23 @@ For each completed task, record the date, files or migrations changed, verificat
 - Checked live:
   - `/users` returns Super Admin 11 pages, Admin 11 pages, Auditor 1 page.
   - The screens were not clicked through in the browser.
+
+### 2026-11-03: Notifications, search and links follow page permissions
+
+- New `usePageAccess()` / `PageLink` ([frontend/src/components/app/page-link.tsx](../frontend/src/components/app/page-link.tsx)): whether the user may open a link target, a navigate that skips other pages, and a link that turns into plain text.
+- What changed:
+  - Notifications (bell): only notices whose page the user can open, and the unread count follows. Example: overtime approvals go to Labour, overdue installments to Projects.
+  - Top bar: search results only for pages the user can open. "Company settings" shows only with Settings.
+  - Links between pages:
+    - Dashboard: "View all" links, Create Project, chart bars and table rows.
+    - Clients: project rows and New project.
+    - Receivables table.
+    - Revenue rows.
+    - Reports rows.
+    - Commissions: Review and rows.
+    - Expenses table: "Open in ..." and "Open source record".
+    - Inventory: Record purchase and the supplier invoice link.
+    - Project detail: client links.
+  - Settings: the commission policy is read-only, with a note, for anyone but a Super Admin. The API already refused the change.
+- Tests: `nav.test.ts` (`pageOf`, `canOpen`, `homeOf`). `tsc` clean; 43 Vitest tests pass. Not clicked through in the browser.
+- Follow-up (same day): signing in on `/users` as a non-Super Admin (the previous user's last page) showed "Super Admins only". The route guard now treats Users as Super Admin only (`canOpenPath` in `nav.ts`) and sends anyone else to their first page, e.g. an Auditor to Reports. `nav.test.ts` covers it; 44 Vitest tests pass.

@@ -4,7 +4,7 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { useAuth } from '@/store/auth'
 import { useData } from '@/store/store'
 import { AppSidebar } from './app-sidebar'
-import { canOpen, homeOf, pageOf } from './nav'
+import { canOpenPath, homeOf } from './nav'
 import { Topbar, type Crumb } from './topbar'
 
 const CrumbCtx = createContext<(c: Crumb[]) => void>(() => {})
@@ -27,8 +27,9 @@ export function AppLayout() {
   const overdueClients = new Set(d.installments.filter((i) => i.status === 'Overdue').map((i) => i.client.id)).size
   const counts = { '/clients': { n: overdueClients, alert: true } }
 
-  // a page outside the custom role (typed URL, old link): go to one it has. The API refuses it anyway.
-  if (!canOpen(user, pageOf(pathname))) return <Navigate to={homeOf(user)} replace />
+  // a page that isn't theirs (typed URL, old link, the last user's page): go to their first one.
+  // The API refuses it anyway.
+  if (!canOpenPath(user, pathname)) return <Navigate to={homeOf(user)} replace />
 
   function toggle() {
     if (window.matchMedia('(max-width: 767px)').matches) setMobile(true)

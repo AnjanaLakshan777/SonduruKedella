@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Mail, MapPin, Pencil, Phone, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,13 +18,14 @@ import { useData } from '@/store/store'
 import { clientSummary } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
 import { revenueAfterNote } from '@/lib/format'
+import { usePageAccess } from '@/components/app/page-link'
 
 const M = (v: number) => <Money value={v} decimals={0} currency={false} />
 
 export default function ClientDetail() {
   const { id = '' } = useParams()
   const d = useData()
-  const navigate = useNavigate()
+  const { can, go } = usePageAccess()
   const client = d.clientById.get(id)
   useCrumbs([{ label: 'Clients', to: '/clients' }, { label: client?.name ?? 'Not found' }])
   const [edit, setEdit] = useState(false)
@@ -43,7 +44,7 @@ export default function ClientDetail() {
         meta={<><Badge variant="outline">{client.kind}</Badge>{s.overdue > 0 && <StatusBadge status="Overdue" />}</>}
         title={client.name}
         description={`Client since ${formatDate(client.createdAt)} · ${s.projects.length} project${s.projects.length === 1 ? '' : 's'}`}
-        actions={<><Button variant="outline" onClick={() => setEdit(true)}><Pencil />Edit</Button><Button asChild><Link to="/projects/new"><Plus />New project</Link></Button></>}
+        actions={<><Button variant="outline" onClick={() => setEdit(true)}><Pencil />Edit</Button>{can('/projects') && <Button asChild><Link to="/projects/new"><Plus />New project</Link></Button>}</>}
       />
       <KpiStrip items={[
         { label: 'Total Projects', value: s.projects.length, caption: `${s.projects.filter((p) => p.project.status === 'In Progress').length} in progress`, hint: 'Number of projects for this client, any status. Underneath: how many are In Progress.' },
@@ -65,7 +66,7 @@ export default function ClientDetail() {
               <TableHeader><TableRow><TableHead className="pl-6">Project</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Contract (LKR)</TableHead><TableHead className="text-right">Received (LKR)</TableHead><TableHead className="pr-6 text-right">Outstanding (LKR)</TableHead></TableRow></TableHeader>
               <TableBody>
                 {s.projects.map((p) => (
-                  <TableRow key={p.project.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.project.id}`)}>
+                  <TableRow key={p.project.id} className={can(`/projects/${p.project.id}`) ? 'cursor-pointer' : undefined} onClick={() => go(`/projects/${p.project.id}`)}>
                     <TableCell className="max-w-72 pl-6"><CellMain title={p.project.name} code={p.project.code} sub={p.project.type} /></TableCell>
                     <TableCell><StatusBadge status={p.project.status} /></TableCell>
                     <TableCell className="text-right"><Money value={p.contractValue} currency={false} decimals={0} /></TableCell>
@@ -81,7 +82,7 @@ export default function ClientDetail() {
             <Table>
               <TableBody>
                 {history.map((h) => (
-                  <TableRow key={h.id} className="cursor-pointer" onClick={() => navigate(`/projects/${h.pid}?tab=payments`)}>
+                  <TableRow key={h.id} className={can(`/projects/${h.pid}?tab=payments`) ? 'cursor-pointer' : undefined} onClick={() => go(`/projects/${h.pid}?tab=payments`)}>
                     <TableCell className="pl-6">{formatDate(h.date)}</TableCell>
                     <TableCell><CellMain title={h.kind} sub={h.ref} /></TableCell>
                     <TableCell className="text-muted-foreground hidden max-w-64 truncate md:table-cell" title={typeof h.detail === 'string' ? h.detail : undefined}>{h.detail}</TableCell>

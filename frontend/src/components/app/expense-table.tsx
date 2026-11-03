@@ -19,10 +19,12 @@ import { VoidDialog } from './void-dialog'
 import { RecordExpenseDialog } from './record-expense-dialog'
 import { FigureList } from './figure-list'
 import { EmptyState } from './empty-state'
+import { usePageAccess } from './page-link'
 
 export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }: { lines: ExpenseLine[]; showProject?: boolean; pageSize?: number; empty?: React.ReactNode }) {
   const d = useData()
   const navigate = useNavigate()
+  const { can } = usePageAccess()
   const recordExpensePayment = useStore((s) => s.recordExpensePayment)
   const voidExpensePayment = useStore((s) => s.voidExpensePayment)
   const [voiding, setVoiding] = useState<{ expenseId: string; id: string; amount: number; date: string }>()
@@ -32,11 +34,15 @@ export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }
   const { sorted, sort, toggle } = useSort(lines, { key: 'date', dir: 'desc' }, { date: (l) => l.date, amount: (l) => l.amount, remaining: (l) => l.remaining, category: (l) => l.category })
   const paged = usePaged(sorted, pageSize)
 
+  // where a generated cost comes from; undefined when there's nowhere to go or the page isn't the user's
+  function sourceOf(l: ExpenseLine): string | undefined {
+    const inv = l.source === 'Supplier invoice' ? d.invoices.find((v) => v.invoice.id === l.refId) : undefined
+    const to = inv ? `/suppliers/${inv.supplier.id}` : l.source === 'Stock issue' ? '/inventory' : l.source === 'Payroll' ? '/labour/payroll' : l.source === 'Commission' ? '/commissions' : undefined
+    return to && can(to) ? to : undefined
+  }
   function openSource(l: ExpenseLine) {
-    if (l.source === 'Supplier invoice') { const inv = d.invoices.find((v) => v.invoice.id === l.refId); if (inv) navigate(`/suppliers/${inv.supplier.id}`) }
-    else if (l.source === 'Stock issue') navigate('/inventory')
-    else if (l.source === 'Payroll') navigate('/labour/payroll')
-    else if (l.source === 'Commission') navigate('/commissions')
+    const to = sourceOf(l)
+    if (to) navigate(to)
   }
 
   if (!lines.length) return <>{empty ?? <EmptyState title="No expenses recorded" />}</>
@@ -80,7 +86,7 @@ export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }
                           <DropdownMenuItem onSelect={() => setEditFor(l)}><Pencil />Edit</DropdownMenuItem>
                         </>
                       ) : (
-                        <DropdownMenuItem onSelect={() => openSource(l)}><ExternalLink />Open in {l.source === 'Stock issue' ? 'Inventory' : l.source === 'Payroll' ? 'Payroll' : l.source === 'Commission' ? 'Commissions' : 'Suppliers'}</DropdownMenuItem>
+                        <DropdownMenuItem disabled={!sourceOf(l)} onSelect={() => openSource(l)}><ExternalLink />Open in {l.source === 'Stock issue' ? 'Inventory' : l.source === 'Payroll' ? 'Payroll' : l.source === 'Commission' ? 'Commissions' : 'Suppliers'}</DropdownMenuItem>
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -154,7 +160,7 @@ export function ExpenseTable({ lines, showProject = true, pageSize = 12, empty }
                       <Button disabled={view.remaining <= 0} onClick={() => { setPayFor(view); setView(undefined) }}><HandCoins />Record payment</Button>
                       <Button variant="outline" onClick={() => { setEditFor(view); setView(undefined) }}><Pencil />Edit</Button>
                     </>
-                  ) : <Button variant="outline" onClick={() => openSource(view)}><ExternalLink />Open source record</Button>}
+                  ) : sourceOf(view) && <Button variant="outline" onClick={() => openSource(view)}><ExternalLink />Open source record</Button>}
                 </div>
                 {view.source !== 'Manual' && <p className="text-muted-foreground text-xs">This cost is generated from {view.source.toLowerCase()} records{view.source === 'Stock issue' ? ` at ${formatLKR(view.amount)} issue cost — the original stock purchase is not counted as a project expense, so nothing is counted twice` : ''}.</p>}
               </div>

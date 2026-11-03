@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { PageLink, usePageAccess } from '@/components/app/page-link'
 import { toast } from 'sonner'
 import { ArrowLeftRight, Ellipsis, FilePlus2, Info, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,7 @@ import { cn } from '@/lib/utils'
 
 export default function InventoryPage() {
   useCrumbs([{ label: 'Inventory' }])
+  const { can } = usePageAccess()
   const d = useData()
   const [q, setQ] = useState('')
   const [cat, setCat] = useState(ALL)
@@ -52,7 +54,7 @@ export default function InventoryPage() {
       <PageHeader
         title="Inventory"
         description="Materials held in the company store. Buying into stock is not a project cost; issuing to a project is — at the issue cost — so nothing is counted twice."
-        actions={<><Button variant="outline" asChild><Link to="/suppliers/invoices/new"><FilePlus2 />Record purchase</Link></Button><Button onClick={() => setMove({ open: true })}><ArrowLeftRight />Stock movement</Button></>}
+        actions={<>{can('/suppliers') && <Button variant="outline" asChild><Link to="/suppliers/invoices/new"><FilePlus2 />Record purchase</Link></Button>}<Button onClick={() => setMove({ open: true })}><ArrowLeftRight />Stock movement</Button></>}
       />
       <KpiStrip items={[
         { label: 'Stock value', unit: 'LKR', value: <Money value={d.totals.stockValue} decimals={0} currency={false} />, caption: 'FIFO cost of stock on hand', hint: 'What the stock on hand cost, valued first-in first-out. Buying stock is not a project cost until it is issued.' },
@@ -323,7 +325,7 @@ function MovementDialog({ state, onClose }: { state: { open: boolean; materialId
           {type !== 'Adjustment' && <Field label="Description" optional className="sm:col-span-2"><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={type === 'Received' ? 'e.g. Opening stock at the yard' : type === 'Issued' ? 'e.g. For the slab on the first floor' : 'e.g. Left over after plastering'} /></Field>}
           {(type === 'Issued' || (type === 'Adjustment' && direction === 'remove')) && <p className="text-muted-foreground flex gap-2 self-end text-xs"><Info className="size-3.5 shrink-0" />The cost is worked out FIFO from the oldest stock when the movement is saved, and shown afterwards.</p>}
           {type === 'Returned' && <p className="text-muted-foreground flex gap-2 self-end text-xs"><Info className="size-3.5 shrink-0" />Comes back at the original issue's cost, into the batches it was taken from.</p>}
-          {type === 'Received' && <p className="text-muted-foreground flex gap-2 text-xs sm:col-span-2"><Info className="size-3.5 shrink-0" />No supplier payable is created here. For credit purchases, <Link to="/suppliers/invoices/new" className="text-primary-text underline" onClick={onClose}>record a supplier invoice</Link> instead.</p>}
+          {type === 'Received' && <p className="text-muted-foreground flex gap-2 text-xs sm:col-span-2"><Info className="size-3.5 shrink-0" />No supplier payable is created here. For credit purchases, <PageLink to="/suppliers/invoices/new" className="text-primary-text underline" onClick={onClose}>record a supplier invoice</PageLink> instead.</p>}
         </div>
         <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={busy}>Save movement</Button></DialogFooter>
       </DialogContent>

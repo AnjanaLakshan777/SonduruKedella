@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { HandCoins, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -26,13 +25,14 @@ import { scheduleStatus, sum } from '@/lib/finance'
 import { formatDate, TODAY } from '@/lib/dates'
 import { formatLKR, revenueAfterNote } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
+import { usePageAccess } from '@/components/app/page-link'
 
 interface Row { id: string; date: string; category: string; projectId?: string; code?: string; project?: string; client: string; description: string; amount: number; received: number; deduction: number; writtenOff: number; outstanding: number; status: string; due?: string; otherId?: string }
 
 export default function RevenuePage() {
   useCrumbs([{ label: 'Revenue' }])
   const d = useData()
-  const navigate = useNavigate()
+  const { can, go } = usePageAccess()
   const recordOtherIncomeReceipt = useStore((s) => s.recordOtherIncomeReceipt)
   const [q, setQ] = useState('')
   const [range, setRange] = useState(defaultRange())
@@ -96,7 +96,7 @@ export default function RevenuePage() {
                   </TableHeader>
                   <TableBody>
                     {paged.rows.map((r) => (
-                      <TableRow key={r.id} className="cursor-pointer" onClick={() => (r.projectId ? navigate(`/projects/${r.projectId}?tab=payments`) : r.outstanding > 0 && setReceiptFor(r))}>
+                      <TableRow key={r.id} className="cursor-pointer" onClick={() => (r.projectId ? go(`/projects/${r.projectId}?tab=payments`) : r.outstanding > 0 && setReceiptFor(r))}>
                         <TableCell className="pl-6">{formatDate(r.date)}</TableCell>
                         <TableCell className="max-w-80"><CellMain title={r.description} code={r.code} sub={r.code ? r.project : 'Not linked to a project'} /></TableCell>
                         <TableCell>{r.category}</TableCell>
@@ -130,7 +130,7 @@ export default function RevenuePage() {
               <TableHeader><TableRow><TableHead className="pl-6">Planned date</TableHead><TableHead>Installment</TableHead><TableHead className="hidden md:table-cell">Client</TableHead><TableHead className="text-right">Amount (LKR)</TableHead><TableHead className="pr-6">Status</TableHead></TableRow></TableHeader>
               <TableBody>
                 {scheduled.map((i) => (
-                  <TableRow key={i.inst.id} className="cursor-pointer" onClick={() => navigate(`/projects/${i.project.id}?tab=payments`)}>
+                  <TableRow key={i.inst.id} className={can(`/projects/${i.project.id}?tab=payments`) ? 'cursor-pointer' : undefined} onClick={() => go(`/projects/${i.project.id}?tab=payments`)}>
                     <TableCell className="pl-6">{formatDate(i.inst.dueDate)}{i.daysLate > 0 && <div className="text-warning text-xs">{i.daysLate} {i.daysLate === 1 ? 'day' : 'days'} late</div>}</TableCell>
                     <TableCell className="max-w-80"><CellMain title={i.inst.description} code={i.project.code} sub={i.project.name} /></TableCell>
                     <TableCell className="hidden md:table-cell">{i.client.name}</TableCell>

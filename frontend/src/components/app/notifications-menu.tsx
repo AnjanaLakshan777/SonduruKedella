@@ -8,6 +8,7 @@ import { useAuth } from '@/store/auth'
 import { formatDate } from '@/lib/dates'
 import { notifications, type NoticeKind } from '@/lib/notifications'
 import { cn } from '@/lib/utils'
+import { usePageAccess } from './page-link'
 
 const ICONS: Record<NoticeKind, React.ReactNode> = {
   overdue: <CircleAlert className="text-destructive! mt-0.5" />,
@@ -33,7 +34,9 @@ export function NotificationsMenu() {
   const d = useData()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const items = useMemo(() => notifications(d), [d])
+  const { can } = usePageAccess()
+  // only what the user can open: an Auditor isn't told about overtime to approve
+  const items = useMemo(() => notifications(d).filter((n) => can(n.to)), [d, can])
   const { read, save } = useReadKeys(user?.id)
   const unread = items.filter((n) => !read.has(n.key)).length
 

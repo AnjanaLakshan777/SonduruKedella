@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ArrowRight, Plus } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
@@ -19,13 +19,15 @@ import { addDays, addMonths, diffDays, formatDate, formatDateShort, monthLabel, 
 import { formatLKR } from '@/lib/format'
 import { sum } from '@/lib/finance'
 import { cn } from '@/lib/utils'
+import { usePageAccess } from '@/components/app/page-link'
 
 const M = (v: number) => <Money value={v} decimals={0} currency={false} />
 
 function ViewAll({ to, label }: { to: string; label: string }) {
+  const { can } = usePageAccess()
   return (
     <CardAction>
-      <Button variant="link" size="sm" asChild className="h-auto px-0"><Link to={to}>{label}<ArrowRight /></Link></Button>
+      {can(to) && <Button variant="link" size="sm" asChild className="h-auto px-0"><Link to={to}>{label}<ArrowRight /></Link></Button>}
     </CardAction>
   )
 }
@@ -33,7 +35,7 @@ function ViewAll({ to, label }: { to: string; label: string }) {
 export default function Dashboard() {
   useCrumbs([{ label: 'Dashboard' }])
   const d = useData()
-  const navigate = useNavigate()
+  const { can, go } = usePageAccess()
   const t = d.totals
 
   const [basis, setBasis] = useBasis()
@@ -99,7 +101,7 @@ export default function Dashboard() {
       <PageHeader
         title="Dashboard"
         description={`All figures to date · as of ${formatDate(TODAY)}`}
-        actions={<><BasisToggle value={basis} onChange={setBasis} /><Button asChild><Link to="/projects/new"><Plus />Create Project</Link></Button></>}
+        actions={<><BasisToggle value={basis} onChange={setBasis} />{can('/projects') && <Button asChild><Link to="/projects/new"><Plus />Create Project</Link></Button>}</>}
       />
 
       <KpiStrip
@@ -180,7 +182,7 @@ export default function Dashboard() {
                 <YAxis type="category" dataKey="code" {...axisProps} width={96} tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontFamily: 'var(--font-mono)' }} />
                 <ReferenceLine x={0} stroke="var(--border)" />
                 <Tooltip cursor={{ fill: 'var(--muted)', opacity: 0.6 }} content={<ChartTooltip labelFormatter={(code) => profitRows.find((r) => r.code === code)?.name ?? code} />} />
-                <Bar dataKey="profit" name={cash ? 'Cash profit' : 'Profit to date'} radius={[0, 3, 3, 0]} maxBarSize={18} onClick={(r: { id?: string }) => r.id && navigate(`/projects/${r.id}`)} className="cursor-pointer">
+                <Bar dataKey="profit" name={cash ? 'Cash profit' : 'Profit to date'} radius={[0, 3, 3, 0]} maxBarSize={18} onClick={(r: { id?: string }) => r.id && go(`/projects/${r.id}`)} className={can('/projects') ? 'cursor-pointer' : undefined}>
                   {profitRows.map((r) => <Cell key={r.id} fill={r.profit < 0 ? 'var(--destructive)' : cash || r.basis === 'Recorded' ? 'var(--chart-5)' : 'var(--chart-3)'} />)}
                 </Bar>
               </BarChart>
@@ -199,7 +201,7 @@ export default function Dashboard() {
             <TableHeader><TableRow><TableHead className="pl-6">Project</TableHead><TableHead>Status</TableHead><TableHead>Why</TableHead></TableRow></TableHeader>
             <TableBody>
               {attention.map((p) => (
-                <TableRow key={p.project.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.project.id}`)}>
+                <TableRow key={p.project.id} className={can(`/projects/${p.project.id}`) ? 'cursor-pointer' : undefined} onClick={() => go(`/projects/${p.project.id}`)}>
                   <TableCell className="max-w-64 pl-6"><CellMain title={p.project.name} code={p.project.code} sub={p.client.name} /></TableCell>
                   <TableCell><StatusBadge status={p.project.status} /></TableCell>
                   <TableCell className="pr-6 whitespace-normal">
@@ -223,7 +225,7 @@ export default function Dashboard() {
             <TableHeader><TableRow><TableHead className="pl-6">Client</TableHead><TableHead className="text-right">Remaining (LKR)</TableHead><TableHead>Billed</TableHead><TableHead className="pr-6 text-right">Days</TableHead></TableRow></TableHeader>
             <TableBody>
               {overdue.map((i) => (
-                <TableRow key={i.id} className="cursor-pointer" onClick={() => navigate(i.to)}>
+                <TableRow key={i.id} className={can(i.to) ? 'cursor-pointer' : undefined} onClick={() => go(i.to)}>
                   <TableCell className="max-w-60 pl-6"><CellMain title={i.client} sub={i.sub} /></TableCell>
                   <TableCell className="text-right font-medium"><Money value={i.remaining} currency={false} /></TableCell>
                   <TableCell>{formatDate(i.due)}</TableCell>
@@ -266,7 +268,7 @@ export default function Dashboard() {
           <TableHeader><TableRow><TableHead className="pl-6">Date</TableHead><TableHead>Transaction</TableHead><TableHead className="hidden md:table-cell">Party</TableHead><TableHead className="pr-6 text-right">Amount (LKR)</TableHead></TableRow></TableHeader>
           <TableBody>
             {recent.map((r) => (
-              <TableRow key={r.id} className="cursor-pointer" onClick={() => navigate(r.to)}>
+              <TableRow key={r.id} className={can(r.to) ? 'cursor-pointer' : undefined} onClick={() => go(r.to)}>
                 <TableCell className="pl-6">{formatDate(r.date)}</TableCell>
                 <TableCell className="max-w-96 truncate" title={typeof r.text === 'string' ? r.text : undefined}>{r.text}</TableCell>
                 <TableCell className="text-muted-foreground hidden md:table-cell">{r.party}</TableCell>

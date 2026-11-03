@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { PageLink } from '@/components/app/page-link'
 import { toast } from 'sonner'
 import { ArrowRight, ChevronDown, CircleAlert, FileText, HandCoins, Lock, Phone, Receipt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -66,7 +67,7 @@ export default function ProjectDetail() {
       <PageHeader
         meta={<><span className="text-muted-foreground font-mono text-xs font-medium">{p.code}</span><Badge variant="outline">{p.type}</Badge><StatusBadge status={p.status} /></>}
         title={p.name}
-        description={<>For <Link to={`/clients/${pf.client.id}`} className="text-foreground underline-offset-4 hover:underline">{pf.client.name}</Link> · {p.location} · {formatDate(p.startDate)} – {formatDate(p.expectedCompletion)}</>}
+        description={<>For <PageLink to={`/clients/${pf.client.id}`} className="text-foreground underline-offset-4 hover:underline">{pf.client.name}</PageLink> · {p.location} · {formatDate(p.startDate)} – {formatDate(p.expectedCompletion)}</>}
         actions={
           <>
             <DropdownMenu>
@@ -200,7 +201,7 @@ export default function ProjectDetail() {
               <CardContent>
                 <dl className="grid gap-3 text-sm">
                   {[
-                    ['Client', <Link key="c" to={`/clients/${pf.client.id}`} className="font-medium underline-offset-4 hover:underline">{pf.client.name}</Link>],
+                    ['Client', <PageLink key="c" to={`/clients/${pf.client.id}`} className="font-medium underline-offset-4 hover:underline">{pf.client.name}</PageLink>],
                     ['Phone', <a key="t" href={`tel:${pf.client.phone.replace(/\s/g, '')}`} className="inline-flex items-center gap-1.5"><Phone className="text-muted-foreground size-3.5" />{pf.client.phone}</a>],
                     ['Type', p.type],
                     ['Start date', formatDate(p.startDate)],

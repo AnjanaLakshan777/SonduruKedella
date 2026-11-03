@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Copy, Download, FileSpreadsheet, FileText, Info } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -21,6 +20,7 @@ import { addDays, formatDate, formatRange, monthEnd, monthKey, monthLabel, month
 import { formatLKR, revenueAfterNote } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { downloadPdf, downloadXlsx } from '@/lib/export'
+import { usePageAccess } from '@/components/app/page-link'
 
 // ---------------------------------------------------------------- shared
 type Csv = (string | number)[][]
@@ -205,7 +205,7 @@ export function ExpenseReport() {
 // ---------------------------------------------------------------- profitability
 export function ProfitabilityReport() {
   const d = useData()
-  const navigate = useNavigate()
+  const { can, go } = usePageAccess()
   const [type, setType] = useState(ALL)
   const [status, setStatus] = useState(ALL)
   const [range, setRange] = useState(defaultRange())
@@ -270,7 +270,7 @@ export function ProfitabilityReport() {
             </TableHeader>
             <TableBody>
               {rows.map((p) => (
-                <TableRow key={p.project.id} className="cursor-pointer" onClick={() => navigate(`/projects/${p.project.id}`)}>
+                <TableRow key={p.project.id} className={can(`/projects/${p.project.id}`) ? 'cursor-pointer' : undefined} onClick={() => go(`/projects/${p.project.id}`)}>
                   <TableCell className="min-w-52 pl-6 whitespace-normal"><CellMain title={<span className="line-clamp-2 whitespace-normal">{p.project.name}</span>} code={p.project.code} sub={p.project.status} /></TableCell>
                   <TableCell className="text-right">{M0(p.contractValue)}</TableCell>
                   <TableCell className="hidden text-right 2xl:table-cell">{p.deduction ? <Money value={-p.deduction} decimals={0} currency={false} /> : '—'}</TableCell>

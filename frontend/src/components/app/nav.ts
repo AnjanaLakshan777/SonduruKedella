@@ -26,7 +26,14 @@ export const PAGE_ITEMS: NavItem[] = [...NAV.flatMap((g) => g.items), SETTINGS_I
 
 export const canOpen = (user: CurrentUser | undefined, page?: AppPage) => !page || !!user?.pages.includes(page)
 
-// the page a path belongs to; undefined for paths every user may open (or Users, which checks itself)
+// a whole path: Users is Super Admin only, every other page goes by the user's pages
+export function canOpenPath(user: CurrentUser | undefined, path: string) {
+  const bare = path.split(/[?#]/)[0]
+  if (bare === USERS_ITEM.to || bare.startsWith(USERS_ITEM.to + '/')) return user?.role === 'SUPER_ADMIN'
+  return canOpen(user, pageOf(bare))
+}
+
+// the page a path belongs to; undefined for Users (see canOpenPath) and unknown paths
 export function pageOf(pathname: string): AppPage | undefined {
   const first = '/' + (pathname.split('/')[1] ?? '')
   return PAGE_ITEMS.find((it) => it.to === first)?.page

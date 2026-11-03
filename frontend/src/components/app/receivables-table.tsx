@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Ellipsis, FilePenLine, HandCoins } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -13,10 +12,11 @@ import { StatusBadge } from './status-badge'
 import { CellMain, Pagination, SortableHead, usePaged, useSort } from './data-table'
 import { PaymentDialog } from './payment-dialog'
 import { WriteOffDialog } from './write-off-dialog'
+import { usePageAccess } from '@/components/app/page-link'
 
 /** Client receivables: original amount, received, remaining, billing date, days overdue (counted from the billing day), status. */
 export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { rows: InstallmentView[]; showClient?: boolean; pageSize?: number }) {
-  const navigate = useNavigate()
+  const { can, go } = usePageAccess()
   const recordClientPayment = useStore((s) => s.recordClientPayment)
   const [payFor, setPayFor] = useState<InstallmentView | undefined>()
   const [woFor, setWoFor] = useState<InstallmentView | undefined>()
@@ -42,7 +42,7 @@ export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { r
         </TableHeader>
         <TableBody>
           {paged.rows.map((i) => (
-            <TableRow key={i.inst.id} className="cursor-pointer" onClick={() => navigate(`/projects/${i.project.id}?tab=payments`)}>
+            <TableRow key={i.inst.id} className={can(`/projects/${i.project.id}?tab=payments`) ? 'cursor-pointer' : undefined} onClick={() => go(`/projects/${i.project.id}?tab=payments`)}>
               {showClient && <TableCell className="max-w-52 pl-6"><CellMain title={i.client.name} sub={i.client.phone} /></TableCell>}
               <TableCell className={showClient ? 'max-w-64' : 'max-w-64 pl-6'}><CellMain title={i.inst.description} code={i.project.code} sub={i.project.name} /></TableCell>
               <TableCell className="hidden text-right md:table-cell"><Money value={i.net} currency={false} />{i.deduction > 0 && <div className="text-muted-foreground text-xs">after {formatLKR(i.deduction, { decimals: 0 })} deduction</div>}</TableCell>
@@ -56,7 +56,7 @@ export function ReceivablesTable({ rows, showClient = true, pageSize = 12 }: { r
                   <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label="Receivable actions"><Ellipsis /></Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem disabled={!i.inst.billed || i.remaining <= 0} onSelect={() => setPayFor(i)}><HandCoins />Record payment</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => navigate(`/projects/${i.project.id}?tab=payments`)}>Open project schedule</DropdownMenuItem>
+                    <DropdownMenuItem disabled={!can(`/projects/${i.project.id}`)} onSelect={() => go(`/projects/${i.project.id}?tab=payments`)}>Open project schedule</DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" disabled={!i.inst.billed || i.remaining <= 0} onSelect={() => setWoFor(i)}><FilePenLine />Write off as bad debt…</DropdownMenuItem>
                   </DropdownMenuContent>

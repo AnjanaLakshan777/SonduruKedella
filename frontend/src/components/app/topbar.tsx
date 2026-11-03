@@ -14,11 +14,13 @@ import { NotificationsMenu } from './notifications-menu'
 import { useTheme } from './theme'
 import { ChangePasswordDialog } from './change-password-dialog'
 import { cn } from '@/lib/utils'
+import { usePageAccess } from './page-link'
 
 export interface Crumb { label: string; to?: string }
 
 function useSearch(q: string) {
   const d = useData()
+  const { can } = usePageAccess()
   return useMemo(() => {
     const t = q.trim().toLowerCase()
     if (t.length < 2) return []
@@ -32,8 +34,9 @@ function useSearch(q: string) {
       const i = d.installments.find((x) => x.inst.id === p.installmentId)!
       out.push({ group: 'Transactions', label: `Payment ${p.reference}`, sub: `${i.client.name} · ${formatLKR(p.amount)}`, to: `/projects/${i.project.id}?tab=payments` })
     }
-    return out.slice(0, 12)
-  }, [d, q])
+    // only results the user can open
+    return out.filter((r) => can(r.to)).slice(0, 12)
+  }, [d, q, can])
 }
 
 export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: () => void }) {
@@ -42,6 +45,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
   const [pwOpen, setPwOpen] = useState(false)
   const initials = (user?.displayName ?? '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
   const roleLabel = user?.roleName
+  const canSettings = usePageAccess().can('/settings')
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const [q, setQ] = useState('')
@@ -126,7 +130,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
             <DropdownMenuLabel className="grid"><span>{user?.displayName}</span><span className="text-muted-foreground text-xs font-normal">{user?.email}</span></DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun /> : <Moon />}{theme === 'dark' ? 'Light theme' : 'Dark theme'}</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => navigate('/settings')}>Company settings</DropdownMenuItem>
+            {canSettings && <DropdownMenuItem onSelect={() => navigate('/settings')}>Company settings</DropdownMenuItem>}
             <DropdownMenuItem onSelect={() => setPwOpen(true)}><KeyRound />Change password</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => { load().then(() => toast.success('Data reloaded')).catch((e) => toast.error('Could not reload', { description: e.message })) }}><RotateCcw />Reload data</DropdownMenuItem>

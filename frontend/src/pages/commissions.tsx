@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ArrowRight, Ban, CircleAlert, HandCoins } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -19,11 +19,12 @@ import { useData, useStore } from '@/store/store'
 import { sum, type CommissionView } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { usePageAccess } from '@/components/app/page-link'
 
 export default function CommissionsPage() {
   useCrumbs([{ label: 'Commissions' }])
   const d = useData()
-  const navigate = useNavigate()
+  const { can, go } = usePageAccess()
   const recordCommissionPayment = useStore((s) => s.recordCommissionPayment)
   const voidCommissionPayment = useStore((s) => s.voidCommissionPayment)
   const [voiding, setVoiding] = useState<{ commissionId: string; id: string; label: string }>()
@@ -58,7 +59,7 @@ export default function CommissionsPage() {
           <div key={pid} role="alert" className="bg-warning-soft text-warning flex flex-wrap items-start gap-3 rounded-lg border border-current/20 px-4 py-3 text-sm">
             <CircleAlert className="mt-0.5 size-4 shrink-0" />
             <div className="flex-1"><div className="font-medium">{p.code} {p.name}: {check.message}</div><div>Nothing has been changed automatically. Review the shares before confirming.</div></div>
-            <Button size="sm" variant="outline" className="bg-card text-foreground" asChild><Link to={`/projects/${pid}?tab=commissions`}>Review<ArrowRight /></Link></Button>
+            {can(`/projects/${pid}`) && <Button size="sm" variant="outline" className="bg-card text-foreground" asChild><Link to={`/projects/${pid}?tab=commissions`}>Review<ArrowRight /></Link></Button>}
           </div>
         )
       })}
@@ -89,7 +90,7 @@ export default function CommissionsPage() {
                 </TableHeader>
                 <TableBody>
                   {sorted.map((c) => (
-                    <TableRow key={c.arr.id} className="cursor-pointer" onClick={() => navigate(`/projects/${c.project.id}?tab=commissions`)}>
+                    <TableRow key={c.arr.id} className={can(`/projects/${c.project.id}?tab=commissions`) ? 'cursor-pointer' : undefined} onClick={() => go(`/projects/${c.project.id}?tab=commissions`)}>
                       <TableCell className="pl-6"><CellMain title={c.arr.recipient} sub={c.arr.role} /></TableCell>
                       <TableCell className="max-w-56"><CellMain title={<Mono className="text-foreground">{c.project.code}</Mono>} sub={c.project.name} /></TableCell>
                       <TableCell className="hidden md:table-cell">{c.project.type}</TableCell>
