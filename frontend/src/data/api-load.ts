@@ -9,6 +9,7 @@ import type {
 import { apiGet, apiGetAll, apiGetOptional } from '@/lib/api'
 import { addDays, TODAY } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
+import { useAuth } from '@/store/auth'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = any
@@ -72,13 +73,20 @@ const mapActivity = (a: Row): ActivityEntry => ({
   id: String(a.id), date: a.date, projectId: id(a.projectId), kind: a.kind.toLowerCase(), text: a.message, createdAt: a.createdAt,
 })
 
+// A custom role only loads the areas its pages read (CurrentUser.readAreas); the backend refuses
+// the rest anyway. Admins get every area. Anything skipped stays empty.
+const can = (area: string) => !!useAuth.getState().user?.readAreas.includes(area)
+const ifCan = <T,>(area: string, load: () => Promise<T>, empty: T): Promise<T> => (can(area) ? load() : Promise.resolve(empty))
+
 // one project with everything hanging off it, for the initial load and for refreshing after a save
 async function projectBundle(p: Row) {
+  // pages without project money (Labour, Inventory, ...) only need the project itself
+  const money = can('PROJECT_PAYMENTS')
   const [schedule, receipts, writeOffs, delay, agreement] = await Promise.all([
-    apiGet<Row[]>(`/projects/${p.id}/schedule`),
-    apiGet<Row[]>(`/projects/${p.id}/receipts`),
-    apiGet<Row[]>(`/projects/${p.id}/write-offs`),
-    apiGet<Row | undefined>(`/projects/${p.id}/delay-terms`),
+    money ? apiGet<Row[]>(`/projects/${p.id}/schedule`) : [],
+    money ? apiGet<Row[]>(`/projects/${p.id}/receipts`) : [],
+    money ? apiGet<Row[]>(`/projects/${p.id}/write-offs`) : [],
+    money ? apiGet<Row | undefined>(`/projects/${p.id}/delay-terms`) : undefined,
     apiGetOptional<Row>(`/projects/${p.id}/agreement`),
   ])
   return {
@@ -352,23 +360,23 @@ export async function loadAll(): Promise<DataState & { frozenWeeks: Set<string>;
     movementRows, employeeRows, advanceRows, adjustmentRows, payrollPaymentRows, commissionRows, commissionPaymentRows, activityRows, frozenRows] =
     await Promise.all([
       apiGet<Row>('/settings'),
-      apiGetAll<Row>('/clients'),
-      apiGetAll<Row>('/projects'),
-      apiGetAll<Row>('/other-income'),
-      apiGetAll<Row>('/expenses'),
-      apiGet<Row[]>('/expenses/payments'),
-      apiGetAll<Row>('/suppliers'),
-      apiGetAll<Row>('/supplier-invoices'),
-      apiGetAll<Row>('/inventory/materials'),
-      apiGetAll<Row>('/inventory/movements'),
-      apiGetAll<Row>('/employees'),
-      apiGetAll<Row>('/payroll/advances'),
-      apiGet<Row[]>('/payroll/adjustments'),
-      apiGet<Row[]>('/payroll/payments'),
-      apiGetAll<Row>('/commissions'),
-      apiGetAll<Row>('/commissions/payments'),
-      apiGetAll<Row>('/activity'),
-      apiGet<Row[]>('/payroll/frozen-weeks'),
+      ifCan('CLIENTS', () => apiGetAll<Row>('/clients'), []),
+      ifCan('PROJECTS', () => apiGetAll<Row>('/projects'), []),
+      ifCan('OTHER_INCOME', () => apiGetAll<Row>('/other-income'), []),
+      ifCan('EXPENSES', () => apiGetAll<Row>('/expenses'), []),
+      ifCan('EXPENSES', () => apiGet<Row[]>('/expenses/payments'), []),
+      ifCan('SUPPLIERS', () => apiGetAll<Row>('/suppliers'), []),
+      ifCan('SUPPLIER_INVOICES', () => apiGetAll<Row>('/supplier-invoices'), []),
+      ifCan('INVENTORY', () => apiGetAll<Row>('/inventory/materials'), []),
+      ifCan('INVENTORY', () => apiGetAll<Row>('/inventory/movements'), []),
+      ifCan('LABOUR', () => apiGetAll<Row>('/employees'), []),
+      ifCan('PAYROLL', () => apiGetAll<Row>('/payroll/advances'), []),
+      ifCan('PAYROLL', () => apiGet<Row[]>('/payroll/adjustments'), []),
+      ifCan('PAYROLL', () => apiGet<Row[]>('/payroll/payments'), []),
+      ifCan('COMMISSIONS', () => apiGetAll<Row>('/commissions'), []),
+      ifCan('COMMISSIONS', () => apiGetAll<Row>('/commissions/payments'), []),
+      ifCan('ACTIVITY', () => apiGetAll<Row>('/activity'), []),
+      ifCan('PAYROLL', () => apiGet<Row[]>('/payroll/frozen-weeks'), []),
     ])
 
   const perProject = await Promise.all(projectRows.map(projectBundle))
@@ -378,7 +386,9 @@ export async function loadAll(): Promise<DataState & { frozenWeeks: Set<string>;
     Promise.all(liveInvoices.map((i: Row) => apiGet<Row>(`/supplier-invoices/${i.id}`))),
   ])
   const firstDay = employeeRows.reduce((m: string, e: Row) => (e.joinedOn < m ? e.joinedOn : m), TODAY)
-  const [attendanceRows, overtimeRows, holidays] = await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay), loadHolidays(firstDay)])
+  const [attendanceRows, overtimeRows, holidays] = can('LABOUR')
+    ? await Promise.all([inWindows('/attendance', firstDay), inWindows('/overtime', firstDay), loadHolidays(firstDay)])
+    : [[], [], new Map<string, string>()]
 
   const projects: Project[] = perProject.map((b) => b.project)
   const installments: Installment[] = perProject.flatMap((b) => b.installments)

@@ -13,5 +13,9 @@ public enum SecurityEventType {
     USER_DEACTIVATED,
     PASSWORD_CHANGED,
     PASSWORD_RESET,
-    SUPER_ADMIN_BOOTSTRAPPED
+    SUPER_ADMIN_BOOTSTRAPPED,
+    // V11 only (shared custom roles, replaced by per-user pages in V12); kept for old events
+    CUSTOM_ROLE_CREATED,
+    CUSTOM_ROLE_UPDATED,
+    CUSTOM_ROLE_DELETED
 }

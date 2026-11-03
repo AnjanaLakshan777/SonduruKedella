@@ -51,7 +51,7 @@ How it behaves:
 Every write needs the session cookie and the `X-XSRF-TOKEN` header.
 - Create an Admin: `POST /api/v1/users` `{"username":"…","displayName":"…","email":"…","password":"…"}` (all required). `role` defaults to `ADMIN`; `"role":"SUPER_ADMIN"` creates another Super Admin. Give the person their password directly; they should change it with `PUT /api/v1/auth/me/password`.
 - Deactivate or reactivate: `PUT /api/v1/users/{id}/status` `{"enabled":false,"version":N}`. Deactivation ends that user's sessions at once and blocks sign-in.
-- Change a role: `PUT /api/v1/users/{id}/role` `{"role":"ADMIN","version":N}`. That user's sessions end.
+- Role and permissions: `PUT /api/v1/users/{id}/role` `{"role":"ADMIN","pages":["LABOUR","REPORTS"],"version":N}`, or `{"role":"CUSTOM","roleName":"Supervisor","pages":["LABOUR"],"version":N}`, or `{"role":"SUPER_ADMIN","version":N}` (no name, no pages). `POST /api/v1/users` takes the same `role`, `roleName` and `pages`; an Admin gets every page when `pages` is left out. A new role or name ends that user's sessions; new pages apply on their next request.
 - Reset a forgotten password: `PUT /api/v1/users/{id}/password` `{"newPassword":"…"}`. Returns 204; the password is never echoed. That user's sessions end.
 - Edit the username, name and email: `PUT /api/v1/users/{id}` `{"username":"…","displayName":"…","email":"…","version":N}`. The email is required; `username` is optional (left out = unchanged). A new username must follow the username rule and not be taken in any case (409); it ends that user's sessions, so they sign in again with it. A Super Admin may edit their own details here.
 - List and view: `GET /api/v1/users?q=&role=&enabled=&page=&size=&sort=`, and `GET /api/v1/users/{id}`.

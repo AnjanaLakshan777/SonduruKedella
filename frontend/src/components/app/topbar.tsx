@@ -41,7 +41,7 @@ export function Topbar({ crumbs, onToggleNav }: { crumbs: Crumb[]; onToggleNav: 
   const { user, logout } = useAuth()
   const [pwOpen, setPwOpen] = useState(false)
   const initials = (user?.displayName ?? '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
-  const roleLabel = user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'
+  const roleLabel = user?.roleName
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const [q, setQ] = useState('')

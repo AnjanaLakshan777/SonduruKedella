@@ -1949,3 +1949,52 @@ For each completed task, record the date, files or migrations changed, verificat
 - New `PasswordInput` ([frontend/src/components/app/password-input.tsx](../frontend/src/components/app/password-input.tsx)): an `Input` with an eye button that toggles between hidden and visible text. It always starts hidden.
 - Used for every password box: sign-in, Change password (current, new and repeat), Add user and Reset password.
 - `tsc` clean; 41 Vitest tests pass. Not clicked through in the browser.
+
+### 2026-11-03: Custom roles with page access
+
+- Owner request: besides Admin and Super Admin, "Other" roles such as Supervisor (Labour & Payroll only) or Auditor (Reports only), named by the Super Admin, with the role shown under the name on the profile.
+- Database: `V11__custom_roles.sql` (see DATABASE.md). Users on a custom role have `role = 'CUSTOM'` and `custom_role_id`.
+- Backend:
+  - `security.access.ApiArea` / `AppPage`: every `/api/v1` endpoint belongs to an area; every page lists the areas it reads and changes. Dashboard, Projects and Reports read everything. Every custom role reads Settings.
+  - `PageAccess` is the `/api/v1/**` rule. Admins and Super Admins pass as before. A custom-role user gets a GET when one of their pages reads the area and a write when one of their pages changes it; otherwise 403. Pages come from the database on every request.
+  - `/api/v1/roles` (Super Admin): list (with user counts), create, edit (name, pages, `version`), delete when unused (409 otherwise). Names are unique ignoring case; Admin/Super Admin are reserved; at least one page. Audited as `CUSTOM_ROLE_*`.
+  - `POST /api/v1/users` and `PUT /api/v1/users/{id}/role` take `role: CUSTOM` with `customRoleId` (required for CUSTOM, refused otherwise). Changing a role still ends the user's sessions. The audit text uses role names ("Admin -> Supervisor").
+  - `/auth/me` and login return `roleName`, `pages` and `readAreas`.
+  - Known limit: pages read the data they need to draw, which can be more than they show. Labour, Inventory, Suppliers and Expenses read the project list (names and contract values), but not project money.
+- Frontend:
+  - Users page: Role is Admin / Super Admin / Other. Other takes a role name (existing names are suggested); a new name also asks for its pages and is created on save. "Change role" opens the same picker. A new "Other roles" card lists the roles with their pages and user counts, to add, edit or delete (when unused).
+  - The sidebar shows only the user's pages; any other page (typed URL, old link) redirects to their first page. The profile in the top bar shows `roleName`.
+  - `loadAll` loads only the user's `readAreas`; the rest stays empty.
+- Tests: `CustomRoleApiIntegrationTest` (Supervisor, Auditor, live page edits, name rules, Super Admin only, delete rules, role change), `ApiAreaTest`, a new case in `EndpointAuthorizationIntegrationTest` (every business endpoint has an area; a pageless custom role reads only Settings), and `SecuritySchemaIntegrationTest` (`ck_app_users_custom_role`). Full backend suite: 689 tests, 0 failures. Frontend `tsc` clean, 41 Vitest tests pass.
+- Checked live: V11 applied to the development database (Flyway v11); `/auth/me` for the Super Admin returns 11 pages and 15 areas; `loadAll` with Supervisor areas loads projects, employees and attendance and leaves money, expenses and activity empty. No custom-role user was created in the development database (users can't be deleted), and the screens were not clicked through in the browser.
+
+### 2026-11-03 (later): Page permissions per user, no separate roles
+
+- Owner follow-up: no "Add role" step. The role is set when the user is added, and the role name only labels them. Each user's permissions are managed on their own, and every user except a Super Admin can have them changed (Admins included).
+- This replaces the shared custom roles from the entry above.
+- Database: `V12__per_user_pages.sql` (see DATABASE.md). The V11 Auditor user was carried over (name `Auditor`, page `REPORTS`), and the existing Admin got all 11 pages.
+- Backend:
+  - `app_users.role_label` + `app_user_pages` (`AppUser.roleLabel`, `AppUser.pages`).
+  - `/api/v1/roles` and its classes are gone.
+  - `POST /api/v1/users` and `PUT /api/v1/users/{id}/role` take `role`, `roleName` (Other only, not a built-in name, 1-50 characters) and `pages`:
+    - Super Admin: none of them;
+    - Admin: every page when `pages` is left out;
+    - Other: at least one page.
+  - A new role or role name ends the user's sessions. A pages-only change doesn't, because `PageAccess` reads the pages on every request. Audit: `ROLE_CHANGED` / `USER_CREATED` list the pages.
+  - `PageAccess`: Super Admins pass; Admins and Other users go by their own pages. A mock `ADMIN` in tests (no real user) still gets every page.
+- Frontend (Users page):
+  - The "Other roles" card is gone.
+  - Add user and the new "Role and permissions" menu item share one form: Admin / Super Admin / Other (name, with names already used suggested), plus page checkboxes ("Tick all", "Clear") for anyone who isn't a Super Admin.
+  - The table shows the role name and the user's pages.
+- Tests: `UserPermissionsApiIntegrationTest` replaces `CustomRoleApiIntegrationTest`:
+  - Supervisor and Auditor access;
+  - two users with the same role name keep their own pages;
+  - an Admin's pages narrowed in the same session;
+  - the create rules;
+  - a name change ends the session;
+  - Super Admin only.
+- `EndpointAuthorizationIntegrationTest` and `SecuritySchemaIntegrationTest` updated.
+- Results: full backend suite 697 tests, 0 failures (fresh database, V1 to V12). Frontend `tsc` clean, 41 Vitest tests pass.
+- Checked live:
+  - `/users` returns Super Admin 11 pages, Admin 11 pages, Auditor 1 page.
+  - The screens were not clicked through in the browser.

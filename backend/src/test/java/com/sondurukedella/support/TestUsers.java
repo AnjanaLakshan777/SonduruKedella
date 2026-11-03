@@ -4,9 +4,12 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sondurukedella.security.access.AppPage;
 import com.sondurukedella.security.user.AppUser;
 import com.sondurukedella.security.user.AppUserRepository;
 import com.sondurukedella.security.user.UserRole;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.http.MediaType;
@@ -26,14 +29,23 @@ public final class TestUsers {
     private TestUsers() {
     }
 
-    // usernames are unique per call, so the login throttle (one per context) never mixes tests up
+    // usernames are unique per call, so the login throttle (one per context) never mixes tests up.
+    // An Admin gets every page, like a new Admin in the app.
     public static AppUser create(AppUserRepository repository, PasswordEncoder encoder, String prefix, UserRole role) {
+        Set<AppPage> pages = role == UserRole.ADMIN ? EnumSet.allOf(AppPage.class) : EnumSet.noneOf(AppPage.class);
+        return create(repository, encoder, prefix, role, role == UserRole.CUSTOM ? "Tester" : null, pages);
+    }
+
+    public static AppUser create(AppUserRepository repository, PasswordEncoder encoder, String prefix, UserRole role,
+            String roleLabel, Set<AppPage> pages) {
         AppUser user = new AppUser();
         user.setUsername(prefix + "-" + UUID.randomUUID().toString().substring(0, 8));
         user.setDisplayName("Test " + prefix);
         user.setEmail(user.getUsername() + "@test.local");
         user.setPasswordHash(encoder.encode(PASSWORD));
         user.setRole(role);
+        user.setRoleLabel(roleLabel);
+        user.getPages().addAll(pages);
         return repository.saveAndFlush(user);
     }
 

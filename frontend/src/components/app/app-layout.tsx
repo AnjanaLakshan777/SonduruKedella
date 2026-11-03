@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { useAuth } from '@/store/auth'
 import { useData } from '@/store/store'
 import { AppSidebar } from './app-sidebar'
+import { canOpen, homeOf, pageOf } from './nav'
 import { Topbar, type Crumb } from './topbar'
 
 const CrumbCtx = createContext<(c: Crumb[]) => void>(() => {})
@@ -19,10 +21,14 @@ export function AppLayout() {
   const [mobile, setMobile] = useState(false)
   const [crumbs, setCrumbs] = useState<Crumb[]>([{ label: 'Dashboard' }])
   const { pathname } = useLocation()
+  const user = useAuth((s) => s.user)
   const d = useData()
   useEffect(() => { window.scrollTo(0, 0) }, [pathname])
   const overdueClients = new Set(d.installments.filter((i) => i.status === 'Overdue').map((i) => i.client.id)).size
   const counts = { '/clients': { n: overdueClients, alert: true } }
+
+  // a page outside the custom role (typed URL, old link): go to one it has. The API refuses it anyway.
+  if (!canOpen(user, pageOf(pathname))) return <Navigate to={homeOf(user)} replace />
 
   function toggle() {
     if (window.matchMedia('(max-width: 767px)').matches) setMobile(true)

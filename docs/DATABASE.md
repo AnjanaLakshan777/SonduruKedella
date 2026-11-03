@@ -96,10 +96,12 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
 - **Revenue categories** are fixed and have no table: Design, Construction, Consultation and Other Income. The category comes from `projects.project_type`, and `other_income` is always Other Income. Settings shows the list read-only.
 - **units** and **payment_methods**: editable lists (`name` unique, `active`). Seed payment methods: Cash, Bank Transfer, Cheque, Online Payment.
 - **app_users**: `username` (unique, and unique ignoring case via `uq_app_users_username_lower`), `display_name`, `password_hash` (BCrypt, `{bcrypt}` prefix; never plain text), `enabled`.
-  - V5 added `role` (`SUPER_ADMIN` | `ADMIN`, no default) and `auth_version` (bumped when access changes, which ends existing sessions).
+  - V5 added `role` (`SUPER_ADMIN` | `ADMIN`, no default; V11 adds `CUSTOM`) and `auth_version` (bumped when access changes, which ends existing sessions).
   - V8 added `email`, and V9 made it required. It is stored lower case and unique (`uq_app_users_email`). Users can sign in with their username or their email.
   - Users are never deleted, only deactivated, because every `created_by` and `security_events` row points here.
   - The partial index `ix_app_users_active_super_admins` serves the "at least one active Super Admin" check.
+  - V12 added `role_label` (the "Other" role's name, up to 50). `ck_app_users_role_label` makes it set, trimmed and non-empty exactly when `role = 'CUSTOM'`.
+- **app_user_pages** (V12): `(user_id, page)` primary key, `page` checked against the `AppPage` names (`ck_app_user_pages_page`). The pages an Admin or "Other" user can open; a Super Admin has none and opens everything.
 - **security_events** (V5): the security audit trail. Columns:
   - `event_type`, checked against the `SecurityEventType` values;
   - `actor_user_id` and `target_user_id`, nullable FKs to `app_users`;
@@ -799,3 +801,15 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
     - `PUT /api/v1/holidays/{date}` (mark, or update the note);
     - `DELETE /api/v1/holidays/{date}` (unmark; no error if it wasn't marked).
   - Additive only. Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V10). Applied to the development database on 2026-11-02; Flyway reports v10.
+- `V11__custom_roles.sql` (2026-11-03): custom roles.
+  - Adds `custom_roles` and `custom_role_pages`, and `app_users.custom_role_id` with its index.
+  - Rebuilds `ck_app_users_role` to allow `CUSTOM`, and adds `ck_app_users_custom_role`.
+  - Rebuilds `ck_security_events_type` with `CUSTOM_ROLE_CREATED`, `CUSTOM_ROLE_UPDATED` and `CUSTOM_ROLE_DELETED`.
+  - Additive: existing users keep their role. Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V11). Applied to the development database on 2026-11-03; Flyway reports v11.
+  - Replaced by V12 the same day.
+- `V12__per_user_pages.sql` (2026-11-03): page permissions move from shared roles to each user (owner decision).
+  - Adds `app_user_pages` and `app_users.role_label`.
+  - Copies each V11 custom role's name and pages onto its users, and gives every Admin all 11 pages.
+  - Then drops `app_users.custom_role_id` (with `ck_app_users_custom_role` and its index), `custom_role_pages` and `custom_roles`, and adds `ck_app_users_role_label`.
+  - `ck_security_events_type` keeps the `CUSTOM_ROLE_*` values for the V11 events already in the trail.
+  - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V12). Applied to the development database on 2026-11-03 (Flyway v12): the Auditor user kept `Auditor` and `REPORTS`, and the Admin got all 11 pages.

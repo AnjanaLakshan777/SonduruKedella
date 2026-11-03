@@ -39,8 +39,9 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 import org.springframework.security.web.savedrequest.NullRequestCache;
 
 // All the access rules live here. Everything needs a login by default:
-// login/csrf/health are public, /users and actuator are Super Admin only, the rest of /api/v1 is
-// open to both roles. Only exception: changing the commission policy is Super Admin only.
+// login/csrf/health are public, /users and actuator are Super Admin only, the rest of
+// /api/v1 is open to Super Admins, and to everyone else by the pages ticked for them (PageAccess).
+// Only exception: changing the commission policy is Super Admin only.
 // Rules match on path, not method, so a new DELETE/PATCH can't sneak past them.
 // Session cookie auth + CSRF (XSRF-TOKEN cookie -> X-XSRF-TOKEN header), login and logout included.
 @Configuration
@@ -54,12 +55,12 @@ public class SecurityConfig {
     public static final String COMMISSION_POLICY_URL = "/api/v1/settings/commission-policy";
 
     private static final String SUPER_ADMIN = UserRole.SUPER_ADMIN.name();
-    private static final String ADMIN = UserRole.ADMIN.name();
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, CsrfTokenRepository csrfTokenRepository,
             SecurityContextRepository securityContextRepository, UserAccountService accounts, SecurityAuditService audit)
             throws Exception {
+        PageAccess pageAccess = new PageAccess(accounts);
         http
                 .authorizeHttpRequests(auth -> auth
                         // let Spring render its error page for requests that already went through the rules
@@ -70,10 +71,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers("/actuator/**").hasRole(SUPER_ADMIN)
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole(SUPER_ADMIN)
+                        // your own account: me, change password, logout
+                        .requestMatchers("/api/v1/auth/**").authenticated()
                         // anyone can read the policy, only a Super Admin can change it
-                        .requestMatchers(HttpMethod.GET, COMMISSION_POLICY_URL).hasAnyRole(SUPER_ADMIN, ADMIN)
+                        .requestMatchers(HttpMethod.GET, COMMISSION_POLICY_URL).access(pageAccess)
                         .requestMatchers(COMMISSION_POLICY_URL, COMMISSION_POLICY_URL + "/**").hasRole(SUPER_ADMIN)
-                        .requestMatchers("/api/v1/**").hasAnyRole(SUPER_ADMIN, ADMIN)
+                        // Super Admins everywhere, everyone else by their pages (PageAccess)
+                        .requestMatchers("/api/v1/**").access(pageAccess)
                         .anyRequest().denyAll())
                 // spa() first, then our repo, so the login code rotates the same token store
                 .csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokenRepository))

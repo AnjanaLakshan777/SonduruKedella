@@ -5,6 +5,7 @@ import com.sondurukedella.common.exception.ConflictException;
 import com.sondurukedella.common.exception.InvalidRequestException;
 import com.sondurukedella.common.exception.NotFoundException;
 import com.sondurukedella.common.web.PageResponse;
+import com.sondurukedella.security.access.AppPage;
 import com.sondurukedella.security.audit.SecurityAuditService;
 import com.sondurukedella.security.audit.SecurityEventType;
 import com.sondurukedella.security.user.dto.PasswordResetRequest;
@@ -14,8 +15,12 @@ import com.sondurukedella.security.user.dto.UserRoleRequest;
 import com.sondurukedella.security.user.dto.UserStatusRequest;
 import com.sondurukedella.security.user.dto.UserUpdateRequest;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -35,6 +40,8 @@ public class UserAdministrationService {
 
     public static final int MAX_PAGE_SIZE = 100;
     public static final Set<String> SORTABLE_PROPERTIES = Set.of("username", "displayName", "createdAt", "id");
+    // the built-in roles keep their names
+    private static final Set<String> RESERVED_LABELS = Set.of("admin", "super admin", "superadmin", "super_admin", "custom", "other");
 
     private final AppUserRepository repository;
     private final UserMapper mapper;
@@ -68,9 +75,12 @@ public class UserAdministrationService {
         user.setDisplayName(request.displayName().strip());
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setRole(request.role() != null ? request.role() : UserRole.ADMIN);
+        Access access = access(request.role() != null ? request.role() : UserRole.ADMIN, request.roleName(), request.pages());
+        apply(user, access);
         AppUser saved = repository.saveAndFlush(user);
-        audit.record(SecurityEventType.USER_CREATED, actorId, saved.getId(), username, "role " + saved.getRole());
+        String details = "role " + UserMapper.roleName(saved)
+                + (access.role() == UserRole.SUPER_ADMIN ? "" : "; pages " + describe(access.pages()));
+        audit.record(SecurityEventType.USER_CREATED, actorId, saved.getId(), username, details);
         return mapper.toResponse(saved);
     }
 
@@ -141,18 +151,85 @@ public class UserAdministrationService {
         }
         AppUser user = loadForUpdate(id);
         ConflictException.requireCurrentVersion(request.version(), user.getVersion());
-        if (user.getRole() == request.role()) {
+        Access access = access(request.role(), request.roleName(), request.pages());
+        boolean roleChanged = user.getRole() != access.role() || !Objects.equals(user.getRoleLabel(), access.label());
+        boolean pagesChanged = access.role() != UserRole.SUPER_ADMIN && !Set.copyOf(user.getPages()).equals(access.pages());
+        if (!roleChanged && !pagesChanged) {
             return mapper.toResponse(user);
         }
-        if (user.isActiveSuperAdmin()) {
+        if (user.isActiveSuperAdmin() && access.role() != UserRole.SUPER_ADMIN) {
             requireAnotherActiveSuperAdmin(superAdmins, user);
         }
-        UserRole previous = user.getRole();
-        user.setRole(request.role());
-        user.revokeSessions();
+        String previous = UserMapper.roleName(user);
+        apply(user, access);
+        // a new role ends their sessions; new pages apply on their next request anyway (PageAccess)
+        if (roleChanged) {
+            user.revokeSessions();
+        }
         AppUser saved = repository.saveAndFlush(user);
-        audit.record(SecurityEventType.ROLE_CHANGED, actorId, id, user.getUsername(), previous + " -> " + request.role());
+        List<String> details = new ArrayList<>();
+        if (roleChanged) {
+            details.add(previous + " -> " + UserMapper.roleName(saved));
+        }
+        if (access.role() != UserRole.SUPER_ADMIN) {
+            details.add("pages " + describe(access.pages()));
+        }
+        audit.record(SecurityEventType.ROLE_CHANGED, actorId, id, user.getUsername(), String.join("; ", details));
         return mapper.toResponse(saved);
+    }
+
+    // the role and the pages that go with it, checked
+    private record Access(UserRole role, String label, Set<AppPage> pages) {
+    }
+
+    // Super Admin: no name, no pages (opens everything). Admin: no name; every page when left out.
+    // Other (CUSTOM): a name and at least one page.
+    private static Access access(UserRole role, String rawName, Set<AppPage> requested) {
+        boolean named = rawName != null && !rawName.isBlank();
+        if (role == UserRole.SUPER_ADMIN) {
+            if (named || requested != null && !requested.isEmpty()) {
+                throw new InvalidRequestException("A Super Admin opens every page and has no other role name.");
+            }
+            return new Access(role, null, EnumSet.noneOf(AppPage.class));
+        }
+        if (role == UserRole.ADMIN && named) {
+            throw new InvalidRequestException("Only the Other role takes a role name.");
+        }
+        String label = role == UserRole.CUSTOM ? checkedLabel(rawName) : null;
+        if (requested == null && role == UserRole.ADMIN) {
+            return new Access(role, null, EnumSet.allOf(AppPage.class));
+        }
+        if (requested == null || requested.isEmpty()) {
+            throw new InvalidRequestException("Tick at least one page.");
+        }
+        Set<AppPage> pages = EnumSet.noneOf(AppPage.class);
+        pages.addAll(requested);
+        return new Access(role, label, pages);
+    }
+
+    private static String checkedLabel(String raw) {
+        String label = raw == null ? "" : raw.strip().replaceAll("\\s+", " ");
+        if (label.isEmpty()) {
+            throw new InvalidRequestException("Type the role name, e.g. Supervisor.");
+        }
+        if (label.length() > AppUser.ROLE_LABEL_MAX_LENGTH) {
+            throw new InvalidRequestException("A role name is at most " + AppUser.ROLE_LABEL_MAX_LENGTH + " characters.");
+        }
+        if (RESERVED_LABELS.contains(label.toLowerCase(Locale.ROOT))) {
+            throw new InvalidRequestException("\"" + label + "\" is a built-in role. Pick it above, or use another name.");
+        }
+        return label;
+    }
+
+    private static void apply(AppUser user, Access access) {
+        user.setRole(access.role());
+        user.setRoleLabel(access.label());
+        user.getPages().clear();
+        user.getPages().addAll(access.pages());
+    }
+
+    private static String describe(Set<AppPage> pages) {
+        return pages.stream().map(Enum::name).collect(Collectors.joining(", "));
     }
 
     @Transactional

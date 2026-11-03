@@ -1,12 +1,21 @@
 import { create } from 'zustand'
 import { ApiError, apiGet, apiPost, ensureCsrf, setUnauthorizedHandler } from '@/lib/api'
 
+// same names as the backend's AppPage
+export type AppPage = 'DASHBOARD' | 'PROJECTS' | 'CLIENTS' | 'REVENUE' | 'EXPENSES' | 'COMMISSIONS' | 'REPORTS' | 'SUPPLIERS' | 'INVENTORY' | 'LABOUR' | 'SETTINGS'
+
 export interface CurrentUser {
   id: number
   username: string
   displayName: string
   email: string
-  role: 'SUPER_ADMIN' | 'ADMIN'
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'CUSTOM'
+  // shown under the name: Super Admin, Admin or the custom role's name
+  roleName: string
+  // pages this user can open (all of them for admins)
+  pages: AppPage[]
+  // data areas the UI may load (see api-load)
+  readAreas: string[]
 }
 
 interface AuthState {

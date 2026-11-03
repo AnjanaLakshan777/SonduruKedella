@@ -1,9 +1,12 @@
 package com.sondurukedella.security.user;
 
 import com.sondurukedella.common.exception.BusinessRuleException;
+import com.sondurukedella.security.access.AppPage;
 import com.sondurukedella.security.audit.SecurityAuditService;
 import com.sondurukedella.security.audit.SecurityEventType;
 import com.sondurukedella.security.user.dto.CurrentUserResponse;
+import java.util.EnumSet;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +27,14 @@ public class UserAccountService {
     public CurrentUserResponse current(long userId) {
         return repository.findById(userId).filter(AppUser::isEnabled).map(mapper::toCurrentUser)
                 .orElseThrow(() -> new AccessDeniedException("The account is no longer active."));
+    }
+
+    // the pages ticked for this user (PageAccess); empty when the user is gone
+    @Transactional(readOnly = true)
+    public Set<AppPage> pagesOf(long userId) {
+        Set<AppPage> pages = EnumSet.noneOf(AppPage.class);
+        repository.findById(userId).ifPresent(u -> pages.addAll(u.getPages()));
+        return pages;
     }
 
     // false once the user is disabled or their role/password changed

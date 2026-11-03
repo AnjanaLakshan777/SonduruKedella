@@ -291,7 +291,7 @@ class UserAdministrationApiIntegrationTest {
         mockMvc.perform(get("/api/v1/projects").session(adminSession)).andExpect(status().isUnauthorized());
         MockHttpSession fresh = login(mockMvc, admin.getUsername());
         mockMvc.perform(get(URL).session(fresh)).andExpect(status().isOk());
-        assertThat(events(admin.getId())).extracting(e -> e.get("details")).contains("ADMIN -> SUPER_ADMIN");
+        assertThat(events(admin.getId())).extracting(e -> e.get("details")).contains("Admin -> Super Admin");
     }
 
     @Test

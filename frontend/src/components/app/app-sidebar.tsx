@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import logo from '@/assets/sonduru-kedella-logo.png'
 import mark from '@/assets/sonduru-kedella-roof-mark.png'
-import { NAV, SETTINGS_ITEM, USERS_ITEM, type NavItem } from './nav'
+import { canOpen, homeOf, NAV, SETTINGS_ITEM, USERS_ITEM, type NavItem } from './nav'
 import { useAuth } from '@/store/auth'
 
 function isActive(pathname: string, to: string) {
@@ -12,7 +12,10 @@ function isActive(pathname: string, to: string) {
 
 export function AppSidebar({ collapsed, counts, onNavigate }: { collapsed?: boolean; counts?: Record<string, { n: number; alert?: boolean }>; onNavigate?: () => void }) {
   const { pathname } = useLocation()
-  const isSuperAdmin = useAuth((s) => s.user?.role === 'SUPER_ADMIN')
+  const user = useAuth((s) => s.user)
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN'
+  // a custom role only sees its own pages
+  const groups = NAV.map((g) => ({ ...g, items: g.items.filter((it) => canOpen(user, it.page)) })).filter((g) => g.items.length > 0)
   const item = (it: NavItem) => {
     const on = isActive(pathname, it.to)
     const c = counts?.[it.to]
@@ -49,18 +52,18 @@ export function AppSidebar({ collapsed, counts, onNavigate }: { collapsed?: bool
   return (
     <aside aria-label="Main navigation" className={cn('bg-sidebar text-sidebar-foreground border-sidebar-border flex h-full flex-col border-r', collapsed ? 'w-12' : 'w-64')}>
       <div className={cn('border-sidebar-border flex h-[88px] shrink-0 items-center justify-center border-b', collapsed ? 'px-1' : 'px-4')}>
-        <NavLink to="/" onClick={onNavigate} className="focus-visible:ring-sidebar-ring/50 rounded-md outline-none focus-visible:ring-[3px]" aria-label="Sonduru Kedella — Dashboard">
+        <NavLink to={homeOf(user)} onClick={onNavigate} className="focus-visible:ring-sidebar-ring/50 rounded-md outline-none focus-visible:ring-[3px]" aria-label="Sonduru Kedella — Dashboard">
           {collapsed ? <img src={mark} alt="" className="size-10" /> : <img src={logo} alt="Sonduru Kedella — Home Design & Construction" className="h-16 w-auto" />}
         </NavLink>
       </div>
       <nav className="flex-1 overflow-y-auto p-2 scroll-on-hover">
-        {NAV.map((g, i) => (
+        {groups.map((g, i) => (
           <div key={i} className={cn('py-2', collapsed && i > 0 && 'border-sidebar-border border-t py-1')}>
             {g.label && !collapsed && <div className="text-sidebar-foreground/70 flex h-8 items-center px-2 text-xs font-medium">{g.label}</div>}
             <ul className="grid gap-0.5">{g.items.map(item)}</ul>
           </div>
         ))}
-        <div className={cn('border-sidebar-border border-t', collapsed ? 'py-1' : 'pt-2')}><ul>{isSuperAdmin && item(USERS_ITEM)}{item(SETTINGS_ITEM)}</ul></div>
+        <div className={cn('border-sidebar-border border-t', collapsed ? 'py-1' : 'pt-2')}><ul>{isSuperAdmin && item(USERS_ITEM)}{canOpen(user, SETTINGS_ITEM.page) && item(SETTINGS_ITEM)}</ul></div>
       </nav>
     </aside>
   )

@@ -352,8 +352,9 @@ Access is enforced by the backend. Hiding a button in the frontend is never the 
 
 | Role | Can do |
 | --- | --- |
-| `SUPER_ADMIN` | Everything an Admin can, plus user administration (create, edit, change role, activate or deactivate, reset password) and changing the commission policy. |
-| `ADMIN` | All business modules: settings, clients, projects, agreements, revenue, expenses, suppliers, inventory, labour, payroll, commissions and reports. |
+| `SUPER_ADMIN` | Everything an Admin can, plus user administration (create, edit, change role, activate or deactivate, reset password), everyone's page permissions and changing the commission policy. |
+| `ADMIN` | The pages the Super Admin ticks for them (every page to start): settings, clients, projects, revenue, expenses, suppliers, inventory, labour and payroll, commissions, reports. |
+| Other (`CUSTOM`) | Like Admin, with a name of its own (Supervisor, Auditor, ...) shown under theirs. Pages are set per user. |
 
 The first Super Admin is created once, from environment variables, on the first start. See
 [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md), "First Super Admin".

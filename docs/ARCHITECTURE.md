@@ -61,7 +61,7 @@ Tables are listed in `docs/DATABASE.md`.
 | `activity` | The project activity feed, written by the other modules. | `activity_log` |
 | `common` | Shared code that contains no business rules. | — |
 | `config` | Application-wide configuration. | — |
-| `security` | Sign-in, sessions, the two roles, user administration, the first Super Admin bootstrap and the security audit trail. | `app_users`, `security_events` |
+| `security` | Sign-in, sessions, roles, per-user page permissions, user administration, the first Super Admin bootstrap and the security audit trail. | `app_users`, `app_user_pages`, `security_events` |
 
 ## Layer Responsibilities
 - `controller`: HTTP endpoints under `/api/v1`. Controllers bind and validate request DTOs, call a service and return response DTOs. They contain no business rules and never return entities.
@@ -82,7 +82,8 @@ Shared packages:
 - `config.web`: Web configuration. `CorsConfig` allows credentialed requests from the origins in `security.cors.allowed-origins` only.
 - `config.ClockConfig`: the application `Clock`, in the Asia/Colombo zone. Business dates such as completion and activity dates come from it, so tests can fix the time.
 - `security.config`: `SecurityConfig` (the filter chain and every URL rule), `SessionUserFilter` and the JSON 401/403 responses.
-- `security.user`: Application users (`app_users`), roles, the user-details lookup, user administration (`/api/v1/users`), the user's own account, and the first Super Admin bootstrap.
+- `security.user`: Application users (`app_users`), roles and page permissions, the user-details lookup, user administration (`/api/v1/users`), the user's own account, and the first Super Admin bootstrap.
+- `security.access`: `ApiArea`, `AppPage` (which pages read and change which endpoints); the rule itself is `security.config.PageAccess`.
 - `security.auth`: Sign-in (`/api/v1/auth`), the sign-in throttle, and changing your own password.
 - `security.audit`: The append-only security audit trail (`security_events`).
 - `common.audit.CurrentUser`: reads the signed-in user id for `created_by`, without `common` depending on `security`.
@@ -217,15 +218,25 @@ Rule-heavy figures always come from the owning module's service. `reports.reposi
 - Do not count stock purchases and stock issues twice as expenses.
 
 ## Authentication and Authorization
-Implemented 2026-10-25. Spring Security, server-side sessions, two roles. No JWT, no HTTP Basic, no form login, no public sign-up.
+Implemented 2026-10-25. Spring Security, server-side sessions, two built-in roles plus "Other" role names, and page permissions per user (2026-11-03). No JWT, no HTTP Basic, no form login, no public sign-up.
 
-### Roles (owner decision: these two only)
+### Roles and page permissions (owner decisions 2026-10-25 and 2026-11-03)
 | Role | May use |
 | --- | --- |
 | `SUPER_ADMIN` | Everything an Admin can, plus user administration (`/api/v1/users/**`: list, view, create, edit, change role, activate or deactivate, reset password) and the actuator endpoints other than health. Only a Super Admin can make someone a Super Admin. |
-| `ADMIN` | All business modules under `/api/v1` (settings, clients, projects, agreements, revenue, receipts, expenses, suppliers, inventory, employees, attendance, overtime, payroll, commissions), plus their own profile, password change and sign-out. No user administration, and no change to the commission policy. |
+| `ADMIN` | The pages ticked for that user (every page when created), plus their own profile, password change and sign-out. No user administration, and no change to the commission policy. |
+| `CUSTOM` ("Other") | Same as Admin, with a name of its own (`app_users.role_label`: Supervisor, Auditor, ...). The name is only a label shown under the user's name; it grants nothing. |
+
+Permissions belong to each user (`app_user_pages`), not to a role: two Supervisors can open different pages. A Super Admin has no rows and opens everything. A Super Admin sets them on create and with `PUT /api/v1/users/{id}/role` (role, name and pages together).
 
 Roles are the `app_users.role` column (`UserRole` enum, authorities `ROLE_SUPER_ADMIN` / `ROLE_ADMIN`). Every rule is in one place, `security.config.SecurityConfig`. Controllers carry no role checks. The user-administration service checks again against locked rows, because the actor's own role may have just changed.
+
+Page access (`security.access`):
+- `ApiArea` groups the `/api/v1` endpoints by their path (clients, projects, project payments, expenses, labour, payroll, ...). A path with no area is open to Super Admins only.
+- `AppPage` lists, for every sidebar page, the areas it reads and the areas it changes. Dashboard, Projects and Reports read every area because they add up figures from everything. Every user also reads Settings. Users stays Super Admin only.
+- `PageAccess` is the `/api/v1/**` rule: Super Admins pass; anyone else passes a GET when one of their pages reads the area, and any other method when one of their pages changes it. The pages are read from the database on every request, so new permissions apply at once. A new role or role name still ends the user's sessions. The path is matched decoded, as Spring MVC routes it.
+- Pages read more than they show: for example Labour reads the project list (names, types and contract values) for its pickers, but not project money (schedule, receipts, write-offs, delay terms).
+- `/api/v1/auth/me` returns `roleName` (shown under the name), `pages` and `readAreas`; the UI hides other pages and loads only those areas.
 
 | Path | Who |
 | --- | --- |

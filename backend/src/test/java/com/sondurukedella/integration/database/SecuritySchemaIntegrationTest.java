@@ -24,9 +24,15 @@ class SecuritySchemaIntegrationTest {
     private JdbcTemplate jdbc;
 
     @Test
-    void onlyTheTwoApprovedRolesCanBeStored() {
+    void onlyTheApprovedRolesCanBeStored() {
         assertThatThrownBy(() -> jdbc.queryForObject(INSERT_USER, Long.class, "schema-cashier", "CASHIER"))
                 .isInstanceOf(DataAccessException.class).hasMessageContaining("ck_app_users_role");
+    }
+
+    @Test
+    void anOtherRoleUserMustHaveARoleName() {
+        assertThatThrownBy(() -> jdbc.queryForObject(INSERT_USER, Long.class, "schema-custom-" + System.nanoTime(), "CUSTOM"))
+                .isInstanceOf(DataAccessException.class).hasMessageContaining("ck_app_users_role_label");
     }
 
     @Test

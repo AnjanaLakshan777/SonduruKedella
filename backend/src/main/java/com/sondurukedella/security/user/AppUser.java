@@ -1,17 +1,24 @@
 package com.sondurukedella.security.user;
 
+import com.sondurukedella.security.access.AppPage;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
+import java.util.Set;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -25,6 +32,8 @@ import lombok.Setter;
 @Table(name = "app_users")
 @NoArgsConstructor
 public class AppUser {
+
+    public static final int ROLE_LABEL_MAX_LENGTH = 50;
 
     @Id
     @Setter(AccessLevel.NONE)
@@ -48,6 +57,18 @@ public class AppUser {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private UserRole role;
+
+    // the "Other" role's name (Supervisor, Auditor, ...); only for CUSTOM (ck_app_users_role_label)
+    @Column(name = "role_label", length = ROLE_LABEL_MAX_LENGTH)
+    private String roleLabel;
+
+    // what this user may open; Admins and custom roles only, Super Admins open everything.
+    // Small set, and every request checks it (PageAccess).
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "app_user_pages", joinColumns = @JoinColumn(name = "user_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "page", nullable = false, length = 30)
+    private Set<AppPage> pages = EnumSet.noneOf(AppPage.class);
 
     @Column(nullable = false)
     private boolean enabled = true;

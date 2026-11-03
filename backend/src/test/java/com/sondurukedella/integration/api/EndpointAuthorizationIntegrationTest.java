@@ -11,10 +11,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sondurukedella.security.access.ApiArea;
+import com.sondurukedella.security.access.AppPage;
+import com.sondurukedella.security.user.AppUser;
 import com.sondurukedella.security.user.AppUserRepository;
 import com.sondurukedella.security.user.UserRole;
 import com.sondurukedella.support.TestUsers;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,6 +98,34 @@ class EndpointAuthorizationIntegrationTest {
             int asSuperAdmin = statusOf(method, path, superSession);
             if (isAuthFailure(asSuperAdmin)) {
                 problems.add(key + " SUPER_ADMIN -> " + asSuperAdmin);
+            }
+        }
+        assertThat(problems).isEmpty();
+    }
+
+    // A new endpoint must belong to an area (ApiArea), or only Super Admins could ever use it.
+    // A user with no pages reads settings and nothing else.
+    @Test
+    void everyBusinessEndpointHasAnAreaAndAUserWithNoPagesOnlyReadsSettings() throws Exception {
+        // the API refuses an empty page list, the table doesn't
+        AppUser user = TestUsers.create(users, encoder, "matrix-custom", UserRole.CUSTOM, "Matrix", EnumSet.noneOf(AppPage.class));
+        MockHttpSession customSession = login(mockMvc, user.getUsername());
+
+        List<String> problems = new ArrayList<>();
+        for (String[] endpoint : endpoints()) {
+            String method = endpoint[0];
+            String pattern = endpoint[1];
+            String key = method + " " + pattern;
+            if (pattern.startsWith("/api/v1/auth") || pattern.startsWith("/api/v1/users")) {
+                continue;
+            }
+            if (ApiArea.of(concrete(pattern)).isEmpty()) {
+                problems.add(key + " has no area");
+            }
+            boolean settingsRead = method.equals("GET") && pattern.startsWith("/api/v1/settings");
+            int status = statusOf(method, concrete(pattern), customSession);
+            if (settingsRead ? isAuthFailure(status) : status != 403) {
+                problems.add(key + " CUSTOM -> " + status);
             }
         }
         assertThat(problems).isEmpty();
