@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { apiPut, errorMessage } from '@/lib/api'
 import { Field } from './form'
+import { PasswordInput } from './password-input'
 
 /** Your own password. This session stays signed in; your other sessions end. */
 export function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -39,9 +39,9 @@ export function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; on
       <DialogContent>
         <DialogHeader><DialogTitle>Change password</DialogTitle><DialogDescription>Use at least 12 characters, and not one you use anywhere else.</DialogDescription></DialogHeader>
         <div className="grid gap-4">
-          <Field label="Current password" required error={tried ? err.current : undefined}><Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} /></Field>
-          <Field label="New password" required error={tried ? err.next : undefined}><Input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></Field>
-          <Field label="New password again" required error={tried ? err.again : undefined}><Input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} /></Field>
+          <Field label="Current password" required error={tried ? err.current : undefined}><PasswordInput autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} /></Field>
+          <Field label="New password" required error={tried ? err.next : undefined}><PasswordInput autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></Field>
+          <Field label="New password again" required error={tried ? err.again : undefined}><PasswordInput autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} /></Field>
         </div>
         <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} disabled={busy}>Change password</Button></DialogFooter>
       </DialogContent>

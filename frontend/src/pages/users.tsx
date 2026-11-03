@@ -16,6 +16,7 @@ import { StatusBadge } from '@/components/app/status-badge'
 import { CellMain } from '@/components/app/data-table'
 import { EmptyState } from '@/components/app/empty-state'
 import { Field } from '@/components/app/form'
+import { PasswordInput } from '@/components/app/password-input'
 import { apiGetAll, apiPost, apiPut, errorMessage } from '@/lib/api'
 import { formatDate } from '@/lib/dates'
 import { useAuth } from '@/store/auth'
@@ -176,7 +177,7 @@ function UserFormDialog({ state, onClose, onSaved }: { state: { open: boolean; u
           <Field label="Email" required className="sm:col-span-2" error={tried ? err.email : undefined}><Input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
           {!edit && (
             <>
-              <Field label="Password" required className="sm:col-span-2" hint={PASSWORD_HINT} error={tried ? err.password : undefined}><Input type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
+              <Field label="Password" required className="sm:col-span-2" hint={PASSWORD_HINT} error={tried ? err.password : undefined}><PasswordInput autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
               <Field label="Role" required className="sm:col-span-2">
                 <RadioGroup value={f.role} onValueChange={(v) => setF({ ...f, role: v as Role })} className="flex gap-6">
                   <Label className="font-normal"><RadioGroupItem value="ADMIN" />Admin</Label>
@@ -202,7 +203,7 @@ function ResetPasswordDialog({ user, onClose }: { user?: User; onClose: () => vo
     <Dialog open={!!user} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader><DialogTitle>Reset {user?.displayName}'s password</DialogTitle><DialogDescription>They are signed out everywhere. Give them the new password in person; they can change it after signing in.</DialogDescription></DialogHeader>
-        <Field label="New password" required hint={PASSWORD_HINT} error={tried ? err : undefined}><Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+        <Field label="New password" required hint={PASSWORD_HINT} error={tried ? err : undefined}><PasswordInput autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button disabled={busy} onClick={async () => {

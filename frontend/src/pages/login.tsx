@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Field } from '@/components/app/form'
+import { PasswordInput } from '@/components/app/password-input'
 import { ApiError } from '@/lib/api'
 import { useAuth } from '@/store/auth'
 
@@ -49,7 +50,7 @@ export default function LoginPage() {
                 <Input id="login-username" autoComplete="username" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} disabled={busy} />
               </Field>
               <Field label="Password" htmlFor="login-password" error={error}>
-                <Input id="login-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} aria-invalid={!!error} />
+                <PasswordInput id="login-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} aria-invalid={!!error} />
               </Field>
               <Button type="submit" disabled={busy}>{busy && <LoaderCircle className="animate-spin" />}Sign in</Button>
             </form>

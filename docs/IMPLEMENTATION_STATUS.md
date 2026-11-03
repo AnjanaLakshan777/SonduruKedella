@@ -1943,3 +1943,9 @@ For each completed task, record the date, files or migrations changed, verificat
   - Audit: `USER_UPDATED` with `username old -> new`.
 - Users page: the edit dialog's Username field is editable now, and the menu item is "Edit details". Renaming yourself signs you out.
 - Tests: `UserAdministrationApiIntegrationTest` (rename and sign in again; taken, invalid and blank names; same name in another case). Full backend suite: 677 tests, 0 failures. Frontend `tsc` clean. Not clicked through in the browser.
+
+### 2026-11-03: Show/hide password
+
+- New `PasswordInput` ([frontend/src/components/app/password-input.tsx](../frontend/src/components/app/password-input.tsx)): an `Input` with an eye button that toggles between hidden and visible text. It always starts hidden.
+- Used for every password box: sign-in, Change password (current, new and repeat), Add user and Reset password.
+- `tsc` clean; 41 Vitest tests pass. Not clicked through in the browser.
