@@ -25,6 +25,12 @@ final class ProblemResponses {
                 "You don't have permission to do this.");
     }
 
+    // signed in with the starting password (SessionUserFilter)
+    static void passwordChangeRequired(HttpServletResponse response) throws IOException {
+        write(response, HttpServletResponse.SC_FORBIDDEN, "Password change required",
+                "Set your own password before you continue.");
+    }
+
     private static void write(HttpServletResponse response, int status, String title, String detail) throws IOException {
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);

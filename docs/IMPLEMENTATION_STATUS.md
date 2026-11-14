@@ -2018,3 +2018,23 @@ For each completed task, record the date, files or migrations changed, verificat
   - Settings: the commission policy is read-only, with a note, for anyone but a Super Admin. The API already refused the change.
 - Tests: `nav.test.ts` (`pageOf`, `canOpen`, `homeOf`). `tsc` clean; 43 Vitest tests pass. Not clicked through in the browser.
 - Follow-up (same day): signing in on `/users` as a non-Super Admin (the previous user's last page) showed "Super Admins only". The route guard now treats Users as Super Admin only (`canOpenPath` in `nav.ts`) and sends anyone else to their first page, e.g. an Auditor to Reports. `nav.test.ts` covers it; 44 Vitest tests pass.
+
+### 2026-11-14: New users set their own password on the first sign-in
+
+- Owner request: a user the Super Admin adds must replace the starting password the first time they sign in, and only then.
+- Database: `V13__app_users_must_change_password.sql` (`app_users.must_change_password`, default false, so existing users aren't asked).
+- Backend:
+  - `POST /api/v1/users` sets the flag. `PUT /api/v1/auth/me/password` clears it, and keeps the session as before.
+  - `SessionUserFilter` already reads the user on every request (`findActiveSession` now returns `auth_version` and the flag in one query). While the flag is set, it answers 403 "Set your own password before you continue." to everything except `/auth/me`, the password change, login, logout and csrf.
+  - `/auth/me`, login and `/users` return `mustChangePassword`.
+  - A Super Admin's password reset does not set the flag. The owner asked for the first sign-in only.
+- Frontend:
+  - `SessionGate` shows `FirstPasswordPage` ("Set your own password": password you were given, new, again; Sign out) before loading any data. After saving it re-reads `/auth/me` and opens the app on the user's first page.
+  - Users page: status "First sign-in pending" until they do it. The add-user toast says so.
+  - The password checks are shared with the Change password dialog (`passwordChangeErrors`).
+- Tests:
+  - `FirstSignInApiIntegrationTest`: only the password change is open; after the change everything works; later sign-ins are normal; they can sign out; existing users aren't asked.
+  - `TestUsers.firstSignIn` for tests that sign in users made through the API.
+  - Full backend suite on a fresh database (V1 to V13): 694 tests, 0 failures. Frontend `tsc` clean, 44 Vitest tests pass.
+- Correction: the "697 tests" reported on 2026-11-03 counted a stale surefire report from the deleted `CustomRoleApiIntegrationTest`. The suite then had 690 tests. The runner now starts from a clean copy.
+- Checked live: V13 applied to the development database (Flyway v13). All 4 existing users have `mustChangePassword: false` in `/auth/me` and `/users`. No new user was created in the development database (users can't be deleted), and the first-sign-in screen was not clicked through in the browser.

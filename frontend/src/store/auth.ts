@@ -16,6 +16,8 @@ export interface CurrentUser {
   pages: AppPage[]
   // data areas the UI may load (see api-load)
   readAreas: string[]
+  // first sign-in with the starting password: SessionGate asks for a new one before anything else
+  mustChangePassword: boolean
 }
 
 interface AuthState {

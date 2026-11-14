@@ -30,8 +30,9 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long>, JpaSpec
     boolean existsByRole(UserRole role);
 
     // runs on every request (SessionUserFilter); empty if the user is gone or disabled
-    @Query("select u.authVersion from AppUser u where u.id = :id and u.enabled = true")
-    Optional<Long> findActiveAuthVersion(long id);
+    @Query("select new com.sondurukedella.security.user.SessionRow(u.authVersion, u.mustChangePassword) "
+            + "from AppUser u where u.id = :id and u.enabled = true")
+    Optional<SessionRow> findActiveSession(long id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from AppUser u where u.id = :id")

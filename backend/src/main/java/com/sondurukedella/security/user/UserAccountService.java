@@ -37,10 +37,13 @@ public class UserAccountService {
         return pages;
     }
 
-    // false once the user is disabled or their role/password changed
+    // STALE once the user is disabled or their role/password changed
     @Transactional(readOnly = true)
-    public boolean isSessionCurrent(long userId, long authVersion) {
-        return repository.findActiveAuthVersion(userId).map(v -> v == authVersion).orElse(false);
+    public SessionState sessionState(long userId, long authVersion) {
+        return repository.findActiveSession(userId)
+                .filter(s -> s.authVersion() == authVersion)
+                .map(s -> s.mustChangePassword() ? SessionState.MUST_CHANGE_PASSWORD : SessionState.CURRENT)
+                .orElse(SessionState.STALE);
     }
 
     // bumps auth_version so the user's other sessions die; returns the principal for this one
@@ -55,6 +58,7 @@ public class UserAccountService {
             throw new BusinessRuleException("The new password must be different from the current one.");
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false);
         user.revokeSessions();
         AppUser saved = repository.saveAndFlush(user);
         audit.record(SecurityEventType.PASSWORD_CHANGED, userId, userId, user.getUsername(), null);

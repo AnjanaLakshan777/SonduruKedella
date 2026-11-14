@@ -3,6 +3,7 @@ import { LoaderCircle, ServerCrash } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/app/empty-state'
 import LoginPage from '@/pages/login'
+import FirstPasswordPage from '@/pages/first-password'
 import { useAuth } from '@/store/auth'
 import { useStore } from '@/store/store'
 
@@ -16,7 +17,9 @@ function Splash({ text }: { text: string }) {
 
 // Nothing renders until we know who's signed in and the data is loaded - the pages assume a full store.
 export function SessionGate({ children }: { children: React.ReactNode }) {
-  const { status, check } = useAuth()
+  const { status, check, user } = useAuth()
+  // a new user sets their own password before anything loads (the API refuses the rest anyway)
+  const mustChange = status === 'signedIn' && !!user?.mustChangePassword
   const loaded = useStore((s) => s.loaded)
   const load = useStore((s) => s.load)
   const [error, setError] = useState<string>()
@@ -26,10 +29,10 @@ export function SessionGate({ children }: { children: React.ReactNode }) {
   }, [check])
 
   useEffect(() => {
-    if (status !== 'signedIn' || loaded) return
+    if (status !== 'signedIn' || mustChange || loaded) return
     setError(undefined)
     load().catch((e) => setError(e instanceof Error ? e.message : String(e)))
-  }, [status, loaded, load])
+  }, [status, mustChange, loaded, load])
 
   if (error) {
     return (
@@ -41,6 +44,7 @@ export function SessionGate({ children }: { children: React.ReactNode }) {
   }
   if (status === 'checking') return <Splash text="Checking your session…" />
   if (status === 'signedOut') return <LoginPage />
+  if (mustChange) return <FirstPasswordPage />
   if (!loaded) return <Splash text="Loading your data…" />
   return <>{children}</>
 }

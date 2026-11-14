@@ -118,7 +118,7 @@ class UserPermissionsApiIntegrationTest {
     @Test
     void twoUsersWithTheSameRoleNameHaveTheirOwnPages() throws Exception {
         String one = id(create("CUSTOM", "Supervisor", "[\"LABOUR\"]").andExpect(status().isCreated()));
-        MockHttpSession first = login(mockMvc, username(one));
+        MockHttpSession first = TestUsers.firstSignIn(mockMvc, username(one), TestUsers.PASSWORD);
         MockHttpSession second = signIn(create("CUSTOM", "supervisor", "[\"LABOUR\"]").andExpect(status().isCreated()));
 
         // only the first one gets Expenses; the change applies on their next request, no sign-out
@@ -192,7 +192,7 @@ class UserPermissionsApiIntegrationTest {
     }
 
     private MockHttpSession signIn(ResultActions created) throws Exception {
-        return login(mockMvc, username(id(created)));
+        return TestUsers.firstSignIn(mockMvc, username(id(created)), TestUsers.PASSWORD);
     }
 
     private static String id(ResultActions created) throws Exception {

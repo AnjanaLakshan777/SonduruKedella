@@ -75,6 +75,8 @@ public class UserAdministrationService {
         user.setDisplayName(request.displayName().strip());
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
+        // the Super Admin knows this one; the user picks their own on the first sign-in
+        user.setMustChangePassword(true);
         Access access = access(request.role() != null ? request.role() : UserRole.ADMIN, request.roleName(), request.pages());
         apply(user, access);
         AppUser saved = repository.saveAndFlush(user);

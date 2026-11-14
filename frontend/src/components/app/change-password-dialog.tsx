@@ -6,6 +6,13 @@ import { apiPut, errorMessage } from '@/lib/api'
 import { Field } from './form'
 import { PasswordInput } from './password-input'
 
+// same checks as the server (PasswordPolicy, "must be different"); it checks again anyway
+export const passwordChangeErrors = (current: string, next: string, again: string) => ({
+  current: !current ? 'Enter your current password.' : undefined,
+  next: next.length < 12 ? 'At least 12 characters.' : next === current ? 'Choose a different password.' : undefined,
+  again: again !== next ? 'The two new passwords don\x27t match.' : undefined,
+})
+
 /** Your own password. This session stays signed in; your other sessions end. */
 export function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [current, setCurrent] = useState('')
@@ -14,11 +21,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; on
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
   useEffect(() => { if (open) { setCurrent(''); setNext(''); setAgain(''); setTried(false) } }, [open])
-  const err = {
-    current: !current ? 'Enter your current password.' : undefined,
-    next: next.length < 12 ? 'At least 12 characters.' : next === current ? 'Choose a different password.' : undefined,
-    again: again !== next ? 'The two new passwords don\'t match.' : undefined,
-  }
+  const err = passwordChangeErrors(current, next, again)
   async function save() {
     setTried(true)
     if (Object.values(err).some(Boolean)) return

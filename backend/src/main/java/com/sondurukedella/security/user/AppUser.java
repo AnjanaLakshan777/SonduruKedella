@@ -73,6 +73,10 @@ public class AppUser {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    // set for a user the Super Admin just added; cleared when they change the password themselves
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword;
+
     // bump this to kill the user's existing sessions
     @Setter(AccessLevel.NONE)
     @Column(name = "auth_version", nullable = false)

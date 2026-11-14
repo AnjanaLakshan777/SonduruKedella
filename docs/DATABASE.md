@@ -101,6 +101,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - Users are never deleted, only deactivated, because every `created_by` and `security_events` row points here.
   - The partial index `ix_app_users_active_super_admins` serves the "at least one active Super Admin" check.
   - V12 added `role_label` (the "Other" role's name, up to 50). `ck_app_users_role_label` makes it set, trimmed and non-empty exactly when `role = 'CUSTOM'`.
+  - V13 added `must_change_password` (default false). Set when a Super Admin creates the user, cleared when the user changes their own password. While it is set, the API refuses everything but `/auth/me`, the password change, sign-out, login and csrf (403 "Set your own password before you continue.").
 - **app_user_pages** (V12): `(user_id, page)` primary key, `page` checked against the `AppPage` names (`ck_app_user_pages_page`). The pages an Admin or "Other" user can open; a Super Admin has none and opens everything.
 - **security_events** (V5): the security audit trail. Columns:
   - `event_type`, checked against the `SecurityEventType` values;
@@ -813,3 +814,4 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
   - Then drops `app_users.custom_role_id` (with `ck_app_users_custom_role` and its index), `custom_role_pages` and `custom_roles`, and adds `ck_app_users_role_label`.
   - `ck_security_events_type` keeps the `CUSTOM_ROLE_*` values for the V11 events already in the trail.
   - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V12). Applied to the development database on 2026-11-03 (Flyway v12): the Auditor user kept `Auditor` and `REPORTS`, and the Admin got all 11 pages.
+- `V13__app_users_must_change_password.sql` (2026-11-14): `app_users.must_change_password BOOLEAN NOT NULL DEFAULT FALSE`. A new user sets their own password on the first sign-in; existing users get false. Additive. Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V13).

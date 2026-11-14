@@ -21,6 +21,7 @@ public class UserMapper {
                 roleName(user),
                 pagesOf(user),
                 user.isEnabled(),
+                user.isMustChangePassword(),
                 user.getCreatedAt(),
                 user.getUpdatedAt(),
                 user.getVersion());
@@ -30,7 +31,7 @@ public class UserMapper {
         Set<AppPage> pages = pagesOf(user);
         Set<ApiArea> readAreas = user.getRole() == UserRole.SUPER_ADMIN ? EnumSet.allOf(ApiArea.class) : AppPage.readable(pages);
         return new CurrentUserResponse(user.getId(), user.getUsername(), user.getDisplayName(), user.getEmail(), user.getRole(),
-                roleName(user), pages, readAreas);
+                roleName(user), pages, readAreas, user.isMustChangePassword());
     }
 
     static String roleName(AppUser user) {

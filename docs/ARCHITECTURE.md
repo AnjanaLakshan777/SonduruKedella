@@ -267,7 +267,7 @@ Errors from the security layer are RFC 9457 JSON: 401 `Sign in to continue.`, 40
 ### Sessions
 - The session lives in memory in the one backend instance. It is lost on restart, and everyone signs in again. Idle timeout is `SESSION_TIMEOUT` (default 30 minutes).
 - Cookie: `HttpOnly`, `SameSite=Lax`, `Secure` unless `SESSION_COOKIE_SECURE=false` (compose sets false for plain-HTTP local development). Session ids are never put in URLs.
-- `SessionUserFilter` checks every signed-in request against `app_users` (one primary-key lookup). Each session remembers the `auth_version` it signed in with. Deactivating a user, changing their role, or changing or resetting their password bumps `auth_version`, so their existing sessions end on the next request (401). Changing your own password keeps the current session, under a new id, and ends all the others.
+- `SessionUserFilter` checks every signed-in request against `app_users` (one primary-key lookup). Each session remembers the `auth_version` it signed in with. Deactivating a user, changing their role, or changing or resetting their password bumps `auth_version`, so their existing sessions end on the next request (401). Changing your own password keeps the current session, under a new id, and ends all the others. It also enforces the first-sign-in rule: a user the Super Admin just added (`must_change_password`) gets 403 "Set your own password before you continue." on everything except `/auth/me`, `/auth/me/password`, login, logout and csrf, until they change the starting password. The UI shows a "Set your own password" screen instead of the app.
 
 ### Brute-force protection
 - `LoginAttemptThrottle`, in memory:

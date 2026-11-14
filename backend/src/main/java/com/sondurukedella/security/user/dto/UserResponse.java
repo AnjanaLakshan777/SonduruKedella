@@ -15,6 +15,8 @@ public record UserResponse(
         String roleName,
         Set<AppPage> pages,
         boolean enabled,
+        // hasn't signed in and set their own password yet
+        boolean mustChangePassword,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         long version) {

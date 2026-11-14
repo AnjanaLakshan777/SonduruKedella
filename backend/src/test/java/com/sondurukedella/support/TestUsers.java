@@ -2,6 +2,7 @@ package com.sondurukedella.support;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sondurukedella.security.access.AppPage;
@@ -58,6 +59,19 @@ public final class TestUsers {
                         .contentType(MediaType.APPLICATION_JSON).content(loginJson(username, password)))
                 .andExpect(status().isOk())
                 .andReturn().getRequest().getSession(false);
+    }
+
+    // a user the Super Admin just added: sign in with the starting password, then set a new one
+    // (the first-sign-in rule). The session stays signed in.
+    public static final String CHANGED_PASSWORD = "changed-on-first-sign-in-1";
+
+    public static MockHttpSession firstSignIn(MockMvc mockMvc, String username, String startingPassword) throws Exception {
+        MockHttpSession session = login(mockMvc, username, startingPassword);
+        mockMvc.perform(put("/api/v1/auth/me/password").session(session).with(csrf()).with(from(randomAddress()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"" + startingPassword + "\",\"newPassword\":\"" + CHANGED_PASSWORD + "\"}"))
+                .andExpect(status().isNoContent());
+        return session;
     }
 
     public static String loginJson(String username, String password) {

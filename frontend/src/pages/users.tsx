@@ -25,7 +25,7 @@ import { useAuth, type AppPage } from '@/store/auth'
 
 type Role = 'SUPER_ADMIN' | 'ADMIN' | 'CUSTOM'
 // roleName: Super Admin, Admin or the "Other" name; pages: what they can open (all of them for a Super Admin)
-interface User { id: number; username: string; displayName: string; email: string; role: Role; roleName: string; pages: AppPage[]; enabled: boolean; createdAt: string; version: number }
+interface User { id: number; username: string; displayName: string; email: string; role: Role; roleName: string; pages: AppPage[]; enabled: boolean; mustChangePassword: boolean; createdAt: string; version: number }
 
 const ALL_PAGES = PAGE_ITEMS.flatMap((it) => (it.page ? [it.page] : []))
 const pageLabels = (pages: AppPage[]) => (pages.length === ALL_PAGES.length ? 'Every page' : PAGE_ITEMS.filter((it) => it.page && pages.includes(it.page)).map((it) => it.label).join(', '))
@@ -85,7 +85,7 @@ export default function UsersPage() {
                   <TableCell className="hidden md:table-cell">{u.email}</TableCell>
                   <TableCell><StatusBadge status={u.roleName} title={pageLabels(u.pages)} /></TableCell>
                   <TableCell className="text-muted-foreground hidden max-w-72 truncate xl:table-cell" title={pageLabels(u.pages)}>{pageLabels(u.pages)}</TableCell>
-                  <TableCell><StatusBadge status={u.enabled ? 'Active' : 'Inactive'} /></TableCell>
+                  <TableCell><StatusBadge status={!u.enabled ? 'Inactive' : u.mustChangePassword ? 'First sign-in pending' : 'Active'} title={u.enabled && u.mustChangePassword ? 'They set their own password when they first sign in.' : undefined} /></TableCell>
                   <TableCell className="hidden lg:table-cell">{formatDate(u.createdAt.slice(0, 10))}</TableCell>
                   <TableCell className="pr-4">
                     <DropdownMenu>
@@ -221,7 +221,7 @@ function UserFormDialog({ state, roleNames, onClose, onSaved }: { state: { open:
       const renamed = !!edit && f.username.trim().toLowerCase() !== edit.username
       toast.success(edit ? 'User updated' : 'User added', {
         description: renamed ? `${f.displayName.trim()} is signed out; they sign in with the new username.`
-          : edit ? f.displayName : `Give ${f.displayName.trim()} their password in person; they can change it after signing in.`,
+          : edit ? f.displayName : `Give ${f.displayName.trim()} this password in person. On their first sign-in they set their own.`,
       })
       // renaming yourself ends your own session too
       if (renamed && edit.id === useAuth.getState().user?.id) { await useAuth.getState().check(); return }

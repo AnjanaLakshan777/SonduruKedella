@@ -3,7 +3,7 @@ import type { CurrentUser } from '@/store/auth'
 import { canOpen, canOpenPath, homeOf, pageOf } from './nav'
 
 const user = (pages: CurrentUser['pages']): CurrentUser => ({
-  id: 1, username: 'x', displayName: 'X', email: 'x@example.com', role: 'CUSTOM', roleName: 'Supervisor', pages, readAreas: [],
+  id: 1, username: 'x', displayName: 'X', email: 'x@example.com', role: 'CUSTOM', roleName: 'Supervisor', pages, readAreas: [], mustChangePassword: false,
 })
 
 describe('page permissions in the UI', () => {
