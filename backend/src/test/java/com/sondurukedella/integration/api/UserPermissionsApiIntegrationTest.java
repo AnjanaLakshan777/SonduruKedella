@@ -104,6 +104,26 @@ class UserPermissionsApiIntegrationTest {
     }
 
     @Test
+    void onlyAdminsApproveOvertimeASupervisorOnlyRecordsIt() throws Exception {
+        MockHttpSession supervisor = signIn(create("CUSTOM", "Supervisor", "[\"LABOUR\"]").andExpect(status().isCreated()));
+        String approval = "{\"approved\":true,\"version\":0}";
+        // records overtime (reaches validation), can't approve it
+        write(post("/api/v1/overtime"), supervisor).andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/v1/overtime/999999999/approval").session(supervisor).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(approval))
+                .andExpect(status().isForbidden());
+
+        // an Admin with Labour gets past security (unknown entry: 404), one without Labour doesn't
+        mockMvc.perform(put("/api/v1/overtime/999999999/approval").session(adminSession).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(approval))
+                .andExpect(status().isNotFound());
+        access(admin.getId(), "{\"role\":\"ADMIN\",\"pages\":[\"REPORTS\"],\"version\":%d}").andExpect(status().isOk());
+        mockMvc.perform(put("/api/v1/overtime/999999999/approval").session(adminSession).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(approval))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void anAuditorWithReportsReadsEverythingAndChangesNothing() throws Exception {
         MockHttpSession session = signIn(create("CUSTOM", "Auditor", "[\"REPORTS\"]").andExpect(status().isCreated()));
         for (String path : new String[] {"/api/v1/expenses", "/api/v1/projects/1/receipts", "/api/v1/payroll/payments",

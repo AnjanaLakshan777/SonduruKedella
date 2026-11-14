@@ -22,6 +22,8 @@ export function OvertimeView() {
   const d = useData()
   const { addOvertime, approveOvertime } = useStore()
   const me = useAuth((s) => s.user)
+  // the server lets only Super Admins and Admins approve; an "Other" role (Supervisor) only records
+  const canApprove = me?.role === 'SUPER_ADMIN' || me?.role === 'ADMIN'
   const frozenWeeks = useStore((s) => s.frozenWeeks)
   const isFrozen = (date: string, employeeId: string) => frozenWeeks.has(adjustmentKey(weekStart(date), employeeId))
   const [busy, setBusy] = useState(false)
@@ -70,7 +72,7 @@ export function OvertimeView() {
   return (
     <div className="grid items-start gap-6 xl:grid-cols-3">
       <Card>
-        <CardHeader><CardTitle>Record overtime</CardTitle><CardDescription>Entered by the site supervisor. Only approved hours are paid.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Record overtime</CardTitle><CardDescription>Entered by the site supervisor. Only hours an Admin approves are paid.</CardDescription></CardHeader>
         <CardContent className="grid gap-4">
           <Field label="Worker" required error={tried ? err.emp : undefined}><SelectField value={employeeId} onChange={setEmployeeId} invalid={tried && !!err.emp} placeholder="Select worker" options={d.s.employees.filter((e) => e.status === 'Active').map((e) => ({ value: e.id, label: `${e.name} — ${e.role}` }))} /></Field>
           <Field label="Date" required hint={emp ? (att ? `Attendance: ${att.status}` : 'No attendance recorded on this date') : undefined}><DatePicker value={date} onChange={setDate} /></Field>
@@ -104,6 +106,7 @@ export function OvertimeView() {
                   <TableCell><StatusBadge status={o.approved ? 'Approved' : 'Awaiting Approval'} /></TableCell>
                   <TableCell className="pr-4">
                     {isFrozen(o.date, o.employeeId) ? <span className="text-muted-foreground flex items-center gap-1 text-xs" title="The week is paid; change it with a payroll correction"><LockKeyhole className="size-3.5" />Week paid</span>
+                      : !canApprove ? null
                       : o.approved ? <Button variant="ghost" size="sm" onClick={() => approve(o, e.name, false)}><X />Undo</Button>
                       : <Button variant="outline" size="sm" onClick={() => approve(o, e.name, true)}><Check />Approve</Button>}
                   </TableCell>

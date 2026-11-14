@@ -2038,3 +2038,10 @@ For each completed task, record the date, files or migrations changed, verificat
   - Full backend suite on a fresh database (V1 to V13): 694 tests, 0 failures. Frontend `tsc` clean, 44 Vitest tests pass.
 - Correction: the "697 tests" reported on 2026-11-03 counted a stale surefire report from the deleted `CustomRoleApiIntegrationTest`. The suite then had 690 tests. The runner now starts from a clean copy.
 - Checked live: V13 applied to the development database (Flyway v13). All 4 existing users have `mustChangePassword: false` in `/auth/me` and `/users`. No new user was created in the development database (users can't be deleted), and the first-sign-in screen was not clicked through in the browser.
+
+### 2026-11-14: Only Admins and Super Admins approve overtime
+
+- Owner request: overtime approval is for Admin or Super Admin only.
+- Backend: `SecurityConfig` rule on `/api/v1/overtime/*/approval`: role `SUPER_ADMIN` or `ADMIN` and `PageAccess`, so an Admin also needs the Labour page. An "Other" role (Supervisor) with Labour still records overtime but gets 403 on approval.
+- Frontend: Approve / Undo are hidden for "Other" roles, and the bell's "overtime awaiting approval" notice is shown only to Admins and Super Admins.
+- Tests: `UserPermissionsApiIntegrationTest.onlyAdminsApproveOvertimeASupervisorOnlyRecordsIt`. Full backend suite on a fresh database: 695 tests, 0 failures. Frontend `tsc` clean. Not clicked through in the browser.

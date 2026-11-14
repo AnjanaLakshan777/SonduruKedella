@@ -36,7 +36,9 @@ export function NotificationsMenu() {
   const { user } = useAuth()
   const { can } = usePageAccess()
   // only what the user can open: an Auditor isn't told about overtime to approve
-  const items = useMemo(() => notifications(d).filter((n) => can(n.to)), [d, can])
+  // overtime approvals only for those who may approve (Super Admin, Admin)
+  const approver = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
+  const items = useMemo(() => notifications(d).filter((n) => can(n.to) && (n.kind !== 'overtime' || approver)), [d, can, approver])
   const { read, save } = useReadKeys(user?.id)
   const unread = items.filter((n) => !read.has(n.key)).length
 

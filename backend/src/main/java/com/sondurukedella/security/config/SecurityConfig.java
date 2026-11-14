@@ -16,6 +16,8 @@ import org.springframework.security.authentication.AccountStatusUserDetailsCheck
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -41,7 +43,8 @@ import org.springframework.security.web.savedrequest.NullRequestCache;
 // All the access rules live here. Everything needs a login by default:
 // login/csrf/health are public, /users and actuator are Super Admin only, the rest of
 // /api/v1 is open to Super Admins, and to everyone else by the pages ticked for them (PageAccess).
-// Only exception: changing the commission policy is Super Admin only.
+// Exceptions: changing the commission policy is Super Admin only, and approving overtime is for
+// Super Admins and Admins (never an "Other" role).
 // Rules match on path, not method, so a new DELETE/PATCH can't sneak past them.
 // Session cookie auth + CSRF (XSRF-TOKEN cookie -> X-XSRF-TOKEN header), login and logout included.
 @Configuration
@@ -53,6 +56,7 @@ public class SecurityConfig {
     public static final String CSRF_URL = "/api/v1/auth/csrf";
     public static final String SESSION_COOKIE = "JSESSIONID";
     public static final String COMMISSION_POLICY_URL = "/api/v1/settings/commission-policy";
+    public static final String OVERTIME_APPROVAL_URL = "/api/v1/overtime/*/approval";
 
     private static final String SUPER_ADMIN = UserRole.SUPER_ADMIN.name();
 
@@ -76,6 +80,10 @@ public class SecurityConfig {
                         // anyone can read the policy, only a Super Admin can change it
                         .requestMatchers(HttpMethod.GET, COMMISSION_POLICY_URL).access(pageAccess)
                         .requestMatchers(COMMISSION_POLICY_URL, COMMISSION_POLICY_URL + "/**").hasRole(SUPER_ADMIN)
+                        // approving overtime puts money into payroll: Super Admins and Admins only, and an
+                        // Admin still needs the Labour page. An "Other" role (e.g. Supervisor) records, never approves.
+                        .requestMatchers(OVERTIME_APPROVAL_URL).access(AuthorizationManagers.allOf(
+                                AuthorityAuthorizationManager.hasAnyRole(SUPER_ADMIN, UserRole.ADMIN.name()), pageAccess))
                         // Super Admins everywhere, everyone else by their pages (PageAccess)
                         .requestMatchers("/api/v1/**").access(pageAccess)
                         .anyRequest().denyAll())
