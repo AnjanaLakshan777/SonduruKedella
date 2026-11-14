@@ -2045,3 +2045,10 @@ For each completed task, record the date, files or migrations changed, verificat
 - Backend: `SecurityConfig` rule on `/api/v1/overtime/*/approval`: role `SUPER_ADMIN` or `ADMIN` and `PageAccess`, so an Admin also needs the Labour page. An "Other" role (Supervisor) with Labour still records overtime but gets 403 on approval.
 - Frontend: Approve / Undo are hidden for "Other" roles, and the bell's "overtime awaiting approval" notice is shown only to Admins and Super Admins.
 - Tests: `UserPermissionsApiIntegrationTest.onlyAdminsApproveOvertimeASupervisorOnlyRecordsIt`. Full backend suite on a fresh database: 695 tests, 0 failures. Frontend `tsc` clean. Not clicked through in the browser.
+- Follow-up (same day): confirming commissions is limited the same way.
+  - `PUT /api/v1/projects/{id}/commissions` with `confirm: true` (which also covers accepting a policy exception) answers 403 to anyone but a Super Admin or Admin. Drafts (`confirm: false`) are open to anyone with the Projects page.
+  - The check lives in `ProjectCommissionController` with a small `security.access.Approvers` helper, because the flag is in the request body and a path rule can't see it.
+  - The Commissions tab shows "Review & confirm" only to approvers. Everyone else sees "An Admin confirms the arrangement."
+  - These two (overtime approval, commission confirm) are the only approval steps in the system.
+  - Test: `UserPermissionsApiIntegrationTest.onlyAdminsConfirmCommissionsOthersKeepDrafts`.
+  - Full backend suite on a fresh database: 696 tests, 0 failures. Frontend `tsc` clean. Not clicked through in the browser.

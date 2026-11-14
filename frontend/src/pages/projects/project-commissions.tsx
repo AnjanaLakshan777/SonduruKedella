@@ -12,6 +12,7 @@ import { FigureList } from '@/components/app/figure-list'
 import { PaymentDialog } from '@/components/app/payment-dialog'
 import { VoidDialog } from '@/components/app/void-dialog'
 import { useData, useStore } from '@/store/store'
+import { useAuth } from '@/store/auth'
 import { sum, type CommissionView, type ProjectFinance } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
@@ -24,6 +25,8 @@ let k = 0
 export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
   const d = useData()
   const { saveCommissions, recordCommissionPayment, voidCommissionPayment, voidCommission } = useStore()
+  // confirming is an approval: Super Admins and Admins only (the server checks too); others save drafts
+  const canConfirm = useAuth((s) => s.user?.role === 'SUPER_ADMIN' || s.user?.role === 'ADMIN')
   const [voiding, setVoiding] = useState<{ commissionId: string; id: string; label: string }>()
   // voiding a whole confirmed arrangement (as opposed to one of its payments)
   const [voidingArr, setVoidingArr] = useState<{ id: string; label: string }>()
@@ -102,7 +105,9 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
                 <div className="ml-auto flex gap-2">
                   {confirmed && <Button variant="ghost" onClick={() => { setEditing(false); setRows(views.map((v) => ({ key: `k${++k}`, id: v.arr.id, recipient: v.arr.recipient, role: v.arr.role, rate: v.arr.rate, status: v.arr.status, confirmedOn: v.arr.confirmedOn }))) }}>Cancel</Button>}
                   <Button variant="outline" disabled={!rows.length} onClick={() => { setTried(true); if (!invalid) persist(false) }}>Save draft</Button>
-                  <Button disabled={!rows.length} onClick={() => { setTried(true); if (!invalid) setConfirmOpen(true) }}>Review & confirm</Button>
+                  {canConfirm
+                    ? <Button disabled={!rows.length} onClick={() => { setTried(true); if (!invalid) setConfirmOpen(true) }}>Review & confirm</Button>
+                    : <span className="text-muted-foreground self-center text-xs">An Admin confirms the arrangement.</span>}
                 </div>
                 {tried && invalid && <p className="text-destructive w-full text-xs">Every recipient needs a name and a percentage.</p>}
                 {rows.some((r) => r.status === 'Confirmed') && <p className="text-muted-foreground w-full text-xs">Confirmed commissions can't be changed. To correct one, void it (void its payments first) and add the corrected recipient.</p>}

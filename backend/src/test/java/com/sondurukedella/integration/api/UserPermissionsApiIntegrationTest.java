@@ -124,6 +124,22 @@ class UserPermissionsApiIntegrationTest {
     }
 
     @Test
+    void onlyAdminsConfirmCommissionsOthersKeepDrafts() throws Exception {
+        MockHttpSession planner = signIn(create("CUSTOM", "Planner", "[\"PROJECTS\"]").andExpect(status().isCreated()));
+        String url = "/api/v1/projects/999999999/commissions";
+        // a draft gets past security (unknown project: 404), confirming doesn't
+        commissions(url, planner, false).andExpect(status().isNotFound());
+        commissions(url, planner, true).andExpect(status().isForbidden());
+        commissions(url, adminSession, true).andExpect(status().isNotFound());
+        commissions(url, superSession, true).andExpect(status().isNotFound());
+    }
+
+    private ResultActions commissions(String url, MockHttpSession session, boolean confirm) throws Exception {
+        return mockMvc.perform(put(url).session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"confirm\":%s,\"arrangements\":[]}".formatted(confirm)));
+    }
+
+    @Test
     void anAuditorWithReportsReadsEverythingAndChangesNothing() throws Exception {
         MockHttpSession session = signIn(create("CUSTOM", "Auditor", "[\"REPORTS\"]").andExpect(status().isCreated()));
         for (String path : new String[] {"/api/v1/expenses", "/api/v1/projects/1/receipts", "/api/v1/payroll/payments",
