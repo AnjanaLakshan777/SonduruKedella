@@ -31,6 +31,8 @@ describe('page permissions in the UI', () => {
     const auditor = user(['REPORTS'])
     expect(canOpenPath(auditor, '/users')).toBe(false)
     expect(canOpenPath({ ...auditor, role: 'SUPER_ADMIN' }, '/users')).toBe(true)
+    expect(canOpenPath(auditor, '/audit/security')).toBe(false)
+    expect(canOpenPath({ ...auditor, role: 'SUPER_ADMIN' }, '/audit')).toBe(true)
     expect(canOpenPath(auditor, '/reports/income?x=1')).toBe(true)
     expect(canOpenPath(auditor, '/')).toBe(false)
     expect(homeOf(auditor)).toBe('/reports')

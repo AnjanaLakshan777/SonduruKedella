@@ -815,3 +815,8 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
 - `V13__app_users_must_change_password.sql` (2026-11-14): `app_users.must_change_password BOOLEAN NOT NULL DEFAULT FALSE`. A new user sets their own password on the first sign-in; existing users get false. Additive. Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V13).
 - `V14__construction_commission_pool.sql` (2026-11-15): construction commission gets a pool like design. Sets `construction_warning_pct` to 20 where it was empty, renames it to `construction_commission_pool_pct`, makes it `NOT NULL DEFAULT 20`, and replaces `ck_commission_policy_construction` with `ck_commission_policy_construction_pool` (0 < pool < 100). The development database already had 20.
 - `V15__payday_any_weekday.sql` (2026-11-15): `ck_wage_settings_payday` allows every weekday, not only `FRIDAY` and `SATURDAY`. No data change; Friday and Saturday keep the same paydays.
+- `V16__audit_events.sql` (2026-11-15): the audit history table `audit_events` (Super Admin only, owner request).
+  - One row per record created, changed or deleted through the application: `occurred_at`, `user_id` (FK, null for startup tasks), `username` (as it was then), `http_method`, `path`, `request_id` (groups one request's rows), `entity_type`, `entity_id`, `change_type` (`CREATED`, `UPDATED`, `DELETED`), and `changes` (JSONB `{"field": [old, new]}`).
+  - Append-only: `trg_audit_events_immutable` (sk_reject_change) refuses UPDATE and DELETE.
+  - Indexes on `occurred_at`, `user_id` and `(entity_type, entity_id)`.
+  - Additive. Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V16). Applied to the development database on 2026-11-15 (Flyway v16).

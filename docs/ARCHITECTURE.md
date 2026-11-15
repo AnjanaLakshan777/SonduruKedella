@@ -84,6 +84,7 @@ Shared packages:
 - `security.config`: `SecurityConfig` (the filter chain and every URL rule), `SessionUserFilter` and the JSON 401/403 responses.
 - `security.user`: Application users (`app_users`), roles and page permissions, the user-details lookup, user administration (`/api/v1/users`), the user's own account, and the first Super Admin bootstrap.
 - `security.access`: `ApiArea`, `AppPage` (which pages read and change which endpoints); the rule itself is `security.config.PageAccess`.
+- `audit`: the audit history. `AuditRecorder` is a Hibernate post-insert/update/delete listener that writes `audit_events` on the same connection and transaction, so a rolled-back change leaves no row. It skips `SecurityEvent` and `ActivityEntry` (logs already) and the bookkeeping columns (`createdAt`, `createdBy`, `updatedAt`, `version`, `authVersion`), and masks `passwordHash`. `AuditController` (`/api/v1/audit/changes`, `/entity-types`, `/security`) is read-only and Super Admin only.
 - `security.auth`: Sign-in (`/api/v1/auth`), the sign-in throttle, and changing your own password.
 - `security.audit`: The append-only security audit trail (`security_events`).
 - `common.audit.CurrentUser`: reads the signed-in user id for `created_by`, without `common` depending on `security`.

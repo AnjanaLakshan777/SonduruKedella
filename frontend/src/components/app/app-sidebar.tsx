@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import logo from '@/assets/sonduru-kedella-logo.png'
 import mark from '@/assets/sonduru-kedella-roof-mark.png'
-import { canOpen, homeOf, NAV, SETTINGS_ITEM, USERS_ITEM, type NavItem } from './nav'
+import { AUDIT_ITEM, canOpen, homeOf, NAV, SETTINGS_ITEM, USERS_ITEM, type NavItem } from './nav'
 import { useAuth } from '@/store/auth'
 
 function isActive(pathname: string, to: string) {
@@ -63,7 +63,7 @@ export function AppSidebar({ collapsed, counts, onNavigate }: { collapsed?: bool
             <ul className="grid gap-0.5">{g.items.map(item)}</ul>
           </div>
         ))}
-        <div className={cn('border-sidebar-border border-t', collapsed ? 'py-1' : 'pt-2')}><ul>{isSuperAdmin && item(USERS_ITEM)}{canOpen(user, SETTINGS_ITEM.page) && item(SETTINGS_ITEM)}</ul></div>
+        <div className={cn('border-sidebar-border border-t', collapsed ? 'py-1' : 'pt-2')}><ul>{isSuperAdmin && item(USERS_ITEM)}{isSuperAdmin && item(AUDIT_ITEM)}{canOpen(user, SETTINGS_ITEM.page) && item(SETTINGS_ITEM)}</ul></div>
       </nav>
     </aside>
   )

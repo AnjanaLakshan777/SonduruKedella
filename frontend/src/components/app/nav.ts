@@ -1,4 +1,4 @@
-import { BarChart3, FolderKanban, HandCoins, HardHat, LayoutDashboard, Package, Percent, Receipt, Settings, Truck, UserCog, Users, type LucideIcon } from 'lucide-react'
+import { BarChart3, FolderKanban, HandCoins, HardHat, History, LayoutDashboard, Package, Percent, Receipt, Settings, Truck, UserCog, Users, type LucideIcon } from 'lucide-react'
 import type { AppPage, CurrentUser } from '@/store/auth'
 
 export interface NavItem { to: string; label: string; icon: LucideIcon; page?: AppPage }
@@ -20,16 +20,19 @@ export const NAV: { label?: string; items: NavItem[] }[] = [
 export const SETTINGS_ITEM: NavItem = { to: '/settings', label: 'Settings', icon: Settings, page: 'SETTINGS' }
 // shown to Super Admins only
 export const USERS_ITEM: NavItem = { to: '/users', label: 'Users', icon: UserCog }
+export const AUDIT_ITEM: NavItem = { to: '/audit', label: 'Audit history', icon: History }
 
 // every page a custom role can be given, in sidebar order
 export const PAGE_ITEMS: NavItem[] = [...NAV.flatMap((g) => g.items), SETTINGS_ITEM]
 
 export const canOpen = (user: CurrentUser | undefined, page?: AppPage) => !page || !!user?.pages.includes(page)
 
-// a whole path: Users is Super Admin only, every other page goes by the user's pages
+// a whole path: Users and Audit history are Super Admin only, every other page goes by the user's pages
 export function canOpenPath(user: CurrentUser | undefined, path: string) {
   const bare = path.split(/[?#]/)[0]
-  if (bare === USERS_ITEM.to || bare.startsWith(USERS_ITEM.to + '/')) return user?.role === 'SUPER_ADMIN'
+  for (const item of [USERS_ITEM, AUDIT_ITEM]) {
+    if (bare === item.to || bare.startsWith(item.to + '/')) return user?.role === 'SUPER_ADMIN'
+  }
   return canOpen(user, pageOf(bare))
 }
 

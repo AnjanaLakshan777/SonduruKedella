@@ -2102,3 +2102,33 @@ For each completed task, record the date, files or migrations changed, verificat
 - Sign-in and start-up: "Can't connect right now. Check your connection and try again." replaces "Could not reach the server. Check that the backend is running."
 - Checked the rest of the UI text for "server", "backend", "database", "API" and "in this version". FIFO stays: it is the accounting term for how stock is valued.
 - `tsc` clean. Not clicked through in the browser.
+
+### 2026-11-15: Audit history (Super Admin only)
+
+- Owner request: record what every user does, and let only the Super Admin see it.
+- Database: `V16__audit_events.sql` (see DATABASE.md). Append-only.
+- Backend (`com.sondurukedella.audit`):
+  - `AuditRecorder` hooks into Hibernate's post-insert, post-update and post-delete events, so every entity saved through the application is covered without any service calling it. For each one it records:
+    - who, when, and the HTTP method and path;
+    - a request id that groups what one click changed;
+    - old -> new for each field that changed (on create the new values, on delete the old ones).
+  - It writes on the same transaction: a change that rolls back leaves no audit row.
+  - What it leaves out:
+    - `SecurityEvent` and `ActivityEntry` (logs already);
+    - bookkeeping fields (`createdAt`, `createdBy`, `updatedAt`, `version`, `authVersion`);
+    - the password hash is never stored, only "(changed)".
+  - API, all Super Admin only (`SecurityConfig`, `/api/v1/audit/**`):
+    - `GET /api/v1/audit/changes?userId&entityType&entityId&from&to&page&size` (size ≤ 100);
+    - `GET /api/v1/audit/entity-types`;
+    - `GET /api/v1/audit/security?userId&eventType&from&to&page&size` (the existing `security_events`).
+- Frontend: "Audit history" (`/audit`) in the sidebar for Super Admins only. `canOpenPath` keeps everyone else out, like Users.
+  - **Changes** tab: when, who, record, Added / Changed / Removed, and each field old → new. Filters: user, record type, date range. Clicking a record shows that record's whole history.
+  - **Sign-ins & accounts** tab: sign-ins, sign-outs, failed or blocked sign-ins, and user, role and password changes, with who did it, the account, details and address.
+- Not covered:
+  - Changes to a user's page permissions (a collection) don't get a row of their own here. The security list already has them (`ROLE_CHANGED` with the pages).
+  - Nothing before 2026-11-15 is in the change history.
+- Tests:
+  - `AuditApiIntegrationTest`: create and edit leave who/when/request and old → new; the password hash is never stored; the security list; Super Admin only, with paging and date checks; rows can't be changed.
+  - Matrix test updated for `/api/v1/audit`, and `nav.test.ts` too.
+  - Full backend suite on a fresh database (V1 to V16): 705 tests, 0 failures. Frontend `tsc` clean, 45 Vitest tests pass.
+- Checked live: V16 applied (Flyway v16). The Super Admin reads the change list (empty so far), 195 security events, and the entity types. Not clicked through in the browser.

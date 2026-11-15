@@ -85,7 +85,8 @@ class EndpointAuthorizationIntegrationTest {
             String pattern = endpoint[1];
             String path = concrete(pattern);
             String key = method + " " + pattern;
-            boolean superAdminOnly = pattern.startsWith("/api/v1/users") || SUPER_ADMIN_ONLY.contains(key);
+            boolean superAdminOnly = pattern.startsWith("/api/v1/users") || pattern.startsWith("/api/v1/audit")
+                    || SUPER_ADMIN_ONLY.contains(key);
 
             int anonymous = statusOf(method, path, null);
             if (PUBLIC.contains(key) ? isAuthFailure(anonymous) : anonymous != 401) {
@@ -116,7 +117,8 @@ class EndpointAuthorizationIntegrationTest {
             String method = endpoint[0];
             String pattern = endpoint[1];
             String key = method + " " + pattern;
-            if (pattern.startsWith("/api/v1/auth") || pattern.startsWith("/api/v1/users")) {
+            if (pattern.startsWith("/api/v1/auth") || pattern.startsWith("/api/v1/users")
+                    || pattern.startsWith("/api/v1/audit")) {
                 continue;
             }
             if (ApiArea.of(concrete(pattern)).isEmpty()) {

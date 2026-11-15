@@ -41,7 +41,7 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 import org.springframework.security.web.savedrequest.NullRequestCache;
 
 // All the access rules live here. Everything needs a login by default:
-// login/csrf/health are public, /users and actuator are Super Admin only, the rest of
+// login/csrf/health are public, /users, /audit and actuator are Super Admin only, the rest of
 // /api/v1 is open to Super Admins, and to everyone else by the pages ticked for them (PageAccess).
 // Exceptions: changing the commission policy is Super Admin only, and approving overtime is for
 // Super Admins and Admins (never an "Other" role).
@@ -75,6 +75,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers("/actuator/**").hasRole(SUPER_ADMIN)
                         .requestMatchers("/api/v1/users", "/api/v1/users/**").hasRole(SUPER_ADMIN)
+                        // the audit history: who changed what
+                        .requestMatchers("/api/v1/audit", "/api/v1/audit/**").hasRole(SUPER_ADMIN)
                         // your own account: me, change password, logout
                         .requestMatchers("/api/v1/auth/**").authenticated()
                         // anyone can read the policy, only a Super Admin can change it
