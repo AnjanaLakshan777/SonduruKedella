@@ -25,7 +25,7 @@ export function SessionGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string>()
 
   useEffect(() => {
-    check().catch(() => setError('Could not reach the server. Check that the backend is running.'))
+    check().catch(() => setError("Can't connect right now. Check your connection and try again."))
   }, [check])
 
   useEffect(() => {

@@ -28,7 +28,7 @@ export default function LoginPage() {
       await login(username.trim(), password)
     } catch (err) {
       // 401 and 429 already come with a message meant for people
-      setError(err instanceof ApiError ? err.message : 'Could not reach the server. Check that the backend is running.')
+      setError(err instanceof ApiError ? err.message : "Can't connect right now. Check your connection and try again.")
       setPassword('')
     } finally {
       setBusy(false)

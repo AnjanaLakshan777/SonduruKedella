@@ -43,8 +43,8 @@ export default function SettingsPage() {
           <WagesSection s={settings} />
           <ListSection id="units" title="Units of measurement" description="Used on materials, supplier invoices and stock movements." values={settings.units} onSave={(units) => ({ units })} placeholder="e.g. sq ft" />
           <Card id="s-statuses" className="scroll-mt-20">
-            <CardHeader><CardTitle>Project statuses</CardTitle><CardDescription>Fixed in this version because reports and alerts rely on them.</CardDescription></CardHeader>
-            <CardContent className="flex flex-wrap gap-2">{settings.projectStatuses.map((s) => <StatusBadge key={s} status={s} />)}<span className="text-muted-foreground flex items-center gap-1.5 text-xs"><Lock className="size-3.5" />Fixed — the backend works with these five.</span></CardContent>
+            <CardHeader><CardTitle>Project statuses</CardTitle><CardDescription>The stages every project moves through. Reports and alerts are built on them.</CardDescription></CardHeader>
+            <CardContent className="flex flex-wrap gap-2">{settings.projectStatuses.map((s) => <StatusBadge key={s} status={s} />)}<span className="text-muted-foreground flex items-center gap-1.5 text-xs"><Lock className="size-3.5" />These can't be changed.</span></CardContent>
           </Card>
           <ListSection id="payments" title="Payment methods" description="Recorded with each payment as information only — no cash or bank balances are kept." values={settings.paymentMethods} onSave={(paymentMethods) => ({ paymentMethods })} placeholder="e.g. Cheque deposit" />
         </div>
@@ -72,7 +72,7 @@ function CompanySection({ s }: { s: Settings }) {
       <CardContent className="grid gap-4 sm:grid-cols-2">
         {fields.map(([k, l]) => <Field key={k} label={l} className={k === 'address' ? 'sm:col-span-2' : undefined}><Input value={c[k]} onChange={(e) => setC({ ...c, [k]: e.target.value })} /></Field>)}
         <Field label="Default supplier credit period" hint="Used for the due date on new supplier invoices."><div className="flex items-center gap-2"><Input type="number" min={0} className="w-24 text-right" value={credit} onChange={(e) => setCredit(Number(e.target.value))} /><span className="text-muted-foreground text-sm">days</span></div></Field>
-        <Field label="Financial year starts" hint="Kept by the server; not changed here."><Input value={formatDate(s.financialYearStart).replace(/ \d{4}$/, '')} readOnly /></Field>
+        <Field label="Financial year starts" hint="This can't be changed here."><Input value={formatDate(s.financialYearStart).replace(/ \d{4}$/, '')} readOnly /></Field>
       </CardContent>
       <CardFooter className="justify-end"><Button onClick={() => save({ company: c, supplierCreditDays: credit }, 'Company information')}>Save</Button></CardFooter>
     </Card>
@@ -144,6 +144,9 @@ function CommissionSection({ s }: { s: Settings }) {
   )
 }
 
+// Monday to Thursday come after the Monday-Sunday week ends, so they pay the week before (Payday on the server)
+const EARLY_PAYDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday']
+
 function WagesSection({ s }: { s: Settings }) {
   const save = useSave()
   const [w, setW] = useState(s.wages)
@@ -156,7 +159,9 @@ function WagesSection({ s }: { s: Settings }) {
         <Field label="Overtime multiplier" hint={`Suggested OT rate = daily wage ÷ ${w.hoursPerDay} × ${w.overtimeMultiplier} (e.g. ${formatLKR(Math.round((w.defaultDailyRate / w.hoursPerDay) * w.overtimeMultiplier), { decimals: 0 })} / hour)`}>
           <Input type="number" step="0.25" min={1} className="w-24 text-right" value={w.overtimeMultiplier} onChange={(e) => setW({ ...w, overtimeMultiplier: Number(e.target.value) || 1 })} />
         </Field>
-        <Field label="Weekly payday"><SelectField value={w.payday} onChange={(v) => setW({ ...w, payday: v })} options={['Friday', 'Saturday']} /></Field>
+        <Field label="Weekly payday" hint={EARLY_PAYDAYS.includes(w.payday) ? `The week runs Monday to Sunday, so it's paid on the next ${w.payday}.` : 'The week runs Monday to Sunday and is paid that same week.'}>
+          <SelectField value={w.payday} onChange={(v) => setW({ ...w, payday: v })} options={['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']} />
+        </Field>
       </CardContent>
       <CardFooter className="justify-end"><Button onClick={() => save({ wages: w }, 'Wage defaults')}>Save defaults</Button></CardFooter>
     </Card>

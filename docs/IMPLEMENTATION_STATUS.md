@@ -2075,3 +2075,30 @@ For each completed task, record the date, files or migrations changed, verificat
   - `CommissionCalculatorTest`, the settings tests, and a Vitest case for `commissionPool`.
 - Results: full backend suite on a fresh database (V1 to V14), 697 tests, 0 failures. Frontend `tsc` clean, 45 Vitest tests pass. Not clicked through in the browser.
 - Applied to the development database on 2026-11-15 (Flyway v14): design 20%, construction 20%.
+
+### 2026-11-15: The weekly payday can be any day
+
+- Owner request: payday can be any day of the week, not only Friday or Saturday.
+- Database: `V15__payday_any_weekday.sql` widens `ck_wage_settings_payday` to all seven days.
+- Backend:
+  - `Payday` has `MONDAY` … `SUNDAY` and `daysAfterWeekStart()`.
+  - The week still runs Monday to Sunday. Payday is the first chosen weekday from that week's Friday on:
+    - Friday is day 4, Saturday 5 and Sunday 6, all in the same week;
+    - Monday to Thursday are days 7 to 10, in the next week, so a week is never paid before its work is done.
+  - Friday and Saturday give the same dates as before.
+- Frontend:
+  - Settings > Wages lists all seven days, with a hint saying which week gets paid.
+  - The Labour & Payroll header shows the configured payday instead of a fixed "Saturday".
+- Tests: `PaydayTest` (offsets, and every payday lands on its own weekday); `PayrollApiIntegrationTest.paydayCanBeAnyWeekdayAndAnEarlyOneFallsInTheNextWeek`. In `SettingsControllerWebTest`, Sunday is now valid, so it uses an invalid value instead.
+- Results: full backend suite on a fresh database (V1 to V15), 700 tests, 0 failures. Frontend `tsc` clean, 45 Vitest tests pass. Not clicked through in the browser.
+- Applied to the development database on 2026-11-15 (Flyway v15). The payday is still Saturday.
+
+### 2026-11-15: Plainer wording in the UI
+
+- Owner request: drop developer wording such as "Fixed — the backend works with these five."
+- Settings:
+  - Project statuses now read "The stages every project moves through. Reports and alerts are built on them." and "These can't be changed."
+  - Financial year: "This can't be changed here."
+- Sign-in and start-up: "Can't connect right now. Check your connection and try again." replaces "Could not reach the server. Check that the backend is running."
+- Checked the rest of the UI text for "server", "backend", "database", "API" and "in this version". FIFO stays: it is the accounting term for how stock is valued.
+- `tsc` clean. Not clicked through in the browser.

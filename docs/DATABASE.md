@@ -85,7 +85,7 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
 - **commission_policy**: a single row.
   - `design_commission_pool_pct` (default 20) and, since V14, `construction_commission_pool_pct` (default 20, required; it was the optional `construction_warning_pct`). The company share is shown as 100 minus the pool.
   - Both values only trigger warnings, which can be confirmed as an exception.
-- **wage_settings**: a single row with `default_daily_wage`, `hours_per_day` (default 8), `overtime_multiplier` (default 1.5), `payday` (`FRIDAY` | `SATURDAY`). The payroll week starts on Monday.
+- **wage_settings**: a single row with `default_daily_wage`, `hours_per_day` (default 8), `overtime_multiplier` (default 1.5), `payday` (any weekday since V15; `MONDAY` … `SUNDAY`). The payroll week starts on Monday.
 - **expense_categories**:
   - Columns: `expense_group` (`DESIGN` | `CONSTRUCTION` | `CONSULTATION` | `COMPANY`), `name`, `locked`, `system_generated`, `active`, `sort_order`.
   - Unique (`expense_group`, `name`).
@@ -433,7 +433,7 @@ Machinery rental is a manual expense in the `Machinery Rental` category, recordi
   - A project must be construction and In Progress or On Hold (the page's list).
   - Only rows that change are written, so a paid week can be re-saved unchanged. A worker left off the register loses that day's mark.
 - Overtime: 0 < hours ≤ 8. The rate defaults to the worker's overtime rate. A project must be construction and not completed or cancelled. Entries start unapproved, and only approved hours are paid.
-- The week: Monday to Sunday. Its `week_end` (stored on the line) is the payday from `wage_settings` (Saturday by default, Friday if set). It can be paid from payday onwards.
+- The week: Monday to Sunday. Its `week_end` (stored on the line) is the payday from `wage_settings` (Saturday by default): the first chosen weekday from the week's Friday on, so Friday, Saturday or Sunday fall in the same week and Monday to Thursday in the next one (V15, owner decision 2026-11-15). It can be paid from payday onwards.
 - Calculation (`payroll.service.PayrollCalculator`, the formulas under "Weekly payroll"):
   - `base_pay = round(payable_days × daily_wage, 2)`, and each approved overtime entry is `round(hours × rate, 2)`.
   - The project split prices each project's half-days on their own, and the rounding residue goes to the largest share, so `payroll_line_costs` always add up to gross. Overtime goes to its own project. Days without a project are the company share (`project_id` NULL).
@@ -814,3 +814,4 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
   - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V12). Applied to the development database on 2026-11-03 (Flyway v12): the Auditor user kept `Auditor` and `REPORTS`, and the Admin got all 11 pages.
 - `V13__app_users_must_change_password.sql` (2026-11-14): `app_users.must_change_password BOOLEAN NOT NULL DEFAULT FALSE`. A new user sets their own password on the first sign-in; existing users get false. Additive. Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V13).
 - `V14__construction_commission_pool.sql` (2026-11-15): construction commission gets a pool like design. Sets `construction_warning_pct` to 20 where it was empty, renames it to `construction_commission_pool_pct`, makes it `NOT NULL DEFAULT 20`, and replaces `ck_commission_policy_construction` with `ck_commission_policy_construction_pool` (0 < pool < 100). The development database already had 20.
+- `V15__payday_any_weekday.sql` (2026-11-15): `ck_wage_settings_payday` allows every weekday, not only `FRIDAY` and `SATURDAY`. No data change; Friday and Saturday keep the same paydays.

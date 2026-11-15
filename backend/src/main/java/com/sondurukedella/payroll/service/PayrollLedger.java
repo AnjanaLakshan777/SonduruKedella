@@ -23,7 +23,6 @@ import com.sondurukedella.payroll.repository.PayrollPaymentRepository;
 import com.sondurukedella.payroll.repository.SalaryAdvanceRepository;
 import com.sondurukedella.payroll.service.PayrollCalculator.Cost;
 import com.sondurukedella.payroll.service.PayrollCalculator.Result;
-import com.sondurukedella.settings.entity.Payday;
 import com.sondurukedella.settings.service.WageSettingsService;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -70,9 +69,9 @@ class PayrollLedger {
         return weekStart;
     }
 
-    // payday (Settings > Wages) is the week's end for paying: Friday or Saturday of the Monday-Sunday week
+    // payday (Settings > Wages) for the Monday-Sunday week; see Payday for which day that lands on
     LocalDate payday(LocalDate weekStart) {
-        return weekStart.plusDays(wageSettings.get().payday() == Payday.FRIDAY ? 4 : 5);
+        return weekStart.plusDays(wageSettings.get().payday().daysAfterWeekStart());
     }
 
     LocalDate today() {

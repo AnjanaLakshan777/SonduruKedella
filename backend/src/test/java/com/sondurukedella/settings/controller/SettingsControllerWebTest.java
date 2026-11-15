@@ -135,7 +135,7 @@ class SettingsControllerWebTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"defaultDailyRate":3500,"hoursPerDay":8,"overtimeMultiplier":1.5,
-                                 "payday":"SUNDAY","version":0}"""))
+                                 "payday":"FUNDAY","version":0}"""))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(wageSettingsService);
     }

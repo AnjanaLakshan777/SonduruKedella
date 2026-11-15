@@ -134,6 +134,22 @@ class PayrollApiIntegrationTest {
     }
 
     @Test
+    void paydayCanBeAnyWeekdayAndAnEarlyOneFallsInTheNextWeek() throws Exception {
+        payday("MONDAY");
+        mockMvc.perform(get(URL + "/weeks/" + W1)).andExpect(jsonPath("$.weekEnd").value("2026-09-14"));
+        payday("SUNDAY");
+        mockMvc.perform(get(URL + "/weeks/" + W1)).andExpect(jsonPath("$.weekEnd").value("2026-09-13"));
+        payday("FRIDAY");
+        mockMvc.perform(get(URL + "/weeks/" + W1)).andExpect(jsonPath("$.weekEnd").value("2026-09-11"));
+    }
+
+    private void payday(String day) {
+        entityManager.flush();
+        jdbc.update("UPDATE wage_settings SET payday = ? WHERE id = 1", day);
+        entityManager.clear();
+    }
+
+    @Test
     void aWeekCanOnlyBePaidOncePaydayHasCome() throws Exception {
         LocalDate future = LocalDate.of(2030, 1, 7);
         approve(overtime(kamal, future.plusDays(1), "2", house));
