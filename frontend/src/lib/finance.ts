@@ -14,7 +14,8 @@
  */
 import type {
   Advance, Client, ClientPayment, CommissionArrangement, CommissionPayment, DataState, Employee, Expense, ExpenseGroup,
-  ExpenseScope, Installment, Material, OtherIncome, Project, StockMovement, Supplier, SupplierInvoice, SupplierPayment, WriteOff,
+  ExpenseScope, Installment, Material, OtherIncome, Project, ProjectType, Settings, StockMovement, Supplier, SupplierInvoice, SupplierPayment,
+  WriteOff,
 } from '@/data/types'
 import { addDays, addMonths, diffDays, formatRange, monthEnd, monthKey, monthStart, TODAY, weekStart as weekStartOf } from './dates'
 import { formatLKR } from './format'
@@ -59,6 +60,14 @@ export interface InstallmentView {
 
 // Installments whose planned date has passed but nobody billed yet. Only a reminder: they
 // aren't revenue and aren't overdue until billed. Paused or cancelled projects don't nag.
+/** The commission pool and company share for a type of project; undefined for Consultation (no commission). */
+export function commissionPool(settings: Settings, type: ProjectType): { pool: number; companyShare: number } | undefined {
+  const c = settings.commission
+  if (type === 'Design') return { pool: c.designCommissionPool, companyShare: c.designCompanyShare }
+  if (type === 'Construction') return { pool: c.constructionCommissionPool, companyShare: c.constructionCompanyShare }
+  return undefined
+}
+
 export function billingLate(installments: InstallmentView[]) {
   return installments
     .filter((i) => i.daysLate > 0)
@@ -455,14 +464,11 @@ export function derive(s: DataState) {
     const list = rates ?? (commByProject.get(projectId) ?? []).map((c) => c.arr.rate)
     const totalRate = r2(list.reduce((t, r) => t + r, 0))
     if (!p) return { totalRate, conflict: false }
-    if (p.type === 'Design') {
-      const limit = s.settings.commission.designCommissionPool
-      const conflict = totalRate > limit
-      return { totalRate, limit, conflict, message: conflict ? `Shares total ${totalRate}% — above the ${limit}% design commission policy (company share ${s.settings.commission.designCompanyShare}%).` : undefined }
-    }
-    const limit = s.settings.commission.constructionDefaultRate
-    if (limit != null && totalRate > limit) return { totalRate, limit, conflict: true, message: `Shares total ${totalRate}% — above the configured ${limit}% construction default.` }
-    return { totalRate, limit, conflict: false }
+    // design and construction each have a pool; consultation carries no commission
+    const pool = commissionPool(s.settings, p.type)
+    if (!pool) return { totalRate, conflict: false }
+    const conflict = totalRate > pool.pool
+    return { totalRate, limit: pool.pool, conflict, message: conflict ? `Shares total ${totalRate}% — above the ${pool.pool}% ${p.type.toLowerCase()} commission pool (company share ${pool.companyShare}%).` : undefined }
   }
 
   // expense ledger

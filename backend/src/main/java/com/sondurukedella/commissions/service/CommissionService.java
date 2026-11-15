@@ -8,11 +8,11 @@ import com.sondurukedella.commissions.dto.CommissionPolicyCheck;
 import com.sondurukedella.commissions.dto.CommissionResponse;
 import com.sondurukedella.commissions.dto.CommissionRowRequest;
 import com.sondurukedella.commissions.dto.CommissionSetRequest;
+import com.sondurukedella.commissions.dto.CommissionSplit;
 import com.sondurukedella.commissions.dto.CommissionState;
 import com.sondurukedella.commissions.dto.CommissionSummaryResponse;
 import com.sondurukedella.commissions.dto.CommissionTotals;
 import com.sondurukedella.commissions.dto.CommissionVoidRequest;
-import com.sondurukedella.commissions.dto.DesignSplit;
 import com.sondurukedella.commissions.dto.ProjectCommissionsResponse;
 import com.sondurukedella.commissions.dto.RecipientSummary;
 import com.sondurukedella.commissions.entity.CommissionArrangement;
@@ -58,8 +58,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 // Commissions on design and construction projects.
 // Amount = contract value x rate. Drafts can change freely; confirming stores the amount and freezes
-// the row. To fix a confirmed one, void it and add it again. Going over the design pool (or the
-// construction level) is just a warning unless they confirm it as an exception.
+// the row. To fix a confirmed one, void it and add it again. Going over the project type's commission
+// pool (design or construction) is just a warning unless they confirm it as an exception.
 @Service
 @RequiredArgsConstructor
 public class CommissionService {
@@ -147,7 +147,7 @@ public class CommissionService {
         CommissionPolicyResponse settings = policyService.get();
         CommissionPolicyCheck policy = CommissionCalculator.policy(project.type(),
                 CommissionCalculator.totalRate(plan.stream().map(Planned::rate).toList()),
-                settings.designCommissionPool(), settings.constructionDefaultRate());
+                poolFor(project.type(), settings));
         if (confirm && policy.exceeded() && !Boolean.TRUE.equals(request.acceptPolicyException())) {
             throw new BusinessRuleException(policy.warning() + " Nothing was changed. Adjust a percentage, or confirm it as an exception.");
         }
@@ -265,13 +265,11 @@ public class CommissionService {
                 .map(a -> mapper.toResponse(a, project, paid.getOrDefault(a.getId(), BigDecimal.ZERO)))
                 .toList();
         List<CommissionResponse> live = rows.stream().filter(r -> r.status() != CommissionState.VOIDED).toList();
-        CommissionPolicyResponse settings = policyService.get();
+        BigDecimal pool = poolFor(project.type(), policyService.get());
         CommissionPolicyCheck policy = CommissionCalculator.policy(project.type(),
-                CommissionCalculator.totalRate(live.stream().map(CommissionResponse::ratePct).toList()),
-                settings.designCommissionPool(), settings.constructionDefaultRate());
-        DesignSplit split = project.type() == ProjectType.DESIGN
-                ? CommissionCalculator.designSplit(project.contractValue(), settings.designCommissionPool(), sum(live, CommissionResponse::amount))
-                : null;
+                CommissionCalculator.totalRate(live.stream().map(CommissionResponse::ratePct).toList()), pool);
+        CommissionSplit split = pool == null ? null
+                : CommissionCalculator.split(project.contractValue(), pool, sum(live, CommissionResponse::amount));
         List<CommissionResponse> confirmed = rows.stream().filter(CommissionService::isCost).toList();
         CommissionTotals totals = new CommissionTotals(sum(confirmed, CommissionResponse::amount), sum(confirmed, CommissionResponse::paid),
                 sum(confirmed, CommissionResponse::outstanding),
@@ -381,6 +379,15 @@ public class CommissionService {
     private static boolean sameTerms(CommissionArrangement arrangement, String recipient, String role, BigDecimal rate) {
         return arrangement.getRecipientName().equals(recipient) && arrangement.getRole().equals(role)
                 && arrangement.getRatePct().compareTo(rate) == 0;
+    }
+
+    // the pool for that type of project; consultation projects carry no commission
+    private static BigDecimal poolFor(ProjectType type, CommissionPolicyResponse policy) {
+        return switch (type) {
+            case DESIGN -> policy.designCommissionPool();
+            case CONSTRUCTION -> policy.constructionCommissionPool();
+            case CONSULTATION -> null;
+        };
     }
 
     private static boolean isCost(CommissionResponse row) {

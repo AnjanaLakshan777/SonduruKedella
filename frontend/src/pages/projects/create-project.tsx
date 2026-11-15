@@ -17,6 +17,7 @@ import { DelayTermsForm } from '@/components/app/delay-terms-form'
 import { useStore } from '@/store/store'
 import type { DelayTerms, ProjectStatus, ProjectType } from '@/data/types'
 import { formatLKR } from '@/lib/format'
+import { commissionPool } from '@/lib/finance'
 import { TODAY } from '@/lib/dates'
 import { errorMessage } from '@/lib/api'
 
@@ -33,6 +34,7 @@ export default function CreateProject() {
   const [busy, setBusy] = useState(false)
   const [name, setName] = useState('')
   const [type, setType] = useState<ProjectType>('Construction')
+  const pool = commissionPool(settings, type)
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing')
   const [clientId, setClientId] = useState('')
   const [nc, setNc] = useState({ name: '', phone: '', city: 'Anuradhapura', address: '', email: '' })
@@ -202,9 +204,9 @@ export default function CreateProject() {
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Type</span><span>{type}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Contract value</span><span className="tabular font-medium">{contract ? formatLKR(contract) : '—'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Installments</span><span>{contract ? rows.length : '—'}</span></div>
-              {type === 'Design' && contract > 0 && (
+              {pool && contract > 0 && (
                 <div className="bg-muted/60 rounded-md p-3 text-xs leading-relaxed">
-                  Design policy: company {settings.commission.designCompanyShare}% · commission pool {settings.commission.designCommissionPool}% ({formatLKR((contract * settings.commission.designCommissionPool) / 100)}). Set recipients on the project's Commissions tab.
+                  {type} policy: company {pool.companyShare}% · commission pool {pool.pool}% ({formatLKR((contract * pool.pool) / 100)}). Set recipients on the project's Commissions tab.
                 </div>
               )}
               {tried && errorList.length > 0 && (

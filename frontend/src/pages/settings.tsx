@@ -119,22 +119,27 @@ function CommissionSection({ s }: { s: Settings }) {
   // the server lets only a Super Admin change the policy; everyone else just reads it
   const canEdit = useAuth((st) => st.user?.role === 'SUPER_ADMIN')
   const [pool, setPool] = useState<number | ''>(s.commission.designCommissionPool)
-  const [cons, setCons] = useState<number | ''>(s.commission.constructionDefaultRate ?? '')
+  const [cons, setCons] = useState<number | ''>(s.commission.constructionCommissionPool)
   const p = Number(pool) || 0
-  const bad = !(p > 0 && p < 100)
+  const c = Number(cons) || 0
+  const badDesign = !(p > 0 && p < 100)
+  const badCons = !(c > 0 && c < 100)
+  // the same field for both project types
+  const poolField = (label: string, value: number | '', n: number, bad: boolean, example: number, onChange: (v: number | '') => void) => (
+    <Field label={label} error={bad ? 'Enter a percentage between 0 and 100.' : undefined}
+      hint={`Company share ${100 - n}% · e.g. on ${formatLKR(example, { decimals: 0 })}: commission ${formatLKR((example * n) / 100, { decimals: 0 })}`}>
+      <div className="flex items-center gap-2"><Input type="number" min={0} max={100} step="0.5" className="w-24 text-right" value={value} readOnly={!canEdit} onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))} /><span className="text-muted-foreground text-sm">% of contract value</span></div>
+    </Field>
+  )
   return (
     <Card id="s-commission" className="scroll-mt-20">
-      <CardHeader><CardTitle>Commission policy</CardTitle><CardDescription>Commission is always the agreed contract value × each recipient's %. These defaults trigger warnings — they never change recipients' shares automatically.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>Commission policy</CardTitle><CardDescription>Commission is always the agreed contract value × each recipient's %. Shares above the pool trigger a warning and need confirming as an exception — they never change recipients' shares automatically.</CardDescription></CardHeader>
       <CardContent className="grid gap-4 sm:grid-cols-2">
-        <Field label="Design: commission pool" error={bad ? 'Enter a percentage between 0 and 100.' : undefined} hint={`Company share ${100 - p}% · e.g. on LKR 450,000: commission ${formatLKR((450000 * p) / 100, { decimals: 0 })}`}>
-          <div className="flex items-center gap-2"><Input type="number" min={0} max={100} className="w-24 text-right" value={pool} readOnly={!canEdit} onChange={(e) => setPool(e.target.value === '' ? '' : Number(e.target.value))} /><span className="text-muted-foreground text-sm">% of contract value</span></div>
-        </Field>
-        <Field label="Construction: warning threshold" optional hint="No fixed construction rate is assumed. Set a total to be warned above, or leave empty.">
-          <div className="flex items-center gap-2"><Input type="number" min={0} max={100} step="0.5" className="w-24 text-right" value={cons} readOnly={!canEdit} onChange={(e) => setCons(e.target.value === '' ? '' : Number(e.target.value))} /><span className="text-muted-foreground text-sm">%</span></div>
-        </Field>
+        {poolField('Design: commission pool', pool, p, badDesign, 450000, setPool)}
+        {poolField('Construction: commission pool', cons, c, badCons, 10000000, setCons)}
         <p className="text-muted-foreground text-xs sm:col-span-2">Consultation projects do not carry commission.</p>
       </CardContent>
-      <CardFooter className="justify-end">{!canEdit && <span className="text-muted-foreground mr-auto flex items-center gap-1.5 text-xs"><Lock className="size-3.5" />Only a Super Admin can change the policy.</span>}<Button disabled={bad || !canEdit} onClick={() => save({ commission: { designCommissionPool: p, designCompanyShare: 100 - p, constructionDefaultRate: cons === '' ? undefined : Number(cons) } }, 'Commission policy')}>Save policy</Button></CardFooter>
+      <CardFooter className="justify-end">{!canEdit && <span className="text-muted-foreground mr-auto flex items-center gap-1.5 text-xs"><Lock className="size-3.5" />Only a Super Admin can change the policy.</span>}<Button disabled={badDesign || badCons || !canEdit} onClick={() => save({ commission: { designCommissionPool: p, designCompanyShare: 100 - p, constructionCommissionPool: c, constructionCompanyShare: 100 - c } }, 'Commission policy')}>Save policy</Button></CardFooter>
     </Card>
   )
 }

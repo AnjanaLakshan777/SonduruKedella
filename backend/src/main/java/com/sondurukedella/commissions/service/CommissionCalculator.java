@@ -1,8 +1,8 @@
 package com.sondurukedella.commissions.service;
 
 import com.sondurukedella.commissions.dto.CommissionPolicyCheck;
+import com.sondurukedella.commissions.dto.CommissionSplit;
 import com.sondurukedella.commissions.dto.CommissionState;
-import com.sondurukedella.commissions.dto.DesignSplit;
 import com.sondurukedella.commissions.entity.CommissionStatus;
 import com.sondurukedella.common.money.Money;
 import com.sondurukedella.projects.entity.ProjectType;
@@ -34,19 +34,18 @@ public final class CommissionCalculator {
         return plain(rates.stream().reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
-    public static DesignSplit designSplit(BigDecimal contractValue, BigDecimal poolPct, BigDecimal allocated) {
+    public static CommissionSplit split(BigDecimal contractValue, BigDecimal poolPct, BigDecimal allocated) {
         BigDecimal pool = amount(contractValue, poolPct);
         BigDecimal company = Money.amount(contractValue).subtract(pool);
         BigDecimal allocatedAmount = Money.amount(allocated);
-        return new DesignSplit(plain(poolPct), pool, plain(HUNDRED.subtract(poolPct)), company,
+        return new CommissionSplit(plain(poolPct), pool, plain(HUNDRED.subtract(poolPct)), company,
                 allocatedAmount, pool.subtract(allocatedAmount));
     }
 
-    // only a warning, never blocks anything. No construction level set = no check.
-    public static CommissionPolicyCheck policy(ProjectType type, BigDecimal totalRate, BigDecimal designPoolPct,
-            BigDecimal constructionWarningPct) {
+    // only a warning, never blocks anything. No pool (consultation) = no check.
+    public static CommissionPolicyCheck policy(ProjectType type, BigDecimal totalRate, BigDecimal poolPct) {
         BigDecimal total = plain(totalRate);
-        BigDecimal limit = type == ProjectType.DESIGN ? designPoolPct : constructionWarningPct;
+        BigDecimal limit = poolPct;
         if (limit == null) {
             return new CommissionPolicyCheck(null, total, false, null);
         }
@@ -54,11 +53,9 @@ public final class CommissionCalculator {
         boolean exceeded = total.compareTo(limit) > 0;
         String warning = null;
         if (exceeded) {
-            warning = type == ProjectType.DESIGN
-                    ? "Shares total " + total.toPlainString() + "%, above the " + limit.toPlainString()
-                            + "% design commission pool (company share " + HUNDRED.subtract(limit).toPlainString() + "%)."
-                    : "Shares total " + total.toPlainString() + "%, above the configured " + limit.toPlainString()
-                            + "% construction level.";
+            warning = "Shares total " + total.toPlainString() + "%, above the " + limit.toPlainString() + "% "
+                    + (type == ProjectType.DESIGN ? "design" : "construction") + " commission pool (company share "
+                    + HUNDRED.subtract(limit).toPlainString() + "%).";
         }
         return new CommissionPolicyCheck(limit, total, exceeded, warning);
     }

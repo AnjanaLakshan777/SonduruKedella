@@ -481,7 +481,7 @@ export const useStore = create<Store>()((set, get) => {
       if (patch.commission) {
         // Super Admin only on the server; an Admin gets the 403 message
         await apiPut('/settings/commission-policy', {
-          designCommissionPool: patch.commission.designCommissionPool, constructionDefaultRate: patch.commission.constructionDefaultRate,
+          designCommissionPool: patch.commission.designCommissionPool, constructionCommissionPool: patch.commission.constructionCommissionPool,
           version: versionOf('settings', 'commission'),
         })
       }

@@ -97,12 +97,13 @@ class SettingsApiIntegrationTest {
         long policyVersion = readLong(get(SETTINGS + "/commission-policy"), "$.version");
         mockMvc.perform(put(SETTINGS + "/commission-policy").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"designCommissionPool\":18.5,\"constructionDefaultRate\":6,\"version\":"
+                        .content("{\"designCommissionPool\":18.5,\"constructionCommissionPool\":6,\"version\":"
                                 + policyVersion + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.designCommissionPool").value(18.5))
                 .andExpect(jsonPath("$.designCompanyShare").value(81.5))
-                .andExpect(jsonPath("$.constructionDefaultRate").value(6));
+                .andExpect(jsonPath("$.constructionCommissionPool").value(6))
+                .andExpect(jsonPath("$.constructionCompanyShare").value(94));
 
         long wageVersion = readLong(get(SETTINGS + "/wages"), "$.version");
         mockMvc.perform(put(SETTINGS + "/wages").with(csrf())

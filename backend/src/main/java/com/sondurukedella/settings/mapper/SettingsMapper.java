@@ -35,11 +35,13 @@ public class SettingsMapper {
     }
 
     public CommissionPolicyResponse toResponse(CommissionPolicy policy) {
-        BigDecimal pool = policy.getDesignCommissionPoolPct();
+        BigDecimal design = policy.getDesignCommissionPoolPct();
+        BigDecimal construction = policy.getConstructionCommissionPoolPct();
         return new CommissionPolicyResponse(
-                pool,
-                HUNDRED.subtract(pool),
-                policy.getConstructionWarningPct(),
+                design,
+                HUNDRED.subtract(design),
+                construction,
+                HUNDRED.subtract(construction),
                 policy.getVersion());
     }
 

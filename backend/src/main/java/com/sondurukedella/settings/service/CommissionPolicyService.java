@@ -29,7 +29,7 @@ public class CommissionPolicyService {
         CommissionPolicy policy = load();
         ConflictException.requireCurrentVersion(request.version(), policy.getVersion());
         policy.setDesignCommissionPoolPct(request.designCommissionPool());
-        policy.setConstructionWarningPct(request.constructionDefaultRate());
+        policy.setConstructionCommissionPoolPct(request.constructionCommissionPool());
         return mapper.toResponse(repository.saveAndFlush(policy));
     }
 

@@ -13,7 +13,7 @@ import { PaymentDialog } from '@/components/app/payment-dialog'
 import { VoidDialog } from '@/components/app/void-dialog'
 import { useData, useStore } from '@/store/store'
 import { useAuth } from '@/store/auth'
-import { sum, type CommissionView, type ProjectFinance } from '@/lib/finance'
+import { commissionPool, sum, type CommissionView, type ProjectFinance } from '@/lib/finance'
 import { formatDate } from '@/lib/dates'
 import { formatLKR } from '@/lib/format'
 import { errorMessage } from '@/lib/api'
@@ -38,7 +38,8 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [payFor, setPayFor] = useState<CommissionView | undefined>()
   const [tried, setTried] = useState(false)
-  const policy = d.s.settings.commission
+  // design and construction each have a pool (Settings); the company keeps the rest
+  const pool = commissionPool(d.s.settings, pf.project.type)
   useEffect(() => {
     setRows(views.map((v) => ({ key: `k${++k}`, id: v.arr.id, recipient: v.arr.recipient, role: v.arr.role, rate: v.arr.rate, status: v.arr.status, confirmedOn: v.arr.confirmedOn })))
     setEditing(!(views.length > 0 && views.every((v) => v.arr.status === 'Confirmed')))
@@ -149,15 +150,13 @@ export function ProjectCommissions({ pf }: { pf: ProjectFinance }) {
       <Card>
         <CardHeader><CardTitle>Policy</CardTitle><CardDescription>{p.type === 'Design' ? 'Design projects' : 'Construction projects'}</CardDescription></CardHeader>
         <CardContent className="grid gap-4 text-sm">
-          {p.type === 'Design' ? (
+          {pool && (
             <FigureList rows={[
               { label: 'Contract value', value: p.contractValue },
-              { label: `Company share (${policy.designCompanyShare}%)`, value: (p.contractValue * policy.designCompanyShare) / 100 },
-              { label: `Commission pool (${policy.designCommissionPool}%)`, value: (p.contractValue * policy.designCommissionPool) / 100 },
+              { label: `Company share (${pool.companyShare}%)`, value: (p.contractValue * pool.companyShare) / 100 },
+              { label: `Commission pool (${pool.pool}%)`, value: (p.contractValue * pool.pool) / 100 },
               { kind: 'sub', label: `Allocated (${check.totalRate}%)`, value: totalAmt, tone: check.conflict ? 'negative' : 'default' },
             ]} />
-          ) : (
-            <p className="text-muted-foreground">No fixed rate is assumed for construction. Enter each recipient's agreed percentage{policy.constructionDefaultRate ? `; the configured guide is ${policy.constructionDefaultRate}%` : ''}.</p>
           )}
           <p className="text-muted-foreground flex gap-2 text-xs"><Lock className="mt-0.5 size-3.5 shrink-0" />Once confirmed, the amounts count as a project cost and appear in Commissions for payment.{paidAny ? ' Recipients already paid cannot be removed.' : ''}</p>
         </CardContent>

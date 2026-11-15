@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 public record CommissionPolicyUpdateRequest(
         @NotNull @DecimalMin(value = "0", inclusive = false) @DecimalMax(value = "100", inclusive = false)
         @Digits(integer = 3, fraction = 4) BigDecimal designCommissionPool,
-        @DecimalMin(value = "0", inclusive = false) @DecimalMax(value = "100", inclusive = false)
-        @Digits(integer = 3, fraction = 4) BigDecimal constructionDefaultRate,
+        @NotNull @DecimalMin(value = "0", inclusive = false) @DecimalMax(value = "100", inclusive = false)
+        @Digits(integer = 3, fraction = 4) BigDecimal constructionCommissionPool,
         @NotNull Long version) {
 }

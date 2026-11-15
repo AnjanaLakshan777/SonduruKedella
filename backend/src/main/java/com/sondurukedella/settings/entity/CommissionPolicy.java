@@ -12,7 +12,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** Single-row table (id = 1). Both percentages only trigger warnings on commission arrangements. */
+/** Single-row table (id = 1). One commission pool per project type; going over it only warns. */
 @Getter
 @Setter
 @Entity
@@ -29,8 +29,8 @@ public class CommissionPolicy extends AuditableEntity {
     @Column(name = "design_commission_pool_pct", nullable = false, precision = 7, scale = 4)
     private BigDecimal designCommissionPoolPct;
 
-    @Column(name = "construction_warning_pct", precision = 7, scale = 4)
-    private BigDecimal constructionWarningPct;
+    @Column(name = "construction_commission_pool_pct", nullable = false, precision = 7, scale = 4)
+    private BigDecimal constructionCommissionPoolPct;
 
     @Version
     @Setter(AccessLevel.NONE)

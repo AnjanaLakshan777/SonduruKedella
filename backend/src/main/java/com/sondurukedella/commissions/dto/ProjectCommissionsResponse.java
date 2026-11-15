@@ -4,7 +4,7 @@ import com.sondurukedella.projects.entity.ProjectType;
 import java.math.BigDecimal;
 import java.util.List;
 
-// designSplit is null for construction projects; voided rows are included
+// split (pool vs company share) is null for consultation projects; voided rows are included
 public record ProjectCommissionsResponse(
         long projectId,
         String projectCode,
@@ -12,7 +12,7 @@ public record ProjectCommissionsResponse(
         ProjectType projectType,
         BigDecimal contractValue,
         CommissionPolicyCheck policy,
-        DesignSplit designSplit,
+        CommissionSplit split,
         CommissionTotals totals,
         List<CommissionResponse> arrangements) {
 }

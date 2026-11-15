@@ -83,9 +83,8 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
 
 - **company_profile**: a single row with `name`, `tagline`, `address`, `phone`, `email`, `registration_no`, `owner_name`, `financial_year_start_month` (default 4, for 1 April) and `supplier_credit_days` (default 14).
 - **commission_policy**: a single row.
-  - `design_commission_pool_pct` (default 20). The company share is shown as 100 minus the pool.
-  - `construction_warning_pct` (nullable).
-  - Both values only trigger warnings.
+  - `design_commission_pool_pct` (default 20) and, since V14, `construction_commission_pool_pct` (default 20, required; it was the optional `construction_warning_pct`). The company share is shown as 100 minus the pool.
+  - Both values only trigger warnings, which can be confirmed as an exception.
 - **wage_settings**: a single row with `default_daily_wage`, `hours_per_day` (default 8), `overtime_multiplier` (default 1.5), `payday` (`FRIDAY` | `SATURDAY`). The payroll week starts on Monday.
 - **expense_categories**:
   - Columns: `expense_group` (`DESIGN` | `CONSTRUCTION` | `CONSULTATION` | `COMPANY`), `name`, `locked`, `system_generated`, `active`, `sort_order`.
@@ -198,13 +197,12 @@ Scope: the schema supports what the existing frontend does (`frontend/src/data/t
   - `amount = round(contract_value × rate_pct / 100, 2, HALF_UP)`, worked out per arrangement.
   - On confirmation the amount is stored in `commission_amount`, with `confirmed_on` (Colombo date) and `policy_exception`.
   - The contract value can't change after a project is created, so the stored amount stays reproducible. Later policy changes never touch it.
-- Design split (the approved 80/20):
-  - `commission_policy.design_commission_pool_pct` is the commission share (seeded 20); the company share is 100 − pool.
+- Pool split (the approved 80/20, for design and, since V14, construction):
+  - `commission_policy.design_commission_pool_pct` / `construction_commission_pool_pct` is the commission share (seeded 20); the company share is 100 − pool.
   - The pool amount is `round(contract_value × pool / 100, 2, HALF_UP)`, and the company share amount is `contract_value − pool amount`. So the two add up to the contract value to the cent, and the residual cent always goes to the company.
   - The pool is shared by the project's recipients. If their rates add up to more, it is a warning, not a cap.
-- Construction:
-  - Each arrangement's rate is agreed per recipient. No rate is assumed, and the design pool never applies.
-  - The only check is the optional `commission_policy.construction_warning_pct`, a warning like the design pool.
+- Construction (owner decision 2026-11-15): works like design, against its own pool (`construction_commission_pool_pct`). Each recipient's rate is still agreed per arrangement; the design pool never applies to construction.
+- Consultation projects carry no commission, so they have no pool.
 - Lifecycle:
   - `PENDING` (a draft: editable and removable; not a cost).
   - `CONFIRMED`: the cost is recognised and the row is frozen.
@@ -815,3 +813,4 @@ The views derived in `lib/finance.ts` (`InstallmentView`, `ProjectFinance`, `Pay
   - `ck_security_events_type` keeps the `CUSTOM_ROLE_*` values for the V11 events already in the trail.
   - Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V12). Applied to the development database on 2026-11-03 (Flyway v12): the Auditor user kept `Auditor` and `REPORTS`, and the Admin got all 11 pages.
 - `V13__app_users_must_change_password.sql` (2026-11-14): `app_users.must_change_password BOOLEAN NOT NULL DEFAULT FALSE`. A new user sets their own password on the first sign-in; existing users get false. Additive. Verified by the test suite on a fresh PostgreSQL 17 database (V1 to V13).
+- `V14__construction_commission_pool.sql` (2026-11-15): construction commission gets a pool like design. Sets `construction_warning_pct` to 20 where it was empty, renames it to `construction_commission_pool_pct`, makes it `NOT NULL DEFAULT 20`, and replaces `ck_commission_policy_construction` with `ck_commission_policy_construction_pool` (0 < pool < 100). The development database already had 20.

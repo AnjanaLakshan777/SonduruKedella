@@ -85,11 +85,11 @@ class SettingsControllerWebTest {
     @WithMockUser
     void authenticatedUsersCanUpdateTheCommissionPolicy() throws Exception {
         when(commissionPolicyService.update(any())).thenReturn(new CommissionPolicyResponse(
-                new BigDecimal("25"), new BigDecimal("75"), null, 1L));
+                new BigDecimal("25"), new BigDecimal("75"), new BigDecimal("20"), new BigDecimal("80"), 1L));
 
         mockMvc.perform(put("/api/v1/settings/commission-policy").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"designCommissionPool\":25,\"version\":0}"))
+                        .content("{\"designCommissionPool\":25,\"constructionCommissionPool\":20,\"version\":0}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.designCompanyShare").value(75));
     }
@@ -103,7 +103,18 @@ class SettingsControllerWebTest {
                             .content("{\"designCommissionPool\":" + pool + ",\"version\":0}"))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.errors[*].field", hasItem("designCommissionPool")));
+            mockMvc.perform(put("/api/v1/settings/commission-policy").with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"designCommissionPool\":20,\"constructionCommissionPool\":" + pool + ",\"version\":0}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors[*].field", hasItem("constructionCommissionPool")));
         }
+        // construction has a pool too now, it can't be left out
+        mockMvc.perform(put("/api/v1/settings/commission-policy").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"designCommissionPool\":20,\"version\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[*].field", hasItem("constructionCommissionPool")));
         verifyNoInteractions(commissionPolicyService);
     }
 

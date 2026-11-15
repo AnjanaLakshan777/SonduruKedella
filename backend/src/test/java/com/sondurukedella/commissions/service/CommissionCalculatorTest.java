@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sondurukedella.commissions.dto.CommissionPolicyCheck;
 import com.sondurukedella.commissions.dto.CommissionState;
-import com.sondurukedella.commissions.dto.DesignSplit;
+import com.sondurukedella.commissions.dto.CommissionSplit;
 import com.sondurukedella.commissions.entity.CommissionStatus;
 import com.sondurukedella.projects.entity.ProjectType;
 import java.math.BigDecimal;
@@ -22,7 +22,7 @@ class CommissionCalculatorTest {
         // example from the docs: 1,500,000 at 12% and 8% = 180,000 and 120,000
         assertThat(CommissionCalculator.amount(bd("1500000"), bd("12"))).isEqualByComparingTo("180000.00");
         assertThat(CommissionCalculator.amount(bd("1500000"), bd("8"))).isEqualByComparingTo("120000.00");
-        DesignSplit split = CommissionCalculator.designSplit(bd("1500000"), bd("20"), bd("300000"));
+        CommissionSplit split = CommissionCalculator.split(bd("1500000"), bd("20"), bd("300000"));
         assertThat(split.poolAmount()).isEqualByComparingTo("300000.00");
         assertThat(split.companyShareAmount()).isEqualByComparingTo("1200000.00");
         assertThat(split.companySharePct()).isEqualByComparingTo("80");
@@ -41,37 +41,43 @@ class CommissionCalculatorTest {
     void companyShareAndPoolAlwaysAddUpToTheContractValueExactly() {
         for (String value : List.of("333333.33", "100000.01", "999999.99", "1.00", "123456.78", "7")) {
             for (String pool : List.of("20", "18.5", "33.3333", "0.0001")) {
-                DesignSplit split = CommissionCalculator.designSplit(bd(value), bd(pool), BigDecimal.ZERO);
+                CommissionSplit split = CommissionCalculator.split(bd(value), bd(pool), BigDecimal.ZERO);
                 assertThat(split.poolAmount().add(split.companyShareAmount())).as(value + " @ " + pool).isEqualByComparingTo(value);
                 assertThat(split.poolAmount().scale()).isEqualTo(2);
                 assertThat(split.companyShareAmount().scale()).isEqualTo(2);
             }
         }
         // the residual cent goes to the company: 333,333.33 x 20% = 66,666.666 -> 66,666.67, company 266,666.66
-        DesignSplit split = CommissionCalculator.designSplit(bd("333333.33"), bd("20"), BigDecimal.ZERO);
+        CommissionSplit split = CommissionCalculator.split(bd("333333.33"), bd("20"), BigDecimal.ZERO);
         assertThat(split.poolAmount()).isEqualTo(bd("66666.67"));
         assertThat(split.companyShareAmount()).isEqualTo(bd("266666.66"));
     }
 
     @Test
     void designRatesAreCheckedAgainstThePool() {
-        CommissionPolicyCheck ok = CommissionCalculator.policy(ProjectType.DESIGN, bd("20.0000"), bd("20"), null);
+        CommissionPolicyCheck ok = CommissionCalculator.policy(ProjectType.DESIGN, bd("20.0000"), bd("20"));
         assertThat(ok.exceeded()).isFalse();
         assertThat(ok.warning()).isNull();
-        CommissionPolicyCheck over = CommissionCalculator.policy(ProjectType.DESIGN, bd("22"), bd("20"), bd("5"));
+        CommissionPolicyCheck over = CommissionCalculator.policy(ProjectType.DESIGN, bd("22"), bd("20"));
         assertThat(over.exceeded()).isTrue();
         assertThat(over.limitPct()).isEqualByComparingTo("20");
         assertThat(over.warning()).contains("22%").contains("20%").contains("company share 80%");
     }
 
     @Test
-    void constructionHasNoRateUnlessALevelIsConfigured() {
-        // the design pool never applies to construction
-        assertThat(CommissionCalculator.policy(ProjectType.CONSTRUCTION, bd("35"), bd("20"), null).exceeded()).isFalse();
-        assertThat(CommissionCalculator.policy(ProjectType.CONSTRUCTION, bd("35"), bd("20"), null).limitPct()).isNull();
-        CommissionPolicyCheck over = CommissionCalculator.policy(ProjectType.CONSTRUCTION, bd("6"), bd("20"), bd("5"));
+    void constructionIsCheckedAgainstItsOwnPool() {
+        assertThat(CommissionCalculator.policy(ProjectType.CONSTRUCTION, bd("20"), bd("20")).exceeded()).isFalse();
+        CommissionPolicyCheck over = CommissionCalculator.policy(ProjectType.CONSTRUCTION, bd("25"), bd("20"));
         assertThat(over.exceeded()).isTrue();
-        assertThat(over.warning()).contains("construction");
+        assertThat(over.warning()).contains("25%").contains("20% construction commission pool").contains("company share 80%");
+    }
+
+    @Test
+    void noPoolMeansNoCheck() {
+        // consultation projects carry no commission, so there's nothing to compare against
+        CommissionPolicyCheck none = CommissionCalculator.policy(ProjectType.CONSULTATION, bd("5"), null);
+        assertThat(none.exceeded()).isFalse();
+        assertThat(none.limitPct()).isNull();
     }
 
     @Test

@@ -313,7 +313,8 @@ export interface Settings {
   financialYearStart: string
   revenueCategories: string[]
   expenseCategories: Record<ExpenseGroup, string[]>
-  commission: { designCompanyShare: number; designCommissionPool: number; constructionDefaultRate?: number }
+  // each project type has a commission pool; the company keeps the rest (Consultation carries none)
+  commission: { designCompanyShare: number; designCommissionPool: number; constructionCompanyShare: number; constructionCommissionPool: number }
   wages: { hoursPerDay: number; overtimeMultiplier: number; defaultDailyRate: number; payday: string }
   units: string[]
   projectStatuses: ProjectStatus[]

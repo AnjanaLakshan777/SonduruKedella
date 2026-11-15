@@ -2052,3 +2052,26 @@ For each completed task, record the date, files or migrations changed, verificat
   - These two (overtime approval, commission confirm) are the only approval steps in the system.
   - Test: `UserPermissionsApiIntegrationTest.onlyAdminsConfirmCommissionsOthersKeepDrafts`.
   - Full backend suite on a fresh database: 696 tests, 0 failures. Frontend `tsc` clean. Not clicked through in the browser.
+
+### 2026-11-15: Construction commission has a 20% pool, like design
+
+- Owner correction: construction commission is also 20% of the contract value, not just an optional warning threshold.
+- Database: `V14__construction_commission_pool.sql` (see DATABASE.md). `commission_policy.construction_commission_pool_pct`, required, default 20.
+- Backend:
+  - `GET/PUT /api/v1/settings/commission-policy`:
+    - `constructionDefaultRate` is replaced by `constructionCommissionPool` (required, 0 < pool < 100);
+    - the response adds `constructionCompanyShare` (100 − pool).
+  - Project commissions:
+    - the policy check uses the project type's pool: design or construction, none for consultation;
+    - the warning reads "... above the 20% construction commission pool (company share 80%)";
+    - confirming over the pool still needs `acceptPolicyException`.
+  - `ProjectCommissionsResponse.designSplit` is now `split` (`CommissionSplit`): pool vs company share for design and construction alike, null for consultation.
+- Frontend:
+  - Settings shows "Construction: commission pool" with the same field and company-share hint as design.
+  - The project's Commissions tab and the new-project summary show the pool split for construction too.
+  - `commissionPool()` in `lib/finance.ts` picks the pool by project type.
+- Tests:
+  - `CommissionApiIntegrationTest`: construction within the pool, with its split; over the pool needs an exception; its own setting.
+  - `CommissionCalculatorTest`, the settings tests, and a Vitest case for `commissionPool`.
+- Results: full backend suite on a fresh database (V1 to V14), 697 tests, 0 failures. Frontend `tsc` clean, 45 Vitest tests pass. Not clicked through in the browser.
+- Applied to the development database on 2026-11-15 (Flyway v14): design 20%, construction 20%.

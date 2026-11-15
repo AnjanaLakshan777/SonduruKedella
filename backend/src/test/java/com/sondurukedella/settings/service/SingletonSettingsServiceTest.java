@@ -79,6 +79,7 @@ class SingletonSettingsServiceTest {
         CommissionPolicy policy = TestEntities.create(CommissionPolicy.class, Map.of(
                 "id", CommissionPolicy.SINGLETON_ID,
                 "designCommissionPoolPct", new BigDecimal("20.0000"),
+                "constructionCommissionPoolPct", new BigDecimal("20.0000"),
                 "version", 0L));
         when(commissionRepository.findById(CommissionPolicy.SINGLETON_ID)).thenReturn(Optional.of(policy));
         when(commissionRepository.saveAndFlush(policy)).thenReturn(policy);
@@ -88,23 +89,8 @@ class SingletonSettingsServiceTest {
 
         assertThat(response.designCommissionPool()).isEqualByComparingTo("22.5");
         assertThat(response.designCompanyShare()).isEqualByComparingTo("77.5");
-        assertThat(response.constructionDefaultRate()).isEqualByComparingTo("5");
-    }
-
-    @Test
-    void commissionPolicyWarningThresholdCanBeCleared() {
-        CommissionPolicy policy = TestEntities.create(CommissionPolicy.class, Map.of(
-                "id", CommissionPolicy.SINGLETON_ID,
-                "designCommissionPoolPct", new BigDecimal("20.0000"),
-                "constructionWarningPct", new BigDecimal("6.0000"),
-                "version", 2L));
-        when(commissionRepository.findById(CommissionPolicy.SINGLETON_ID)).thenReturn(Optional.of(policy));
-        when(commissionRepository.saveAndFlush(policy)).thenReturn(policy);
-
-        new CommissionPolicyService(commissionRepository, mapper)
-                .update(new CommissionPolicyUpdateRequest(new BigDecimal("20"), null, 2L));
-
-        assertThat(policy.getConstructionWarningPct()).isNull();
+        assertThat(response.constructionCommissionPool()).isEqualByComparingTo("5");
+        assertThat(response.constructionCompanyShare()).isEqualByComparingTo("95");
     }
 
     @Test

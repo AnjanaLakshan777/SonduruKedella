@@ -40,7 +40,7 @@ export const settings: Settings = {
     Consultation: ['Transport'],
     Company: ['Marketing', 'Cutout and Banner', 'General Company Expense', 'Other Expense'],
   },
-  commission: { designCompanyShare: 80, designCommissionPool: 20 },
+  commission: { designCompanyShare: 80, designCommissionPool: 20, constructionCompanyShare: 80, constructionCommissionPool: 20 },
   wages: { hoursPerDay: 8, overtimeMultiplier: 1.5, defaultDailyRate: 3500, payday: 'Saturday' },
   units: ['bag', 'kg', 'cube', 'cft', 'nos', 'length', 'box', 'litre', 'sq ft'],
   projectStatuses: ['Planning', 'In Progress', 'On Hold', 'Completed', 'Cancelled'],

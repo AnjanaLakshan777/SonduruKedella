@@ -4,12 +4,12 @@ import java.math.BigDecimal;
 
 /**
  * Commission policy; field names follow the frontend {@code Settings.commission} contract.
- * {@code designCompanyShare} is derived (100 − pool). {@code constructionDefaultRate} is the optional
- * construction warning threshold.
+ * Each project type has a commission pool; the company share is derived (100 − pool).
  */
 public record CommissionPolicyResponse(
         BigDecimal designCommissionPool,
         BigDecimal designCompanyShare,
-        BigDecimal constructionDefaultRate,
+        BigDecimal constructionCommissionPool,
+        BigDecimal constructionCompanyShare,
         long version) {
 }

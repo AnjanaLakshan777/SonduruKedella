@@ -51,8 +51,8 @@ class CommissionApiIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         cash = jdbc.queryForObject("SELECT id FROM payment_methods WHERE name = 'Cash'", Long.class);
-        // the seeded policy: 20% design pool, no construction level
-        jdbc.update("UPDATE commission_policy SET design_commission_pool_pct = 20, construction_warning_pct = NULL WHERE id = 1");
+        // the seeded policy: 20% pool for design and for construction
+        jdbc.update("UPDATE commission_policy SET design_commission_pool_pct = 20, construction_commission_pool_pct = 20 WHERE id = 1");
         long client = jdbc.queryForObject("INSERT INTO clients (name, phone) VALUES ('Commission Client', '0710000000') RETURNING id", Long.class);
         design = project(client, "DESIGN", "1500000");
         construction = project(client, "CONSTRUCTION", "10000000");
@@ -87,11 +87,11 @@ class CommissionApiIntegrationTest {
                 .andExpect(jsonPath("$.arrangements[0].confirmedOn").value(today.toString()))
                 .andExpect(jsonPath("$.arrangements[0].outstanding").value(180000.00))
                 .andExpect(jsonPath("$.arrangements[0].policyException").value(false))
-                .andExpect(jsonPath("$.designSplit.poolPct").value(20))
-                .andExpect(jsonPath("$.designSplit.companySharePct").value(80))
-                .andExpect(jsonPath("$.designSplit.poolAmount").value(300000.00))
-                .andExpect(jsonPath("$.designSplit.companyShareAmount").value(1200000.00))
-                .andExpect(jsonPath("$.designSplit.unallocatedAmount").value(0))
+                .andExpect(jsonPath("$.split.poolPct").value(20))
+                .andExpect(jsonPath("$.split.companySharePct").value(80))
+                .andExpect(jsonPath("$.split.poolAmount").value(300000.00))
+                .andExpect(jsonPath("$.split.companyShareAmount").value(1200000.00))
+                .andExpect(jsonPath("$.split.unallocatedAmount").value(0))
                 .andExpect(jsonPath("$.totals.committed").value(300000.00))
                 .andExpect(jsonPath("$.totals.outstanding").value(300000.00));
         assertThat(jdbc.queryForList("SELECT commission_amount::text FROM commission_arrangements WHERE project_id = ? ORDER BY id",
@@ -107,10 +107,10 @@ class CommissionApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.arrangements[0].amount").value(41666.67))
                 .andExpect(jsonPath("$.arrangements[1].amount").value(25000.00))
-                .andExpect(jsonPath("$.designSplit.poolAmount").value(66666.67))
-                .andExpect(jsonPath("$.designSplit.companyShareAmount").value(266666.66))
-                .andExpect(jsonPath("$.designSplit.allocatedAmount").value(66666.67))
-                .andExpect(jsonPath("$.designSplit.unallocatedAmount").value(0));
+                .andExpect(jsonPath("$.split.poolAmount").value(66666.67))
+                .andExpect(jsonPath("$.split.companyShareAmount").value(266666.66))
+                .andExpect(jsonPath("$.split.allocatedAmount").value(66666.67))
+                .andExpect(jsonPath("$.split.unallocatedAmount").value(0));
     }
 
     @Test
@@ -131,24 +131,40 @@ class CommissionApiIntegrationTest {
         save(design, true, true, row(id(json, 0), version(json, 0), "Nimal", null, "15"), row(id(json, 1), version(json, 1), "Kamala", null, "7"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.arrangements[0].policyException").value(true))
-                .andExpect(jsonPath("$.designSplit.unallocatedAmount").value(-30000.00));
+                .andExpect(jsonPath("$.split.unallocatedAmount").value(-30000.00));
         assertThat(activity(design)).anyMatch(m -> m.contains("policy exception"));
     }
 
     @Test
-    void constructionUsesOnlyTheAgreedRatesAndItsOwnOptionalLevel() throws Exception {
-        // no construction level configured: no warning at all, and the design pool doesn't apply
-        save(construction, true, null, row(null, null, "Site Engineer", "Referral", "25"))
+    void constructionHasItsOwnCommissionPoolLikeDesign() throws Exception {
+        // 20% construction pool: within it is fine, and the split shows pool vs company share
+        save(construction, true, null, row(null, null, "Site Engineer", "Referral", "15"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.designSplit").doesNotExist())
-                .andExpect(jsonPath("$.policy.limitPct").doesNotExist())
-                .andExpect(jsonPath("$.arrangements[0].amount").value(2500000.00));
+                .andExpect(jsonPath("$.policy.limitPct").value(20))
+                .andExpect(jsonPath("$.policy.exceeded").value(false))
+                .andExpect(jsonPath("$.split.poolPct").value(20))
+                .andExpect(jsonPath("$.split.companySharePct").value(80))
+                .andExpect(jsonPath("$.split.poolAmount").value(2000000.00))
+                .andExpect(jsonPath("$.split.companyShareAmount").value(8000000.00))
+                .andExpect(jsonPath("$.split.unallocatedAmount").value(500000.00))
+                .andExpect(jsonPath("$.arrangements[0].amount").value(1500000.00));
+    }
 
-        setPolicy("20", "3");
-        mockMvc.perform(get("/api/v1/projects/" + construction + "/commissions"))
-                .andExpect(jsonPath("$.policy.limitPct").value(3))
+    @Test
+    void goingOverTheConstructionPoolNeedsAnException() throws Exception {
+        save(construction, true, null, row(null, null, "Site Engineer", "Referral", "25"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value(containsString("20% construction commission pool (company share 80%)")));
+        save(construction, true, true, row(null, null, "Site Engineer", "Referral", "25"))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.policy.exceeded").value(true))
-                .andExpect(jsonPath("$.policy.warning").value(containsString("construction")));
+                .andExpect(jsonPath("$.split.unallocatedAmount").value(-500000.00));
+
+        // its own setting, separate from design
+        setPolicy("20", "30");
+        mockMvc.perform(get("/api/v1/projects/" + construction + "/commissions"))
+                .andExpect(jsonPath("$.policy.limitPct").value(30))
+                .andExpect(jsonPath("$.policy.exceeded").value(false));
     }
 
     @Test
@@ -211,14 +227,14 @@ class CommissionApiIntegrationTest {
     @Test
     void historyDoesNotMoveWhenTheSettingsChange() throws Exception {
         save(design, true, null, row(null, null, "Nimal", null, "12")).andExpect(status().isOk());
-        setPolicy("10", null);
+        setPolicy("10", "20");
         mockMvc.perform(get("/api/v1/projects/" + design + "/commissions"))
                 .andExpect(jsonPath("$.arrangements[0].amount").value(180000.00))
                 .andExpect(jsonPath("$.arrangements[0].ratePct").value(12))
                 .andExpect(jsonPath("$.arrangements[0].policyException").value(false))
                 // the current policy now flags it, but the stored row is unchanged
                 .andExpect(jsonPath("$.policy.exceeded").value(true))
-                .andExpect(jsonPath("$.designSplit.poolAmount").value(150000.00));
+                .andExpect(jsonPath("$.split.poolAmount").value(150000.00));
         assertThat(jdbc.queryForObject("SELECT commission_amount::text FROM commission_arrangements WHERE project_id = ?", String.class, design))
                 .isEqualTo("180000.00");
     }
@@ -417,7 +433,7 @@ class CommissionApiIntegrationTest {
         long version = ((Number) JsonPath.read(current, "$.version")).longValue();
         mockMvc.perform(put("/api/v1/settings/commission-policy").with(user("root").roles("SUPER_ADMIN")).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"designCommissionPool\":" + pool + (construction == null ? "" : ",\"constructionDefaultRate\":" + construction)
+                        .content("{\"designCommissionPool\":" + pool + ",\"constructionCommissionPool\":" + construction
                                 + ",\"version\":" + version + "}"))
                 .andExpect(status().isOk());
     }

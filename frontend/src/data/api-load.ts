@@ -323,7 +323,7 @@ function settingsFrom(o: Row): Settings {
     expenseCategories: groups,
     commission: {
       designCompanyShare: o.commission.designCompanyShare, designCommissionPool: o.commission.designCommissionPool,
-      constructionDefaultRate: opt(o.commission.constructionDefaultRate),
+      constructionCompanyShare: o.commission.constructionCompanyShare, constructionCommissionPool: o.commission.constructionCommissionPool,
     },
     wages: {
       hoursPerDay: o.wages.hoursPerDay, overtimeMultiplier: o.wages.overtimeMultiplier, defaultDailyRate: o.wages.defaultDailyRate,
@@ -427,7 +427,7 @@ export function emptyState(): DataState {
     settings: {
       company: { name: '', tagline: '', address: '', phone: '', email: '', registration: '', owner: '' }, financialYearStart: TODAY,
       revenueCategories: [], expenseCategories: { Design: [], Construction: [], Consultation: [], Company: [] },
-      commission: { designCompanyShare: 80, designCommissionPool: 20 }, wages: { hoursPerDay: 8, overtimeMultiplier: 1.5, defaultDailyRate: 0, payday: 'Saturday' },
+      commission: { designCompanyShare: 80, designCommissionPool: 20, constructionCompanyShare: 80, constructionCommissionPool: 20 }, wages: { hoursPerDay: 8, overtimeMultiplier: 1.5, defaultDailyRate: 0, payday: 'Saturday' },
       units: [], projectStatuses: PROJECT_STATUSES, paymentMethods: [], supplierCreditDays: 14,
     },
   }

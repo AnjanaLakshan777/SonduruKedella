@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createSeed } from '@/data/seed'
 import type { DataState } from '@/data/types'
 import { addDays, TODAY, weekStart } from './dates'
-import { billingLate, derive, previousPeriod, projectActivity, projectFigures, projectPeriodFigures, scheduleStatus } from './finance'
+import { billingLate, commissionPool, derive, previousPeriod, projectActivity, projectFigures, projectPeriodFigures, scheduleStatus } from './finance'
 
 // the seed with every money record cleared, so a test only sees what it adds
 function blank(): DataState {
@@ -241,5 +241,15 @@ describe('profit by period', () => {
     expect(previousPeriod({ from: '2026-04-01', to: '2027-03-31' })).toEqual({ from: '2025-04-01', to: '2026-03-31' })
     expect(previousPeriod({ from: '2026-08-01', to: '2026-10-31' })).toEqual({ from: '2026-05-01', to: '2026-07-31' })
     expect(previousPeriod({ from: '2026-10-11', to: '2026-10-20' })).toEqual({ from: '2026-10-01', to: '2026-10-10' })
+  })
+})
+
+describe('commission pool', () => {
+  it('gives design and construction their own pool and leaves consultation without one', () => {
+    const s = createSeed().settings
+    s.commission = { designCommissionPool: 20, designCompanyShare: 80, constructionCommissionPool: 15, constructionCompanyShare: 85 }
+    expect(commissionPool(s, 'Design')).toEqual({ pool: 20, companyShare: 80 })
+    expect(commissionPool(s, 'Construction')).toEqual({ pool: 15, companyShare: 85 })
+    expect(commissionPool(s, 'Consultation')).toBeUndefined()
   })
 })
