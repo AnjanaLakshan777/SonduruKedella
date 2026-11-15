@@ -2132,3 +2132,12 @@ For each completed task, record the date, files or migrations changed, verificat
   - Matrix test updated for `/api/v1/audit`, and `nav.test.ts` too.
   - Full backend suite on a fresh database (V1 to V16): 705 tests, 0 failures. Frontend `tsc` clean, 45 Vitest tests pass.
 - Checked live: V16 applied (Flyway v16). The Super Admin reads the change list (empty so far), 195 security events, and the entity types. Not clicked through in the browser.
+
+### 2026-11-15: New sign-in page layout
+
+- Owner request: a two-panel sign-in page like the reference they shared, with the company logo in the top-left.
+- Left panel (wide screens): the logo, centred at the top (follow-up), "Every project's money, in one place.", three points (profit on every project, every rupee counted once, payroll from attendance), and "© year Sonduru Kedella · Anuradhapura, Sri Lanka". It uses the sidebar colours, so it follows light and dark mode.
+- Right: "Sign in" with username or email, password (show/hide) and the button, plus a note: "You are signed out after a period of inactivity. Your password is never stored in the browser." The session times out after 30 minutes by default.
+- Small screens: no side panel, and the logo sits above the form.
+- Left out on purpose: "Forgot password" and "Keep me signed in" from the reference. Neither exists in the system; a Super Admin resets passwords.
+- `tsc` clean. Not checked in the browser.
